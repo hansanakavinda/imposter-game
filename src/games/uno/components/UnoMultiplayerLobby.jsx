@@ -25,10 +25,31 @@ export default function UnoMultiplayerLobby({
   onBackToModeSelect,
   roomState, // { isInRoom, isHost, roomCode, players, maxPlayers, isConnecting, error }
 }) {
-  const [tab, setTab] = useState(initialRoomCode ? 'join' : 'create') // 'create' | 'join'
-  const [playerName, setPlayerName] = useState('Player 1')
-  const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
-  const [inputRoomCode, setInputRoomCode] = useState(initialRoomCode)
+  const [playerName, setPlayerName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('uno_player_name') || 'Player 1'
+    }
+    return 'Player 1'
+  })
+  const [selectedAvatar, setSelectedAvatar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('uno_player_avatar') || AVATARS[0]
+    }
+    return AVATARS[0]
+  })
+  const [inputRoomCode, setInputRoomCode] = useState(() => {
+    if (initialRoomCode) return initialRoomCode
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('uno_last_room') || ''
+    }
+    return ''
+  })
+  const [tab, setTab] = useState(() => {
+    if (initialRoomCode || (typeof window !== 'undefined' && sessionStorage.getItem('uno_last_room'))) {
+      return 'join'
+    }
+    return 'create'
+  })
   const [enableStacking, setEnableStacking] = useState(true)
   const [copied, setCopied] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
@@ -51,8 +72,15 @@ export default function UnoMultiplayerLobby({
   const handleCreateSubmit = (e) => {
     e.preventDefault()
     playClickSound()
+    const name = playerName.trim() || 'Host'
+    try {
+      localStorage.setItem('uno_player_name', name)
+      localStorage.setItem('uno_player_avatar', selectedAvatar)
+    } catch {
+      // ignore
+    }
     onCreateRoom({
-      name: playerName.trim() || 'Host',
+      name,
       avatar: selectedAvatar,
       maxPlayers: 4,
       enableStacking,
@@ -61,12 +89,21 @@ export default function UnoMultiplayerLobby({
 
   const handleJoinSubmit = (e) => {
     e.preventDefault()
-    if (!inputRoomCode.trim()) return
+    const code = inputRoomCode.trim().toUpperCase()
+    if (!code) return
     playClickSound()
+    const name = playerName.trim() || 'Player'
+    try {
+      localStorage.setItem('uno_player_name', name)
+      localStorage.setItem('uno_player_avatar', selectedAvatar)
+      sessionStorage.setItem('uno_last_room', code)
+    } catch {
+      // ignore
+    }
     onJoinRoom({
-      name: playerName.trim() || 'Player',
+      name,
       avatar: selectedAvatar,
-      roomCode: inputRoomCode.trim().toUpperCase(),
+      roomCode: code,
     })
   }
 

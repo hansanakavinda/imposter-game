@@ -8,11 +8,11 @@ import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 
 export default function App() {
-  // Check if URL has ?room=... or ?game=uno
+  // Check if URL has ?room=... or ?game=uno or sessionStorage active room
   const [initialRoomCode, setInitialRoomCode] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      return params.get('room') || ''
+      return params.get('room') || sessionStorage.getItem('uno_active_room') || ''
     }
     return ''
   })
@@ -21,7 +21,7 @@ export default function App() {
   const [selectedGame, setSelectedGame] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      if (params.get('room') || params.get('game') === 'uno') {
+      if (params.get('room') || params.get('game') === 'uno' || sessionStorage.getItem('uno_active_room')) {
         return 'uno'
       }
       if (params.get('game') === 'imposter') {
@@ -43,6 +43,11 @@ export default function App() {
     setSelectedGame(null)
     setInitialRoomCode('')
     setIsRulesOpen(false)
+    try {
+      sessionStorage.removeItem('uno_active_room')
+    } catch {
+      // ignore
+    }
     // Clean URL query params if any
     if (typeof window !== 'undefined' && window.history && window.location.search) {
       window.history.replaceState({}, document.title, window.location.pathname)

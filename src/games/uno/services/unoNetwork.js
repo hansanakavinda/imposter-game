@@ -99,10 +99,31 @@ export function initHostPeer({
         console.warn('[Host] sendTo: no active connection for peer:', clientPeerId)
       }
     },
+    removeConnection: (clientPeerId) => {
+      const conn = connections.get(clientPeerId)
+      if (conn) {
+        try {
+          conn.close()
+        } catch {
+          // ignore
+        }
+        connections.delete(clientPeerId)
+      }
+    },
     destroy: () => {
-      connections.forEach((conn) => conn.close())
+      connections.forEach((conn) => {
+        try {
+          conn.close()
+        } catch {
+          // ignore
+        }
+      })
       connections.clear()
-      peer.destroy()
+      try {
+        peer.destroy()
+      } catch {
+        // ignore
+      }
     },
   }
 }
@@ -166,20 +187,33 @@ export function initClientPeer({
 
   return {
     peer,
+    isConnected: () => Boolean(hostConn && hostConn.open),
     sendAction: (data) => {
-      if (!hostConn) {
-        console.warn('[Client] sendAction skipped: hostConn is null')
-        return
+      if (!hostConn || !hostConn.open) {
+        console.warn('[Client] sendAction skipped: hostConn is not open')
+        return false
       }
       try {
         hostConn.send(data)
+        return true
       } catch (e) {
         console.error('[Client] Failed to send action to host:', e)
+        return false
       }
     },
     destroy: () => {
-      if (hostConn) hostConn.close()
-      peer.destroy()
+      if (hostConn) {
+        try {
+          hostConn.close()
+        } catch {
+          // ignore
+        }
+      }
+      try {
+        peer.destroy()
+      } catch {
+        // ignore
+      }
     },
   }
 }

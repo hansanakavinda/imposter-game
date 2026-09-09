@@ -28,14 +28,43 @@ import {
   playUnoCallSound,
 } from '../../utils/sound'
 
+const setUrlRoomCode = (code) => {
+  if (typeof window !== 'undefined' && window.history) {
+    const url = new URL(window.location.href)
+    url.searchParams.set('game', 'uno')
+    if (code) {
+      url.searchParams.set('room', code.toUpperCase())
+    } else {
+      url.searchParams.delete('room')
+    }
+    window.history.replaceState({}, document.title, url.toString())
+  }
+}
+
+const clearUrlRoomCode = () => {
+  if (typeof window !== 'undefined' && window.history) {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('room')
+    window.history.replaceState({}, document.title, url.toString())
+  }
+}
+
 export default function UnoGame({
   onBackToMenu,
   isRulesOpen,
   onCloseRules,
   initialRoomCode = '',
 }) {
+  const effectiveInitialRoom =
+    initialRoomCode ||
+    (typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('room') ||
+        sessionStorage.getItem('uno_active_room') ||
+        ''
+      : '')
+
   // Screen state
-  const [screen, setScreen] = useState(() => (initialRoomCode ? 'mp_lobby' : 'mode_select'))
+  const [screen, setScreen] = useState(() => (effectiveInitialRoom ? 'mp_lobby' : 'mode_select'))
   const [internalRulesOpen, setInternalRulesOpen] = useState(false)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [pendingCard, setPendingCard] = useState(null)
@@ -1476,6 +1505,53 @@ export default function UnoGame({
     [hostBroadcastGameState]
   )
 
+  // Host authoritative handler when a player leaves or disconnects
+  const hostProcessClientLeave = useCallback(
+    (clientPeerId, explicitPlayerId = null) => {
+      const g = hostGameRef.current
+      if (!g) return
+
+      if (hostNetworkRef.current) {
+        hostNetworkRef.current.removeConnection(clientPeerId)
+      }
+
+      const player = g.players.find(
+        (p) => p.peerId === clientPeerId || (explicitPlayerId !== null && p.id === explicitPlayerId)
+      )
+      if (!player || player.isHost) return
+
+      const isGameActive = (g.drawPile.length > 0 || g.topCard !== null) && !g.winner
+
+      if (isGameActive) {
+        // If match is active, mark disconnected so player can reconnect without losing hand
+        player.peerId = null
+        player.connected = false
+        hostBroadcastGameState(`${player.name} temporarily disconnected. Waiting for reconnect...`)
+        return
+      }
+
+      // If in lobby, remove player normally and re-index player IDs cleanly (0 is Host, 1, 2...)
+      const filtered = g.players.filter((p) => p.id !== player.id)
+      const reIndexed = filtered.map((p, idx) => ({
+        ...p,
+        id: idx,
+        isHost: idx === 0,
+      }))
+      g.players = reIndexed
+
+      if (hostNetworkRef.current) {
+        hostNetworkRef.current.broadcast({
+          type: 'ROOM_UPDATE',
+          roomCode: g.roomCode,
+          players: reIndexed,
+          stackingEnabled: g.stackingEnabled !== false,
+        })
+      }
+      setMpRoomState((prev) => ({ ...prev, players: reIndexed }))
+    },
+    [hostBroadcastGameState]
+  )
+
   // Connect client data ref to latest authoritative processors
   useEffect(() => {
     onClientDataRef.current = (clientPeerId, data) => {
@@ -1497,14 +1573,49 @@ export default function UnoGame({
         hostProcessCallUno(playerId, player?.name || data.playerName || 'Player')
       } else if (data.type === 'ACTION_REQUEST_SYNC') {
         hostBroadcastGameState('Host synchronized game state.')
+      } else if (data.type === 'ACTION_LEAVE') {
+        hostProcessClientLeave(clientPeerId, data.playerId)
       }
     }
-  }, [hostProcessPlayCard, hostProcessDrawCard, hostProcessPassTurn, hostProcessCallUno, hostBroadcastGameState])
+  }, [
+    hostProcessPlayCard,
+    hostProcessDrawCard,
+    hostProcessPassTurn,
+    hostProcessCallUno,
+    hostBroadcastGameState,
+    hostProcessClientLeave,
+  ])
+
+  // Inform host immediately if tab or window is closing
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (clientNetworkRef.current) {
+        try {
+          clientNetworkRef.current.sendAction({
+            type: 'ACTION_LEAVE',
+            playerId: myPlayerIdRef.current,
+          })
+        } catch {
+          // ignore
+        }
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
 
   // Host creates room
   const handleCreateRoom = ({ name, avatar, maxPlayers, enableStacking = true }) => {
     const code = generateRoomCode()
-    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true }
+    setUrlRoomCode(code)
+    try {
+      sessionStorage.setItem('uno_active_room', code)
+    } catch {
+      // ignore
+    }
+    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true, connected: true }
 
     hostGameRef.current = {
       roomCode: code,
@@ -1553,25 +1664,39 @@ export default function UnoGame({
       },
       onClientJoin: (clientPeerId, clientPlayer, conn) => {
         const g = hostGameRef.current
+        if (!g) return
         const currentPlayers = g.players
 
         // 1. Check if this is an EXISTING player reconnecting
         const existingPlayer = currentPlayers.find(
-          (p) => !p.isHost && (p.name === clientPlayer.name || p.peerId === clientPeerId)
+          (p) =>
+            !p.isHost &&
+            (p.peerId === clientPeerId ||
+              (clientPlayer?.name && p.name.trim().toLowerCase() === clientPlayer.name.trim().toLowerCase()))
         )
 
         if (existingPlayer) {
+          if (existingPlayer.peerId && existingPlayer.peerId !== clientPeerId && hostNetworkRef.current) {
+            hostNetworkRef.current.removeConnection(existingPlayer.peerId)
+          }
           existingPlayer.peerId = clientPeerId
           existingPlayer.connected = true
+          if (clientPlayer?.avatar) {
+            existingPlayer.avatar = clientPlayer.avatar
+          }
 
           // Immediately send direct WELCOME message with their assigned player ID
-          conn.send({
-            type: 'WELCOME',
-            playerId: existingPlayer.id,
-            roomCode: code,
-            players: currentPlayers,
-            stackingEnabled: g.stackingEnabled !== false,
-          })
+          try {
+            conn.send({
+              type: 'WELCOME',
+              playerId: existingPlayer.id,
+              roomCode: code,
+              players: currentPlayers,
+              stackingEnabled: g.stackingEnabled !== false,
+            })
+          } catch (e) {
+            console.error('[Host] Failed to send WELCOME to existing player:', e)
+          }
 
           // If a match is active, immediately send them their current hand and game state!
           if (g.drawPile.length > 0 || g.topCard !== null) {
@@ -1583,34 +1708,41 @@ export default function UnoGame({
               cardCount: g.hands.get(p.id)?.length || 0,
             }))
 
-            conn.send({
-              type: 'SYNC_GAME_STATE',
-              yourPlayerId: existingPlayer.id,
-              hand: [...(g.hands.get(existingPlayer.id) || [])],
-              topCard: g.topCard,
-              activeColor: g.activeColor,
-              currentPlayerIndex: g.currentPlayerIndex,
-              direction: g.direction,
-              drawPileCount: g.drawPile.length,
-              players: sanitizedPlayers,
-              actionMessage: `${existingPlayer.name} reconnected to the game!`,
-              unoCalledPlayers: Array.from(g.unoCalledPlayers),
-              hasDrawnThisTurn: g.hasDrawnThisTurn,
-              winner: g.winner,
-              skippedInfo: g.skippedInfo || null,
-              pendingDrawCount: g.pendingDrawCount || 0,
-              pendingStackType: g.pendingStackType || null,
-              stackingEnabled: g.stackingEnabled !== false,
-            })
+            try {
+              conn.send({
+                type: 'SYNC_GAME_STATE',
+                yourPlayerId: existingPlayer.id,
+                hand: [...(g.hands.get(existingPlayer.id) || [])],
+                topCard: g.topCard,
+                activeColor: g.activeColor,
+                currentPlayerIndex: g.currentPlayerIndex,
+                direction: g.direction,
+                drawPileCount: g.drawPile.length,
+                players: sanitizedPlayers,
+                rankings: g.rankings || [],
+                actionMessage: `${existingPlayer.name} reconnected to the game!`,
+                unoCalledPlayers: Array.from(g.unoCalledPlayers),
+                hasDrawnThisTurn: g.hasDrawnThisTurn,
+                winner: g.winner,
+                skippedInfo: g.skippedInfo || null,
+                pendingDrawCount: g.pendingDrawCount || 0,
+                pendingStackType: g.pendingStackType || null,
+                stackingEnabled: g.stackingEnabled !== false,
+              })
+            } catch (e) {
+              console.error('[Host] Failed to send SYNC_GAME_STATE:', e)
+            }
             hostBroadcastGameState(`${existingPlayer.name} reconnected!`)
           } else {
             setTimeout(() => {
-              hostPeer.broadcast({
-                type: 'ROOM_UPDATE',
-                roomCode: code,
-                players: currentPlayers,
-                stackingEnabled: g.stackingEnabled !== false,
-              })
+              if (hostNetworkRef.current) {
+                hostNetworkRef.current.broadcast({
+                  type: 'ROOM_UPDATE',
+                  roomCode: code,
+                  players: currentPlayers,
+                  stackingEnabled: g.stackingEnabled !== false,
+                })
+              }
             }, 50)
           }
 
@@ -1618,13 +1750,25 @@ export default function UnoGame({
           return
         }
 
-        if (currentPlayers.length >= maxPlayers) return
+        // 2. New player joining
+        if (currentPlayers.length >= maxPlayers) {
+          try {
+            conn.send({
+              type: 'ROOM_ERROR',
+              error: `Room is full (maximum ${maxPlayers} players).`,
+            })
+          } catch (e) {
+            console.error('[Host] Failed to send ROOM_ERROR:', e)
+          }
+          return
+        }
 
+        const newId = currentPlayers.length
         const newPlayer = {
-          id: currentPlayers.length,
+          id: newId,
           peerId: clientPeerId,
-          name: clientPlayer.name || `Player ${currentPlayers.length + 1}`,
-          avatar: clientPlayer.avatar || '😎',
+          name: clientPlayer?.name || `Player ${newId + 1}`,
+          avatar: clientPlayer?.avatar || '😎',
           isHost: false,
           isYou: false,
           connected: true,
@@ -1632,52 +1776,33 @@ export default function UnoGame({
         const updatedPlayers = [...currentPlayers, newPlayer]
         g.players = updatedPlayers
 
-        // Immediately send direct WELCOME message with their assigned player ID
-        conn.send({
-          type: 'WELCOME',
-          playerId: newPlayer.id,
-          roomCode: code,
-          players: updatedPlayers,
-          stackingEnabled: g.stackingEnabled !== false,
-        })
-
-        // Broadcast room update to all players
-        setTimeout(() => {
-          hostPeer.broadcast({
-            type: 'ROOM_UPDATE',
+        try {
+          conn.send({
+            type: 'WELCOME',
+            playerId: newPlayer.id,
             roomCode: code,
             players: updatedPlayers,
             stackingEnabled: g.stackingEnabled !== false,
           })
+        } catch (e) {
+          console.error('[Host] Failed to send WELCOME to new player:', e)
+        }
+
+        setTimeout(() => {
+          if (hostNetworkRef.current) {
+            hostNetworkRef.current.broadcast({
+              type: 'ROOM_UPDATE',
+              roomCode: code,
+              players: updatedPlayers,
+              stackingEnabled: g.stackingEnabled !== false,
+            })
+          }
         }, 50)
 
         setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
       },
       onClientLeave: (clientPeerId) => {
-        const g = hostGameRef.current
-        const player = g.players.find((p) => p.peerId === clientPeerId)
-        if (!player) return
-
-        // If match is active, DO NOT delete player from the match!
-        // Keep seat and hand intact so they can reconnect without corrupting turn order
-        const isGameActive = g.drawPile.length > 0 || g.topCard !== null
-        if (isGameActive && !g.winner) {
-          player.peerId = null
-          player.connected = false
-          hostBroadcastGameState(`${player.name} temporarily disconnected. Waiting for reconnect...`)
-          return
-        }
-
-        // If in lobby, remove player normally
-        const updatedPlayers = g.players.filter((p) => p.peerId !== clientPeerId)
-        g.players = updatedPlayers
-        hostPeer.broadcast({
-          type: 'ROOM_UPDATE',
-          roomCode: code,
-          players: updatedPlayers,
-          stackingEnabled: g.stackingEnabled !== false,
-        })
-        setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
+        hostProcessClientLeave(clientPeerId)
       },
       onClientData: (clientPeerId, data) => {
         if (onClientDataRef.current) {
@@ -1698,6 +1823,15 @@ export default function UnoGame({
 
   // Client joins room
   const handleJoinRoom = ({ name, avatar, roomCode }) => {
+    if (clientNetworkRef.current) {
+      try {
+        clientNetworkRef.current.destroy()
+      } catch (e) {
+        console.error('[Client] Error destroying existing client peer:', e)
+      }
+      clientNetworkRef.current = null
+    }
+
     myProfileRef.current = { name, avatar, roomCode }
     setMpConnectionStatus('reconnecting')
     setMpRoomState((prev) => ({
@@ -1720,7 +1854,23 @@ export default function UnoGame({
         }))
       },
       onData: (data) => {
+        if (data.type === 'ROOM_ERROR') {
+          setMpConnectionStatus('disconnected')
+          setMpRoomState((prev) => ({
+            ...prev,
+            isConnecting: false,
+            error: data.error || 'Unable to join room.',
+          }))
+          return
+        }
         if (data.type === 'WELCOME') {
+          setUrlRoomCode(roomCode)
+          try {
+            sessionStorage.setItem('uno_active_room', roomCode)
+            sessionStorage.setItem('uno_last_room', roomCode)
+          } catch {
+            // ignore
+          }
           setMyPlayerId(data.playerId)
           myPlayerIdRef.current = data.playerId
           if (data.stackingEnabled !== undefined) {
@@ -1729,7 +1879,12 @@ export default function UnoGame({
           if (data.players) {
             setMpRoomState((prev) => ({
               ...prev,
-              stackingEnabled: data.stackingEnabled,
+              isInRoom: true,
+              isHost: false,
+              roomCode,
+              error: '',
+              isConnecting: false,
+              stackingEnabled: data.stackingEnabled !== undefined ? data.stackingEnabled : prev.stackingEnabled,
               players: data.players.map((p) => ({
                 ...p,
                 isYou: p.id === data.playerId,
@@ -1740,20 +1895,42 @@ export default function UnoGame({
           if (data.stackingEnabled !== undefined) {
             setMpStackingEnabled(data.stackingEnabled)
           }
+          const myPlayer = data.players.find(
+            (p) => (!p.isHost && p.name === name) || p.id === myPlayerIdRef.current
+          )
+          if (myPlayer) {
+            setMyPlayerId(myPlayer.id)
+            myPlayerIdRef.current = myPlayer.id
+          }
           setMpRoomState((prev) => ({
             ...prev,
             stackingEnabled: data.stackingEnabled !== undefined ? data.stackingEnabled : prev.stackingEnabled,
             players: data.players.map((p) => ({
               ...p,
-              isYou: p.id === myPlayerIdRef.current || (!p.isHost && p.name === name),
+              isYou: myPlayer ? p.id === myPlayer.id : p.id === myPlayerIdRef.current,
             })),
           }))
         } else if (data.type === 'SYNC_GAME_STATE') {
+          setUrlRoomCode(roomCode)
+          try {
+            sessionStorage.setItem('uno_active_room', roomCode)
+            sessionStorage.setItem('uno_last_room', roomCode)
+          } catch {
+            // ignore
+          }
           setMpConnectionStatus('connected')
           if (data.yourPlayerId !== undefined) {
             setMyPlayerId(data.yourPlayerId)
             myPlayerIdRef.current = data.yourPlayerId
           }
+          setMpRoomState((prev) => ({
+            ...prev,
+            isInRoom: true,
+            isHost: false,
+            roomCode,
+            error: '',
+            isConnecting: false,
+          }))
           setMyHand(data.hand || [])
           setMpPlayers(data.players || [])
           setMpTopCard(data.topCard)
@@ -1815,17 +1992,19 @@ export default function UnoGame({
         } else {
           setMpRoomState((prev) => ({
             ...prev,
-            error: 'Disconnected from host.',
+            isInRoom: false,
+            isConnecting: false,
+            error: 'Disconnected from host or room closed.',
           }))
           setScreen('mp_lobby')
         }
       },
-      onError: () => {
+      onError: (err) => {
         setMpConnectionStatus('disconnected')
         setMpRoomState((prev) => ({
           ...prev,
           isConnecting: false,
-          error: 'Could not connect to room. Check code and try again.',
+          error: err?.message || 'Could not connect to room. Check code and try again.',
         }))
       },
     })
@@ -1941,16 +2120,39 @@ export default function UnoGame({
     }
   }
 
+  const handleReconnectMp = useCallback(() => {
+    if (!myProfileRef.current || !myProfileRef.current.roomCode) return
+    setMpConnectionStatus('reconnecting')
+    if (clientNetworkRef.current) {
+      try {
+        clientNetworkRef.current.destroy()
+      } catch (e) {
+        console.error('[Client] Error destroying peer on reconnect:', e)
+      }
+      clientNetworkRef.current = null
+    }
+    handleJoinRoom(myProfileRef.current)
+  }, [])
+
   const handleSyncGameStateMp = useCallback(() => {
     if (mpRoomState.isHost) {
       hostBroadcastGameState('Host synchronized game state.')
     } else if (clientNetworkRef.current) {
-      clientNetworkRef.current.sendAction({
+      if (!clientNetworkRef.current.isConnected()) {
+        handleReconnectMp()
+        return
+      }
+      const sent = clientNetworkRef.current.sendAction({
         type: 'ACTION_REQUEST_SYNC',
         playerId: myPlayerIdRef.current,
       })
+      if (!sent) {
+        handleReconnectMp()
+      }
+    } else {
+      handleReconnectMp()
     }
-  }, [mpRoomState.isHost, hostBroadcastGameState])
+  }, [mpRoomState.isHost, hostBroadcastGameState, handleReconnectMp])
 
   const handleHostReturnAllToLobby = useCallback(() => {
     const g = hostGameRef.current
@@ -1981,6 +2183,37 @@ export default function UnoGame({
   }, [])
 
   const handleClientReturnToLobby = useCallback(() => {
+    if (clientNetworkRef.current) {
+      try {
+        clientNetworkRef.current.sendAction({
+          type: 'ACTION_LEAVE',
+          playerId: myPlayerIdRef.current,
+        })
+      } catch (e) {
+        console.error('[Client] Error sending ACTION_LEAVE on return to lobby:', e)
+      }
+      try {
+        clientNetworkRef.current.destroy()
+      } catch (e) {
+        console.error('[Client] Error destroying client network on return to lobby:', e)
+      }
+      clientNetworkRef.current = null
+    }
+    clearUrlRoomCode()
+    try {
+      sessionStorage.removeItem('uno_active_room')
+    } catch {
+      // ignore
+    }
+    setMpRoomState((prev) => ({
+      ...prev,
+      isInRoom: false,
+      isHost: false,
+      roomCode: '',
+      players: [],
+      isConnecting: false,
+      error: '',
+    }))
     setScreen('mp_lobby')
     setMpPendingDrawCount(0)
     setMpPendingStackType(null)
@@ -1989,11 +2222,39 @@ export default function UnoGame({
     setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
   }, [])
 
-  const handleLeaveMpRoom = () => {
-    if (hostNetworkRef.current) hostNetworkRef.current.destroy()
-    if (clientNetworkRef.current) clientNetworkRef.current.destroy()
-    hostNetworkRef.current = null
-    clientNetworkRef.current = null
+  const handleLeaveMpRoom = useCallback(() => {
+    if (clientNetworkRef.current) {
+      try {
+        clientNetworkRef.current.sendAction({
+          type: 'ACTION_LEAVE',
+          playerId: myPlayerIdRef.current,
+        })
+      } catch (e) {
+        console.error('[Client] Error sending ACTION_LEAVE on leave room:', e)
+      }
+      try {
+        clientNetworkRef.current.destroy()
+      } catch (e) {
+        console.error('[Client] Error destroying client network on leave room:', e)
+      }
+      clientNetworkRef.current = null
+    }
+    if (hostNetworkRef.current) {
+      try {
+        hostNetworkRef.current.destroy()
+      } catch (e) {
+        console.error('[Host] Error destroying host peer on leave room:', e)
+      }
+      hostNetworkRef.current = null
+    }
+
+    clearUrlRoomCode()
+    try {
+      sessionStorage.removeItem('uno_active_room')
+    } catch {
+      // ignore
+    }
+
     setMpRoomState({
       isInRoom: false,
       isHost: false,
@@ -2003,16 +2264,12 @@ export default function UnoGame({
       isConnecting: false,
       error: '',
     })
-    setScreen('mode_select')
-  }
-
-  const handleReconnectMp = useCallback(() => {
-    if (!myProfileRef.current || !myProfileRef.current.roomCode) return
-    setMpConnectionStatus('reconnecting')
-    if (clientNetworkRef.current) {
-      clientNetworkRef.current.destroy()
-    }
-    handleJoinRoom(myProfileRef.current)
+    setMpPendingDrawCount(0)
+    setMpPendingStackType(null)
+    setMpRankings([])
+    hasShownMyCelebrationRef.current = false
+    setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
+    setScreen('mp_lobby')
   }, [])
 
   // Handle color picker selection
