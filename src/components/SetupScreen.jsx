@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
-import { Plus, Minus, ArrowRight } from 'lucide-react'
+import { Plus, Minus, ArrowRight, ArrowLeft } from 'lucide-react'
 import { CATEGORIES } from '../data/words'
 import { playClickSound } from '../utils/sound'
 
-export default function SetupScreen({ onStartGame }) {
+export default function SetupScreen({ onStartGame, onBackToMenu }) {
   const [playerCount, setPlayerCount] = useState(4)
   const [imposterCount, setImposterCount] = useState(1)
   const [selectedCategory, setSelectedCategory] = useState('any')
@@ -58,7 +58,20 @@ export default function SetupScreen({ onStartGame }) {
   return (
     <div className="w-full max-w-sm mx-auto px-5 py-4 flex flex-col justify-between min-h-[80vh] select-none animate-fadeIn">
       {/* Top Header */}
-      <div className="pt-2 pb-6 text-center">
+      <div className="pt-2 pb-6 text-center relative">
+        {onBackToMenu && (
+          <button
+            type="button"
+            onClick={() => {
+              playClickSound()
+              onBackToMenu()
+            }}
+            className="absolute left-0 top-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Games</span>
+          </button>
+        )}
         <h1 className="text-3xl font-extrabold tracking-tight text-white">
           New Game
         </h1>

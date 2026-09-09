@@ -8,6 +8,7 @@ export default function RevealScreen({
   gameData,
   onPlayAgain,
   onNewSetup,
+  onBackToMenu,
 }) {
   const imposters = players.filter((p) => p.isImposter)
 
@@ -88,10 +89,22 @@ export default function RevealScreen({
             playClickSound()
             onNewSetup()
           }}
-          className="w-full py-3 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition flex items-center justify-center gap-1.5"
+          className="w-full py-3 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5" /> New Setup
         </button>
+
+        {onBackToMenu && (
+          <button
+            onClick={() => {
+              playClickSound()
+              onBackToMenu()
+            }}
+            className="w-full py-2 rounded-xl text-xs font-medium text-zinc-500 hover:text-zinc-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            ← Back to Game Menu
+          </button>
+        )}
       </div>
     </div>
   )
