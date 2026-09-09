@@ -1544,6 +1544,7 @@ export default function UnoGame({
           type: 'ROOM_UPDATE',
           roomCode: g.roomCode,
           players: reIndexed,
+          maxPlayers: g.maxPlayers || 4,
           stackingEnabled: g.stackingEnabled !== false,
         })
       }
@@ -1620,6 +1621,7 @@ export default function UnoGame({
     hostGameRef.current = {
       roomCode: code,
       players: [hostPlayer],
+      maxPlayers,
       drawPile: [],
       discardPile: [],
       hands: new Map(),
@@ -1666,6 +1668,7 @@ export default function UnoGame({
         const g = hostGameRef.current
         if (!g) return
         const currentPlayers = g.players
+        const roomCapacity = g.maxPlayers || maxPlayers || 4
 
         // 1. Check if this is an EXISTING player reconnecting
         const existingPlayer = currentPlayers.find(
@@ -1692,6 +1695,7 @@ export default function UnoGame({
               playerId: existingPlayer.id,
               roomCode: code,
               players: currentPlayers,
+              maxPlayers: roomCapacity,
               stackingEnabled: g.stackingEnabled !== false,
             })
           } catch (e) {
@@ -1740,6 +1744,7 @@ export default function UnoGame({
                   type: 'ROOM_UPDATE',
                   roomCode: code,
                   players: currentPlayers,
+                  maxPlayers: roomCapacity,
                   stackingEnabled: g.stackingEnabled !== false,
                 })
               }
@@ -1751,11 +1756,11 @@ export default function UnoGame({
         }
 
         // 2. New player joining
-        if (currentPlayers.length >= maxPlayers) {
+        if (currentPlayers.length >= roomCapacity) {
           try {
             conn.send({
               type: 'ROOM_ERROR',
-              error: `Room is full (maximum ${maxPlayers} players).`,
+              error: `Room is full (maximum ${roomCapacity} players).`,
             })
           } catch (e) {
             console.error('[Host] Failed to send ROOM_ERROR:', e)
@@ -1782,6 +1787,7 @@ export default function UnoGame({
             playerId: newPlayer.id,
             roomCode: code,
             players: updatedPlayers,
+            maxPlayers: roomCapacity,
             stackingEnabled: g.stackingEnabled !== false,
           })
         } catch (e) {
@@ -1794,6 +1800,7 @@ export default function UnoGame({
               type: 'ROOM_UPDATE',
               roomCode: code,
               players: updatedPlayers,
+              maxPlayers: roomCapacity,
               stackingEnabled: g.stackingEnabled !== false,
             })
           }
@@ -1884,6 +1891,7 @@ export default function UnoGame({
               roomCode,
               error: '',
               isConnecting: false,
+              maxPlayers: data.maxPlayers || prev.maxPlayers,
               stackingEnabled: data.stackingEnabled !== undefined ? data.stackingEnabled : prev.stackingEnabled,
               players: data.players.map((p) => ({
                 ...p,
@@ -1904,6 +1912,7 @@ export default function UnoGame({
           }
           setMpRoomState((prev) => ({
             ...prev,
+            maxPlayers: data.maxPlayers !== undefined ? data.maxPlayers : prev.maxPlayers,
             stackingEnabled: data.stackingEnabled !== undefined ? data.stackingEnabled : prev.stackingEnabled,
             players: data.players.map((p) => ({
               ...p,
@@ -2015,7 +2024,8 @@ export default function UnoGame({
   // Host starts the match (Host ALWAYS has the first move: currentPlayerIndex = 0)
   const handleHostStartGame = () => {
     const g = hostGameRef.current
-    const freshDeck = createUnoDeck()
+    const deckCount = g.players.length >= 6 ? 2 : 1
+    const freshDeck = createUnoDeck(deckCount)
     const { hands, drawPile, discardPile, initialColor } = dealHands(
       freshDeck,
       g.players.length

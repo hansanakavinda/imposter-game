@@ -11,74 +11,78 @@ function createCardId(prefix = 'card') {
 }
 
 /**
- * Create a full standard 108-card Uno deck
+ * Create a full standard Uno deck (108 cards per deckCount)
+ * For larger parties (6+ players), deckCount = 2 (216 cards) is standard.
  */
-export function createUnoDeck() {
+export function createUnoDeck(deckCount = 1) {
   const deck = []
+  const count = Math.max(1, Math.floor(deckCount))
 
-  PLAYABLE_COLORS.forEach((color) => {
-    // 1x '0' card per color
-    deck.push({
-      id: createCardId(color),
-      color,
-      type: CARD_TYPES.NUMBER,
-      value: 0,
-      label: '0',
+  for (let d = 0; d < count; d++) {
+    PLAYABLE_COLORS.forEach((color) => {
+      // 1x '0' card per color
+      deck.push({
+        id: createCardId(color),
+        color,
+        type: CARD_TYPES.NUMBER,
+        value: 0,
+        label: '0',
+      })
+
+      // 2x '1' through '9' cards per color
+      for (let val = 1; val <= 9; val++) {
+        for (let copy = 0; copy < 2; copy++) {
+          deck.push({
+            id: createCardId(color),
+            color,
+            type: CARD_TYPES.NUMBER,
+            value: val,
+            label: String(val),
+          })
+        }
+      }
+
+      // 2x Action cards per color
+      const actionCards = [
+        { type: CARD_TYPES.SKIP, label: '⊘' },
+        { type: CARD_TYPES.REVERSE, label: '⇄' },
+        { type: CARD_TYPES.DRAW_TWO, label: '+2' },
+      ]
+
+      actionCards.forEach((action) => {
+        for (let copy = 0; copy < 2; copy++) {
+          deck.push({
+            id: createCardId(color),
+            color,
+            type: action.type,
+            value: null,
+            label: action.label,
+          })
+        }
+      })
     })
 
-    // 2x '1' through '9' cards per color
-    for (let val = 1; val <= 9; val++) {
-      for (let copy = 0; copy < 2; copy++) {
-        deck.push({
-          id: createCardId(color),
-          color,
-          type: CARD_TYPES.NUMBER,
-          value: val,
-          label: String(val),
-        })
-      }
+    // 4x Wild cards
+    for (let i = 0; i < 4; i++) {
+      deck.push({
+        id: createCardId('wild'),
+        color: CARD_COLORS.WILD,
+        type: CARD_TYPES.WILD,
+        value: null,
+        label: '★',
+      })
     }
 
-    // 2x Action cards per color
-    const actionCards = [
-      { type: CARD_TYPES.SKIP, label: '⊘' },
-      { type: CARD_TYPES.REVERSE, label: '⇄' },
-      { type: CARD_TYPES.DRAW_TWO, label: '+2' },
-    ]
-
-    actionCards.forEach((action) => {
-      for (let copy = 0; copy < 2; copy++) {
-        deck.push({
-          id: createCardId(color),
-          color,
-          type: action.type,
-          value: null,
-          label: action.label,
-        })
-      }
-    })
-  })
-
-  // 4x Wild cards
-  for (let i = 0; i < 4; i++) {
-    deck.push({
-      id: createCardId('wild'),
-      color: CARD_COLORS.WILD,
-      type: CARD_TYPES.WILD,
-      value: null,
-      label: '★',
-    })
-  }
-
-  // 4x Wild Draw Four cards
-  for (let i = 0; i < 4; i++) {
-    deck.push({
-      id: createCardId('wild4'),
-      color: CARD_COLORS.WILD,
-      type: CARD_TYPES.WILD_DRAW_FOUR,
-      value: null,
-      label: '+4',
-    })
+    // 4x Wild Draw Four cards
+    for (let i = 0; i < 4; i++) {
+      deck.push({
+        id: createCardId('wild4'),
+        color: CARD_COLORS.WILD,
+        type: CARD_TYPES.WILD_DRAW_FOUR,
+        value: null,
+        label: '+4',
+      })
+    }
   }
 
   return shuffleDeck(deck)

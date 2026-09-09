@@ -13,7 +13,10 @@ import {
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
 
-const AVATARS = ['😎', '🦊', '🐼', '🐯', '🚀', '⚡', '🌟', '🦄']
+const AVATARS = [
+  '😎', '🦊', '🐼', '🐯', '🚀', '⚡', '🌟', '🦄',
+  '👑', '🔥', '👾', '🐱', '🐶', '🍕', '🦁', '⭐'
+]
 
 export default function UnoMultiplayerLobby({
   initialRoomCode = '',
@@ -25,6 +28,7 @@ export default function UnoMultiplayerLobby({
   onBackToModeSelect,
   roomState, // { isInRoom, isHost, roomCode, players, maxPlayers, isConnecting, error }
 }) {
+  const [maxPlayers, setMaxPlayers] = useState(4)
   const [playerName, setPlayerName] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('uno_player_name') || 'Player 1'
@@ -82,7 +86,7 @@ export default function UnoMultiplayerLobby({
     onCreateRoom({
       name,
       avatar: selectedAvatar,
-      maxPlayers: 4,
+      maxPlayers,
       enableStacking,
     })
   }
@@ -198,7 +202,7 @@ export default function UnoMultiplayerLobby({
         </div>
 
         {/* Joined Players List */}
-        <div className="space-y-3 my-4">
+        <div className="space-y-3 my-3">
           <div className="flex items-center justify-between px-1 text-xs font-semibold text-zinc-400">
             <div className="flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-red-400" />
@@ -211,7 +215,7 @@ export default function UnoMultiplayerLobby({
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-56 sm:max-h-64 overflow-y-auto pr-1 scrollbar-thin">
             {players.map((p, idx) => (
               <div
                 key={p.id || idx}
@@ -245,16 +249,27 @@ export default function UnoMultiplayerLobby({
             ))}
 
             {/* Empty slots placeholders */}
-            {Array.from({ length: Math.max(0, (roomState.maxPlayers || 4) - players.length) }).map(
-              (_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="border border-dashed border-zinc-800/80 rounded-2xl p-3 flex items-center justify-center text-xs text-zinc-400"
-                >
-                  <span>Waiting for friend to join...</span>
+            {(() => {
+              const maxCap = roomState.maxPlayers || 4
+              const emptySlots = Math.max(0, maxCap - players.length)
+              if (emptySlots === 0) return null
+              if (emptySlots <= 3) {
+                return Array.from({ length: emptySlots }).map((_, i) => (
+                  <div
+                    key={`empty-${i}`}
+                    className="border border-dashed border-zinc-800/80 rounded-2xl p-2.5 flex items-center justify-center text-xs text-zinc-500"
+                  >
+                    <span>Waiting for friend to join...</span>
+                  </div>
+                ))
+              }
+              return (
+                <div className="border border-dashed border-zinc-800/80 rounded-2xl p-3 flex items-center justify-center gap-2 text-xs text-zinc-400">
+                  <Users className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Waiting for up to {emptySlots} more players to join...</span>
                 </div>
               )
-            )}
+            })()}
           </div>
         </div>
 
@@ -430,6 +445,50 @@ export default function UnoMultiplayerLobby({
 
           {tab === 'create' && (
             <>
+              {/* Player Capacity Selector */}
+              <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-white">Max Players</span>
+                  </div>
+                  <span className="text-xs font-black text-amber-400 font-mono px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30">
+                    {maxPlayers} Players
+                  </span>
+                </div>
+
+                {/* Number of players pills (2 to 10) */}
+                <div className="grid grid-cols-5 sm:grid-cols-9 gap-1 sm:gap-1.5 pt-0.5">
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => {
+                        playClickSound()
+                        setMaxPlayers(num)
+                      }}
+                      className={`py-2 text-xs font-black rounded-xl transition cursor-pointer ${
+                        maxPlayers === num
+                          ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/25 scale-105'
+                          : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="text-[10px] text-zinc-400 flex items-center justify-between pt-0.5">
+                  <span>Standard Party: 2 to 10</span>
+                  {maxPlayers >= 6 && (
+                    <span className="text-amber-400 font-semibold flex items-center gap-1">
+                      <span>🃏</span>
+                      <span>216-Card Double Deck</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
               {/* House Rules: Card Stacking Toggle */}
               <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">

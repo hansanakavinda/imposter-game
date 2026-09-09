@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react'
+import React, { useRef, useState, useMemo, useEffect } from 'react'
 import {
   RotateCw,
   RotateCcw,
@@ -147,6 +147,19 @@ export default function UnoBoard({
   }, [handCards, handSortMode])
 
   const handTrayRef = useRef(null)
+  const turnTrackRef = useRef(null)
+  const activeNodeRef = useRef(null)
+
+  // Auto-scroll the turn track when currentPlayerIndex changes so active player is visible
+  useEffect(() => {
+    if (activeNodeRef.current) {
+      activeNodeRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      })
+    }
+  }, [currentPlayerIndex])
 
   const handleTrayWheel = (e) => {
     if (e.deltaY !== 0 && handTrayRef.current) {
@@ -290,8 +303,8 @@ export default function UnoBoard({
         </div>
 
         {/* Players Turn Flow Row with Direction Arrows */}
-        <div className="w-full overflow-x-auto scrollbar-none py-1 px-0.5">
-          <div className="flex items-center justify-center gap-1 sm:gap-2 min-w-max mx-auto">
+        <div ref={turnTrackRef} className="w-full overflow-x-auto scrollbar-none py-1 px-0.5">
+          <div className="flex items-center justify-center gap-1 sm:gap-1.5 min-w-max mx-auto">
             {players.map((p, idx) => {
               const pRank =
                 p.rank || rankings.find((r) => r.playerId === p.id)?.rank || null
@@ -318,7 +331,8 @@ export default function UnoBoard({
                 <React.Fragment key={p.id}>
                   {/* Player Card Node */}
                   <div
-                    className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[72px] sm:min-w-[84px] ${
+                    ref={isActive ? activeNodeRef : null}
+                    className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[68px] sm:min-w-[80px] ${
                       isPlayerFinished
                         ? 'bg-zinc-900/40 border border-amber-500/30 opacity-75'
                         : isSkipped
