@@ -5,7 +5,6 @@ import PassCardScreen from './components/PassCardScreen'
 import DiscussionScreen from './components/DiscussionScreen'
 import RevealScreen from './components/RevealScreen'
 import RulesModal from './components/RulesModal'
-import NetworkModal from './components/NetworkModal'
 import { getRandomWordPair } from './data/words'
 import { assignPlayerThemes, shuffleArray } from './data/cardThemes'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
@@ -15,7 +14,6 @@ export default function App() {
   // Navigation & Modal State
   const [currentScreen, setCurrentScreen] = useState('setup') // 'setup' | 'pass' | 'discussion' | 'reveal'
   const [isRulesOpen, setIsRulesOpen] = useState(false)
-  const [isNetworkOpen, setIsNetworkOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled())
 
   // Game Configuration State
@@ -38,7 +36,6 @@ export default function App() {
   })
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0)
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0)
-  const [selectedSuspectId, setSelectedSuspectId] = useState(null)
 
   const handleToggleSound = () => {
     const nextVal = !soundOn
@@ -56,7 +53,7 @@ export default function App() {
     const count = config.playerCount
     const impCount = config.imposterCount
 
-    // 1. Pick Secret Word & Imposter Hint
+    // 1. Pick Secret Word & Single-Word Hint
     let roundWordData
     if (config.category === 'custom' && config.customWord) {
       roundWordData = config.customWord
@@ -77,7 +74,6 @@ export default function App() {
       id: i,
       name: config.playerNames[i] || `Player ${i + 1}`,
       isImposter: imposterIndices.has(i),
-      // Crucial: The card theme is assigned randomly from the same vibrant pool
       theme: assignedThemes[i],
     }))
 
@@ -88,51 +84,42 @@ export default function App() {
     setPlayers(assembledPlayers)
     setCurrentPlayerIndex(0)
     setStartingPlayerIndex(firstSpeaker)
-    setSelectedSuspectId(null)
     setCurrentScreen('pass')
   }
 
-  // Next player in pass-and-play sequence
   const handleNextPlayer = () => {
     setCurrentPlayerIndex((prev) => prev + 1)
   }
 
-  // Finished passing around phone
   const handleFinishPass = () => {
     setCurrentScreen('discussion')
   }
 
-  // Trigger reveal from discussion
-  const handleRevealImposters = (suspectId) => {
-    setSelectedSuspectId(suspectId)
+  const handleRevealImposters = () => {
     setCurrentScreen('reveal')
   }
 
-  // Play again with same players & config
   const handlePlayAgain = () => {
     initializeRound(gameConfig)
   }
 
-  // Return to setup
   const handleResetToSetup = () => {
     setCurrentScreen('setup')
     setCurrentPlayerIndex(0)
-    setSelectedSuspectId(null)
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-rose-500 selection:text-white">
-      {/* Top Navigation */}
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col justify-between selection:bg-zinc-700 selection:text-white">
+      {/* Minimal Top Header */}
       <Navbar
         soundOn={soundOn}
         onToggleSound={handleToggleSound}
         onOpenRules={() => setIsRulesOpen(true)}
-        onOpenNetwork={() => setIsNetworkOpen(true)}
         onResetGame={handleResetToSetup}
         inGame={currentScreen !== 'setup'}
       />
 
-      {/* Main Content View */}
+      {/* Main Content Area */}
       <main className="flex-1 flex flex-col justify-center py-2">
         {currentScreen === 'setup' && (
           <SetupScreen onStartGame={handleStartGame} />
@@ -162,21 +149,13 @@ export default function App() {
           <RevealScreen
             players={players}
             gameData={gameData}
-            selectedSuspectId={selectedSuspectId}
             onPlayAgain={handlePlayAgain}
             onNewSetup={handleResetToSetup}
           />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="w-full text-center py-3 text-[11px] text-slate-500 select-none">
-        Find The Imposter • Party Game for Friends
-      </footer>
-
-      {/* Modals */}
       <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
-      <NetworkModal isOpen={isNetworkOpen} onClose={() => setIsNetworkOpen(false)} />
     </div>
   )
 }
