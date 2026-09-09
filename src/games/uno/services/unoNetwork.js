@@ -4,6 +4,37 @@ import { Peer } from 'peerjs'
 const PEER_PREFIX = 'party-arcade-uno-v1-'
 
 /**
+ * WebRTC ICE servers configuration.
+ * Includes Google STUN servers and OpenRelay public TURN servers
+ * to enable NAT traversal across mobile data, cellular hotspots, and firewalls.
+ */
+export const ICE_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+  ],
+  iceCandidatePoolSize: 10,
+}
+
+/**
  * Format a human-readable room code into a global Peer ID
  */
 export function formatPeerId(roomCode) {
@@ -36,6 +67,7 @@ export function initHostPeer({
   const peerId = formatPeerId(roomCode)
   const peer = new Peer(peerId, {
     debug: 1,
+    config: ICE_CONFIG,
   })
 
   const connections = new Map() // clientPeerId -> DataConnection
@@ -141,9 +173,11 @@ export function initClientPeer({
 }) {
   const peer = new Peer({
     debug: 1,
+    config: ICE_CONFIG,
   })
 
   let hostConn = null
+  let connectTimeout = null
 
   peer.on('open', () => {
     const hostPeerId = formatPeerId(roomCode)
@@ -151,7 +185,25 @@ export function initClientPeer({
       reliable: true,
     })
 
+    // Timeout if WebRTC ICE negotiation does not open within 12 seconds
+    connectTimeout = setTimeout(() => {
+      if (!hostConn || !hostConn.open) {
+        console.warn('[Client] Connection timeout to host room:', roomCode)
+        if (onError) {
+          onError(
+            new Error(
+              'Could not connect to the room. Make sure the room code is correct and the host has the screen open and awake.'
+            )
+          )
+        }
+      }
+    }, 12000)
+
     const handleOpen = () => {
+      if (connectTimeout) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       try {
         hostConn.send({
           type: 'JOIN',
@@ -171,16 +223,28 @@ export function initClientPeer({
     })
 
     hostConn.on('close', () => {
+      if (connectTimeout) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       if (onDisconnected) onDisconnected()
     })
 
     hostConn.on('error', (err) => {
+      if (connectTimeout) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       console.error('[Client] hostConn error:', err)
       if (onError) onError(err)
     })
   })
 
   peer.on('error', (err) => {
+    if (connectTimeout) {
+      clearTimeout(connectTimeout)
+      connectTimeout = null
+    }
     console.error('[Client] Peer error:', err)
     if (onError) onError(err)
   })
@@ -202,6 +266,10 @@ export function initClientPeer({
       }
     },
     destroy: () => {
+      if (connectTimeout) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       if (hostConn) {
         try {
           hostConn.close()
