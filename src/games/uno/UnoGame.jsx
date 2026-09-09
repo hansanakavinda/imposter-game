@@ -48,6 +48,7 @@ export default function UnoGame({
   const [aiUnoCalledPlayers, setAiUnoCalledPlayers] = useState(new Set())
   const [aiHasCalledUnoThisRound, setAiHasCalledUnoThisRound] = useState(false)
   const [aiWinner, setAiWinner] = useState(null)
+  const [aiSkippedInfo, setAiSkippedInfo] = useState(null)
 
   const botTimeoutRef = useRef(null)
 
@@ -80,6 +81,7 @@ export default function UnoGame({
   const [mpUnoCalledPlayers, setMpUnoCalledPlayers] = useState(new Set())
   const [mpHasCalledUnoThisRound, setMpHasCalledUnoThisRound] = useState(false)
   const [mpWinner, setMpWinner] = useState(null)
+  const [mpSkippedInfo, setMpSkippedInfo] = useState(null)
 
   // Authoritative host master state (immune to React stale closures)
   const hostGameRef = useRef({
@@ -96,6 +98,7 @@ export default function UnoGame({
     hasDrawnThisTurn: false,
     winner: null,
     actionMessage: '',
+    skippedInfo: null,
   })
 
   // Network peer instances and dynamic callbacks ref
@@ -244,11 +247,21 @@ export default function UnoGame({
       let step = 1
       let newDirection = aiDirection
       let message = `${player.name} played ${card.color !== CARD_COLORS.WILD ? card.color : ''} ${card.label}`
+      let currentSkippedInfo = null
 
       if (card.type === CARD_TYPES.REVERSE) {
         if (aiPlayers.length === 2) {
           step = 2
-          message = `${player.name} played Reverse! Next turn skipped.`
+          const skippedIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const targetPlayer = aiPlayers[skippedIdx]
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'reverse',
+            cardsDrawn: 0,
+          }
+          message = `${player.name} played Reverse! ${targetPlayer.name} was skipped.`
         } else {
           newDirection = aiDirection * -1
           setAiDirection(newDirection)
@@ -259,7 +272,15 @@ export default function UnoGame({
       if (card.type === CARD_TYPES.SKIP) {
         step = 2
         const skippedIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
-        message = `${player.name} skipped ${aiPlayers[skippedIdx].name}!`
+        const targetPlayer = aiPlayers[skippedIdx]
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'skip',
+          cardsDrawn: 0,
+        }
+        message = `${player.name} skipped ${targetPlayer.name}!`
       }
 
       let currentDraw = [...aiDrawPile]
@@ -271,6 +292,7 @@ export default function UnoGame({
       if (card.type === CARD_TYPES.DRAW_TWO) {
         step = 2
         const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+        const targetPlayer = aiPlayers[targetIdx]
         const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
           2,
           currentDraw,
@@ -281,12 +303,20 @@ export default function UnoGame({
         updatedPlayers = updatedPlayers.map((p, idx) =>
           idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
         )
-        message = `${player.name} played +2! ${aiPlayers[targetIdx].name} drew 2 cards and skipped turn!`
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'draw2',
+          cardsDrawn: 2,
+        }
+        message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
         step = 2
         const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+        const targetPlayer = aiPlayers[targetIdx]
         const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
           4,
           currentDraw,
@@ -297,7 +327,14 @@ export default function UnoGame({
         updatedPlayers = updatedPlayers.map((p, idx) =>
           idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
         )
-        message = `${player.name} played Wild +4! Color is now ${effectiveColor}. ${aiPlayers[targetIdx].name} drew 4 cards!`
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'wild4',
+          cardsDrawn: 4,
+        }
+        message = `${player.name} played Wild +4! Color is now ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD) {
@@ -320,6 +357,7 @@ export default function UnoGame({
       setAiHasDrawnCardThisTurn(false)
       setAiHasCalledUnoThisRound(false)
       setAiActionMessage(message)
+      setAiSkippedInfo(currentSkippedInfo)
     },
     [
       aiPlayers,
@@ -369,6 +407,7 @@ export default function UnoGame({
     setAiCurrentPlayerIndex(nextPlayerIdx)
     setAiHasDrawnCardThisTurn(false)
     setAiHasCalledUnoThisRound(false)
+    setAiSkippedInfo(null)
     setAiActionMessage(`${aiPlayers[aiCurrentPlayerIndex].name} passed turn.`)
   }
 
@@ -442,12 +481,14 @@ export default function UnoGame({
             const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
             setAiCurrentPlayerIndex(nextIdx)
             setAiHasDrawnCardThisTurn(false)
+            setAiSkippedInfo(null)
             setAiActionMessage(`${activePlayer.name} drew a card and passed.`)
           }
         } else {
           const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
           setAiCurrentPlayerIndex(nextIdx)
           setAiHasDrawnCardThisTurn(false)
+          setAiSkippedInfo(null)
         }
       }
     }, 1100)
@@ -499,6 +540,7 @@ export default function UnoGame({
     setMpActionMessage(message)
     setMpUnoCalledPlayers(new Set(g.unoCalledPlayers))
     setMpHasDrawnCardThisTurn(g.hasDrawnThisTurn)
+    setMpSkippedInfo(g.skippedInfo || null)
     setMyHand([...(g.hands.get(0) || [])])
 
     if (g.winner) {
@@ -524,6 +566,7 @@ export default function UnoGame({
             unoCalledPlayers: Array.from(g.unoCalledPlayers),
             hasDrawnThisTurn: g.hasDrawnThisTurn,
             winner: g.winner,
+            skippedInfo: g.skippedInfo || null,
           })
         }
       })
@@ -605,11 +648,21 @@ export default function UnoGame({
       // Action card effects
       let step = 1
       let message = `${player.name} played ${card.color !== CARD_COLORS.WILD ? card.color : ''} ${card.label}`
+      let currentSkippedInfo = null
 
       if (card.type === CARD_TYPES.REVERSE) {
         if (g.players.length === 2) {
           step = 2
-          message = `${player.name} played Reverse! Next turn skipped.`
+          const skippedIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const targetPlayer = g.players[skippedIdx]
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'reverse',
+            cardsDrawn: 0,
+          }
+          message = `${player.name} played Reverse! ${targetPlayer.name} was skipped.`
         } else {
           g.direction = g.direction * -1
           message = `${player.name} reversed direction!`
@@ -619,7 +672,15 @@ export default function UnoGame({
       if (card.type === CARD_TYPES.SKIP) {
         step = 2
         const skippedIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
-        message = `${player.name} skipped ${g.players[skippedIdx]?.name}!`
+        const targetPlayer = g.players[skippedIdx]
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'skip',
+          cardsDrawn: 0,
+        }
+        message = `${player.name} skipped ${targetPlayer?.name}!`
       }
 
       if (card.type === CARD_TYPES.DRAW_TWO) {
@@ -635,7 +696,14 @@ export default function UnoGame({
         g.discardPile = newDiscardPile
         const targetHand = g.hands.get(targetPlayer.id) || []
         g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
-        message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and skipped turn!`
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'draw2',
+          cardsDrawn: 2,
+        }
+        message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
@@ -651,7 +719,14 @@ export default function UnoGame({
         g.discardPile = newDiscardPile
         const targetHand = g.hands.get(targetPlayer.id) || []
         g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
-        message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards!`
+        currentSkippedInfo = {
+          playerId: targetPlayer.id,
+          playerName: targetPlayer.name,
+          playedByName: player.name,
+          cardType: 'wild4',
+          cardsDrawn: 4,
+        }
+        message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD) {
@@ -661,6 +736,7 @@ export default function UnoGame({
       const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, step, g.players, g.direction)
       g.currentPlayerIndex = nextIdx
       g.actionMessage = message
+      g.skippedInfo = currentSkippedInfo
 
       hostBroadcastGameState()
     },
@@ -689,6 +765,7 @@ export default function UnoGame({
       const currentHand = g.hands.get(playerId) || []
       g.hands.set(playerId, [...currentHand, drawnCards[0]])
       g.hasDrawnThisTurn = true
+      g.skippedInfo = null
       g.actionMessage = `${player.name} drew a card.`
 
       hostBroadcastGameState()
@@ -706,6 +783,7 @@ export default function UnoGame({
       const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
       g.currentPlayerIndex = nextIdx
       g.hasDrawnThisTurn = false
+      g.skippedInfo = null
       g.actionMessage = `${player?.name || 'Player'} passed turn.`
 
       hostBroadcastGameState()
@@ -919,6 +997,7 @@ export default function UnoGame({
           setMpUnoCalledPlayers(new Set(data.unoCalledPlayers || []))
           setMpHasDrawnCardThisTurn(data.hasDrawnThisTurn || false)
           setMpHasCalledUnoThisRound(false)
+          setMpSkippedInfo(data.skippedInfo || null)
 
           if (data.winner) {
             setMpWinner(data.winner)
@@ -1126,6 +1205,7 @@ export default function UnoGame({
           onCallUno={handleCallUnoAi}
           hasCalledUnoThisRound={aiHasCalledUnoThisRound}
           myPlayerId={0}
+          skippedInfo={aiSkippedInfo}
         />
       )}
 
@@ -1173,6 +1253,7 @@ export default function UnoGame({
           hasCalledUnoThisRound={mpHasCalledUnoThisRound}
           myPlayerId={myPlayerId}
           myHand={myHand}
+          skippedInfo={mpSkippedInfo}
         />
       )}
 

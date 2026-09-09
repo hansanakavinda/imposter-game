@@ -1,5 +1,5 @@
 import React, { useRef } from 'react'
-import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react'
+import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import UnoCard from './UnoCard'
 import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
 import { canPlayCard } from '../utils/deck'
@@ -24,13 +24,20 @@ export default function UnoBoard({
   hasCalledUnoThisRound,
   myPlayerId = 0,
   myHand = null,
+  skippedInfo = null,
 }) {
   const myPlayer = players.find((p) => p.id === myPlayerId) || players[0]
   const handCards = myHand || myPlayer?.hand || []
-  const opponentPlayers = players.filter((p) => p.id !== myPlayer?.id)
   const activePlayer = players[currentPlayerIndex]
+  const nextPlayerIndex =
+    players.length > 0
+      ? (currentPlayerIndex + direction * 1 + players.length * 100) % players.length
+      : 0
+  const nextPlayer = players[nextPlayerIndex]
+
   const isCurrentTurnForMe =
     isHumanTurn !== undefined ? isHumanTurn : activePlayer?.id === myPlayer?.id
+  const isMyTurnSkipped = skippedInfo?.playerId === myPlayer?.id
 
   const activeColorConfig =
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
@@ -58,66 +65,212 @@ export default function UnoBoard({
 
   return (
     <div className="w-full max-w-2xl mx-auto px-3 py-2 flex flex-col justify-between min-h-[88vh] select-none">
-      {/* 1. Top Section: Opponents (Bots or Friends) */}
+      {/* 1. Top Section: Turn Order Track & Direction Flow */}
       <div className="w-full pt-1 pb-2">
-        <div className="flex items-center justify-around gap-2 max-w-lg mx-auto">
-          {opponentPlayers.map((opponent) => {
-            const isOpponentActive = activePlayer?.id === opponent.id
-            const cardCount =
-              opponent.cardCount !== undefined
-                ? opponent.cardCount
-                : opponent.hand
-                ? opponent.hand.length
-                : 0
-            const hasUno = cardCount === 1
-            const calledUno = unoCalledPlayers.has(opponent.id)
+        {/* Turn Order Header Bar */}
+        <div className="flex items-center justify-between px-1 mb-1.5 max-w-lg mx-auto text-xs">
+          <div className="flex items-center gap-1.5 font-bold text-zinc-400">
+            <span className="uppercase tracking-wider text-[10px]">Turn Order</span>
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                direction === 1
+                  ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                  : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+              }`}
+            >
+              {direction === 1 ? (
+                <>
+                  <RotateCw className="w-2.5 h-2.5 animate-spin-slow" /> Clockwise
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-2.5 h-2.5 animate-spin-slow" /> Counter-Clockwise
+                </>
+              )}
+            </span>
+          </div>
 
-            return (
-              <div
-                key={opponent.id}
-                className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 ${
-                  isOpponentActive
-                    ? 'bg-zinc-800/90 border-2 border-amber-400 shadow-lg shadow-amber-400/20 scale-105'
-                    : 'bg-zinc-900/60 border border-zinc-800/80 opacity-85'
-                }`}
-              >
-                {/* Uno Badge */}
-                {hasUno && (
-                  <span className="absolute -top-2 px-2 py-0.5 rounded-full bg-red-600 text-white font-black text-[9px] uppercase tracking-wider animate-bounce shadow-md">
-                    {calledUno ? 'UNO!' : '1 Card!'}
-                  </span>
-                )}
-
-                {/* Avatar with Turn Ring */}
-                <div className="relative">
-                  <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xl shadow-inner">
-                    {opponent.avatar || '👤'}
-                  </div>
-                  {isOpponentActive && (
-                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-zinc-900 rounded-full animate-ping" />
-                  )}
-                </div>
-
-                {/* Name & Hand Count */}
-                <span className="text-xs font-bold text-white mt-1 leading-tight max-w-[80px] truncate text-center">
-                  {opponent.name}
-                </span>
-
-                <div className="flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-zinc-400">
-                  <span>🃏</span>
-                  <span>{cardCount}</span>
-                </div>
-
-                {/* Turn Status */}
-                {isOpponentActive && (
-                  <span className="text-[10px] text-amber-300 font-medium animate-pulse mt-0.5">
-                    {opponent.isHuman ? 'Thinking...' : isWaitingForBot ? 'Thinking...' : 'Moving...'}
-                  </span>
-                )}
-              </div>
-            )
-          })}
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="text-zinc-400">Next:</span>
+            <span className="font-bold text-blue-400">{nextPlayer?.name || '...'}</span>
+          </div>
         </div>
+
+        {/* Players Turn Flow Row with Direction Arrows */}
+        <div className="w-full overflow-x-auto scrollbar-none py-1 px-0.5">
+          <div className="flex items-center justify-center gap-1 sm:gap-2 min-w-max mx-auto">
+            {players.map((p, idx) => {
+              const isActive = idx === currentPlayerIndex
+              const isNext = idx === nextPlayerIndex
+              const isMe = p.id === myPlayer?.id
+              const isSkipped = skippedInfo?.playerId === p.id
+              const cardCount =
+                p.id === myPlayer?.id
+                  ? handCards.length
+                  : p.cardCount !== undefined
+                  ? p.cardCount
+                  : p.hand
+                  ? p.hand.length
+                  : 0
+              const hasUno = cardCount === 1
+              const calledUno = unoCalledPlayers?.has(p.id)
+
+              return (
+                <React.Fragment key={p.id}>
+                  {/* Player Card Node */}
+                  <div
+                    className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[72px] sm:min-w-[84px] ${
+                      isSkipped
+                        ? 'bg-red-950/70 border-2 border-red-500 shadow-lg shadow-red-950/50 ring-2 ring-red-500/40 animate-pulse'
+                        : isActive
+                        ? 'bg-amber-500/20 border-2 border-amber-400 shadow-xl shadow-amber-500/20 ring-2 ring-amber-400/50 scale-105 z-10'
+                        : isNext
+                        ? 'bg-blue-950/40 border-2 border-blue-400/60 shadow-md shadow-blue-500/10'
+                        : 'bg-zinc-900/60 border border-zinc-800/80 opacity-80'
+                    }`}
+                  >
+                    {/* Status Badges */}
+                    {isSkipped ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
+                        SKIPPED
+                      </span>
+                    ) : hasUno ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
+                        {calledUno ? 'UNO!' : '1 Card!'}
+                      </span>
+                    ) : isActive ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-amber-400 text-zinc-950 font-black text-[8px] uppercase tracking-wider shadow">
+                        TURN
+                      </span>
+                    ) : isNext ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-blue-500 text-white font-black text-[8px] uppercase tracking-wider shadow">
+                        NEXT
+                      </span>
+                    ) : null}
+
+                    {/* Avatar with Status Ring */}
+                    <div className="relative">
+                      <div
+                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg sm:text-xl shadow-inner ${
+                          isSkipped
+                            ? 'bg-red-950 border border-red-500/60'
+                            : isActive
+                            ? 'bg-zinc-800 border-2 border-amber-400'
+                            : 'bg-zinc-800 border border-zinc-700'
+                        }`}
+                      >
+                        {p.avatar || '👤'}
+                      </div>
+
+                      {/* Skipped Overlay Icon */}
+                      {isSkipped && (
+                        <span className="absolute inset-0 flex items-center justify-center text-base bg-red-950/60 rounded-full">
+                          🚫
+                        </span>
+                      )}
+
+                      {/* Active Player Live Pulse */}
+                      {isActive && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-amber-400 border-2 border-zinc-900 rounded-full animate-ping" />
+                      )}
+                    </div>
+
+                    {/* Name & Badge */}
+                    <div className="flex items-center gap-0.5 mt-1 max-w-[78px]">
+                      <span className="text-[11px] font-bold text-white leading-tight truncate text-center">
+                        {p.name}
+                      </span>
+                      {isMe && (
+                        <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 px-1 rounded flex-shrink-0">
+                          YOU
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Card Count */}
+                    <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-zinc-400">
+                      <span>🃏</span>
+                      <span>{cardCount}</span>
+                    </div>
+
+                    {/* Turn Status Message */}
+                    {isActive && (
+                      <span className="text-[9px] text-amber-300 font-semibold animate-pulse mt-0.5">
+                        {isMe ? 'Your Turn' : p.isHuman ? 'Thinking...' : isWaitingForBot ? 'Thinking...' : 'Moving...'}
+                      </span>
+                    )}
+                    {isNext && !isActive && (
+                      <span className="text-[9px] text-blue-300 font-medium mt-0.5">
+                        {isMe ? 'You Are Next' : 'Next Up'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Direction Arrow Between Players */}
+                  {idx < players.length - 1 && (
+                    <div className="flex items-center justify-center px-0.5 flex-shrink-0 text-zinc-600">
+                      {direction === 1 ? (
+                        <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400/70 animate-pulse" />
+                      ) : (
+                        <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400/70 animate-pulse" />
+                      )}
+                    </div>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Prominent Alert when a Skip Occurs */}
+        {skippedInfo && (
+          <div className="mt-2 px-1">
+            {isMyTurnSkipped ? (
+              <div className="w-full max-w-lg mx-auto p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-red-950/95 via-red-900/90 to-red-950/95 border-2 border-red-500 shadow-xl shadow-red-950/60 flex items-center gap-3 animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center text-xl flex-shrink-0 shadow-md border border-red-400">
+                  🚫
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-red-200 font-black text-xs uppercase tracking-wider">
+                      Turn Skipped!
+                    </span>
+                    {skippedInfo.cardsDrawn > 0 && (
+                      <span className="px-1.5 py-0.2 rounded bg-red-500 text-white font-black text-[10px]">
+                        +{skippedInfo.cardsDrawn} CARDS
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-white font-semibold leading-tight mt-0.5">
+                    <strong className="text-amber-300">{skippedInfo.playedByName}</strong> played{' '}
+                    {skippedInfo.cardType === 'draw2'
+                      ? 'a +2'
+                      : skippedInfo.cardType === 'wild4'
+                      ? 'a Wild +4'
+                      : skippedInfo.cardType === 'reverse'
+                      ? 'a Reverse'
+                      : 'a Skip'} card!{' '}
+                    {skippedInfo.cardsDrawn > 0
+                      ? `You drew ${skippedInfo.cardsDrawn} cards and your turn was skipped.`
+                      : 'Your turn was skipped and passed to the next player.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full max-w-lg mx-auto px-3 py-1.5 rounded-xl bg-zinc-900/95 border border-red-500/50 text-xs font-semibold text-zinc-200 shadow-md flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-xs flex-shrink-0">
+                  🚫
+                </span>
+                <span className="truncate">
+                  <strong className="text-white">{skippedInfo.playedByName}</strong> skipped{' '}
+                  <strong className="text-red-400">{skippedInfo.playerName}</strong>
+                  {skippedInfo.cardsDrawn > 0 ? ` (+${skippedInfo.cardsDrawn} cards)` : ''}!
+                  Turn passed to <strong className="text-blue-300">{activePlayer?.name}</strong>.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 2. Middle Section: The Table Arena */}
@@ -331,8 +484,18 @@ export default function UnoBoard({
             ) : (
               <span>No playable cards! Click the Draw Pile to draw a card.</span>
             )
+          ) : isMyTurnSkipped ? (
+            <span className="text-red-400 font-bold">
+              🚫 Your turn was skipped! Waiting for {activePlayer?.name}&apos;s move...
+            </span>
+          ) : skippedInfo ? (
+            <span>
+              🚫 {skippedInfo.playerName} was skipped. Waiting for {activePlayer?.name}&apos;s move...
+            </span>
           ) : (
-            <span>Waiting for {activePlayer?.name}&apos;s move...</span>
+            <span>
+              Waiting for {activePlayer?.name}&apos;s move (Next: {nextPlayer?.name || '...'})...
+            </span>
           )}
         </div>
 
