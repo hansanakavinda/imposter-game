@@ -7,7 +7,7 @@ export default function SetupScreen({ onStartGame }) {
   const [playerCount, setPlayerCount] = useState(4)
   const [imposterCount, setImposterCount] = useState(1)
   const [selectedCategory, setSelectedCategory] = useState('any')
-  const [timerDuration, setTimerDuration] = useState(120) // 2 min default
+  const [timerDuration, setTimerDuration] = useState(0) // Default to Off
 
   // Custom word state
   const [customWord, setCustomWord] = useState('')

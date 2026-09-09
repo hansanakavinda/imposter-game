@@ -21,7 +21,7 @@ export default function App() {
     playerCount: 4,
     imposterCount: 1,
     category: 'any',
-    timerDuration: 120,
+    timerDuration: 0, // Default to Off
     playerNames: ['Player 1', 'Player 2', 'Player 3', 'Player 4'],
     customWord: null,
   })
