@@ -4,34 +4,85 @@ import { Peer } from 'peerjs'
 const PEER_PREFIX = 'party-arcade-uno-v1-'
 
 /**
- * WebRTC ICE servers configuration.
- * Includes Google STUN servers and OpenRelay public TURN servers
- * to enable NAT traversal across mobile data, cellular hotspots, and firewalls.
+ * Dynamic cache for API-fetched ICE servers
  */
-export const ICE_CONFIG = {
-  iceServers: [
+let dynamicIceConfig = null
+
+/**
+ * Preload ICE configuration from Metered REST API if domain and apiKey are provided.
+ */
+export async function preloadIceConfig() {
+  const domain = import.meta.env.VITE_METERED_DOMAIN
+  const apiKey = import.meta.env.VITE_METERED_API_KEY
+
+  if (domain && apiKey && !dynamicIceConfig) {
+    try {
+      const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      const res = await fetch(`https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey.trim()}`)
+      if (res.ok) {
+        const servers = await res.json()
+        dynamicIceConfig = {
+          iceServers: Array.isArray(servers) ? servers : [servers],
+          iceCandidatePoolSize: 10,
+        }
+      }
+    } catch (e) {
+      console.warn('[Network] Dynamic TURN fetch failed, falling back:', e)
+    }
+  }
+}
+
+/**
+ * Build ICE servers configuration.
+ * Uses Metered TURN credentials from environment variables if present,
+ * plus Google STUN and Metered STUN servers.
+ */
+export function getIceConfig() {
+  if (dynamicIceConfig) {
+    return dynamicIceConfig
+  }
+
+  const meteredUser = import.meta.env.VITE_METERED_USERNAME
+  const meteredCred = import.meta.env.VITE_METERED_CREDENTIAL
+
+  const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelay',
-      credential: 'openrelay',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelay',
-      credential: 'openrelay',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelay',
-      credential: 'openrelay',
-    },
-  ],
-  iceCandidatePoolSize: 10,
+    { urls: 'stun:stun.relay.metered.ca:80' },
+  ]
+
+  if (meteredUser && meteredCred) {
+    const user = meteredUser.trim()
+    const cred = meteredCred.trim()
+    iceServers.push(
+      {
+        urls: 'turn:global.relay.metered.ca:80',
+        username: user,
+        credential: cred,
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+        username: user,
+        credential: cred,
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:443',
+        username: user,
+        credential: cred,
+      },
+      {
+        urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+        username: user,
+        credential: cred,
+      }
+    )
+  }
+
+  return {
+    iceServers,
+    iceCandidatePoolSize: 10,
+  }
 }
 
 /**
@@ -67,7 +118,7 @@ export function initHostPeer({
   const peerId = formatPeerId(roomCode)
   const peer = new Peer(peerId, {
     debug: 1,
-    config: ICE_CONFIG,
+    config: getIceConfig(),
   })
 
   const connections = new Map() // clientPeerId -> DataConnection
@@ -173,7 +224,7 @@ export function initClientPeer({
 }) {
   const peer = new Peer({
     debug: 1,
-    config: ICE_CONFIG,
+    config: getIceConfig(),
   })
 
   let hostConn = null

@@ -20,6 +20,7 @@ import {
   initHostPeer,
   initClientPeer,
   generateRoomCode,
+  preloadIceConfig,
 } from './services/unoNetwork'
 import {
   playCardPlaySound,
@@ -77,6 +78,11 @@ export default function UnoGame({
     activeRemaining: 2,
   })
   const hasShownMyCelebrationRef = useRef(false)
+
+  // Preload TURN ICE configuration if Metered API credentials are configured
+  useEffect(() => {
+    preloadIceConfig()
+  }, [])
 
   // ==========================================
   // 1. SOLO VS AI STATE
