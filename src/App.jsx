@@ -8,8 +8,28 @@ import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 
 export default function App() {
+  // Check if URL has ?room=... or ?game=uno
+  const [initialRoomCode, setInitialRoomCode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('room') || ''
+    }
+    return ''
+  })
+
   // Navigation State: null = Game Hub Main Menu, 'imposter', 'uno'
-  const [selectedGame, setSelectedGame] = useState(null)
+  const [selectedGame, setSelectedGame] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('room') || params.get('game') === 'uno') {
+        return 'uno'
+      }
+      if (params.get('game') === 'imposter') {
+        return 'imposter'
+      }
+    }
+    return null
+  })
   const [isRulesOpen, setIsRulesOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled())
 
@@ -21,7 +41,12 @@ export default function App() {
 
   const handleBackToMenu = () => {
     setSelectedGame(null)
+    setInitialRoomCode('')
     setIsRulesOpen(false)
+    // Clean URL query params if any
+    if (typeof window !== 'undefined' && window.history && window.location.search) {
+      window.history.replaceState({}, document.title, window.location.pathname)
+    }
   }
 
   const handleOpenRulesForGame = (gameId) => {
@@ -62,6 +87,7 @@ export default function App() {
             onBackToMenu={handleBackToMenu}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
+            initialRoomCode={initialRoomCode}
           />
         )}
       </main>

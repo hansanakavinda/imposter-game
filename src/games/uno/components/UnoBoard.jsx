@@ -22,36 +22,47 @@ export default function UnoBoard({
   unoCalledPlayers,
   onCallUno,
   hasCalledUnoThisRound,
+  myPlayerId = 0,
+  myHand = null,
 }) {
-  const humanPlayer = players.find((p) => p.isHuman) || players[0]
-  const botPlayers = players.filter((p) => !p.isHuman)
+  const myPlayer = players.find((p) => p.id === myPlayerId) || players[0]
+  const handCards = myHand || myPlayer?.hand || []
+  const opponentPlayers = players.filter((p) => p.id !== myPlayer?.id)
   const activePlayer = players[currentPlayerIndex]
+  const isCurrentTurnForMe =
+    isHumanTurn !== undefined ? isHumanTurn : activePlayer?.id === myPlayer?.id
 
   const activeColorConfig =
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
 
-  const humanCanPlayAnyCard = humanPlayer.hand.some((card) =>
+  const myCanPlayAnyCard = handCards.some((card) =>
     canPlayCard(card, topCard, activeColor)
   )
 
   const showUnoButton =
-    humanPlayer.hand.length <= 2 && isHumanTurn && !hasCalledUnoThisRound
+    handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound
 
   return (
     <div className="w-full max-w-2xl mx-auto px-3 py-2 flex flex-col justify-between min-h-[88vh] select-none">
-      {/* 1. Top Section: Bot Opponents */}
+      {/* 1. Top Section: Opponents (Bots or Friends) */}
       <div className="w-full pt-1 pb-2">
         <div className="flex items-center justify-around gap-2 max-w-lg mx-auto">
-          {botPlayers.map((bot) => {
-            const isBotActive = activePlayer?.id === bot.id
-            const hasUno = bot.hand.length === 1
-            const calledUno = unoCalledPlayers.has(bot.id)
+          {opponentPlayers.map((opponent) => {
+            const isOpponentActive = activePlayer?.id === opponent.id
+            const cardCount =
+              opponent.cardCount !== undefined
+                ? opponent.cardCount
+                : opponent.hand
+                ? opponent.hand.length
+                : 0
+            const hasUno = cardCount === 1
+            const calledUno = unoCalledPlayers.has(opponent.id)
 
             return (
               <div
-                key={bot.id}
+                key={opponent.id}
                 className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 ${
-                  isBotActive
+                  isOpponentActive
                     ? 'bg-zinc-800/90 border-2 border-amber-400 shadow-lg shadow-amber-400/20 scale-105'
                     : 'bg-zinc-900/60 border border-zinc-800/80 opacity-85'
                 }`}
@@ -66,27 +77,27 @@ export default function UnoBoard({
                 {/* Avatar with Turn Ring */}
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xl shadow-inner">
-                    {bot.avatar}
+                    {opponent.avatar || '👤'}
                   </div>
-                  {isBotActive && (
+                  {isOpponentActive && (
                     <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-zinc-900 rounded-full animate-ping" />
                   )}
                 </div>
 
                 {/* Name & Hand Count */}
-                <span className="text-xs font-bold text-white mt-1 leading-tight">
-                  {bot.name}
+                <span className="text-xs font-bold text-white mt-1 leading-tight max-w-[80px] truncate text-center">
+                  {opponent.name}
                 </span>
 
                 <div className="flex items-center gap-1 mt-0.5 text-[11px] font-semibold text-zinc-400">
                   <span>🃏</span>
-                  <span>{bot.hand.length}</span>
+                  <span>{cardCount}</span>
                 </div>
 
                 {/* Turn Status */}
-                {isBotActive && isWaitingForBot && (
+                {isOpponentActive && (
                   <span className="text-[10px] text-amber-300 font-medium animate-pulse mt-0.5">
-                    Thinking...
+                    {opponent.isHuman ? 'Thinking...' : isWaitingForBot ? 'Thinking...' : 'Moving...'}
                   </span>
                 )}
               </div>
@@ -135,9 +146,9 @@ export default function UnoBoard({
               <UnoCard
                 isBack
                 size="md"
-                onClick={isHumanTurn ? onDrawCard : undefined}
+                onClick={isCurrentTurnForMe ? onDrawCard : undefined}
                 className={
-                  isHumanTurn
+                  isCurrentTurnForMe
                     ? 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
                     : 'cursor-not-allowed opacity-80'
                 }
@@ -179,13 +190,13 @@ export default function UnoBoard({
         {/* Turn Bar & Status */}
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
-            <span className="text-xl">{humanPlayer.avatar}</span>
+            <span className="text-xl">{myPlayer.avatar || '😎'}</span>
             <div>
               <span className="text-xs font-bold text-white block leading-tight">
-                {humanPlayer.name} (You)
+                {myPlayer.name} (You)
               </span>
               <span className="text-[10px] text-zinc-400">
-                {humanPlayer.hand.length} card{humanPlayer.hand.length !== 1 ? 's' : ''} left
+                {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
               </span>
             </div>
           </div>
@@ -214,7 +225,7 @@ export default function UnoBoard({
             )}
 
             {/* Pass Turn Button (after drawing a card) */}
-            {isHumanTurn && hasDrawnCardThisTurn && (
+            {isCurrentTurnForMe && hasDrawnCardThisTurn && (
               <button
                 type="button"
                 onClick={() => {
@@ -233,15 +244,15 @@ export default function UnoBoard({
         {/* Turn Prompt Banner */}
         <div
           className={`py-1.5 px-3 rounded-xl text-center text-xs font-bold transition-all ${
-            isHumanTurn
+            isCurrentTurnForMe
               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
               : 'bg-zinc-900 text-zinc-400 border border-zinc-800/80'
           }`}
         >
-          {isHumanTurn ? (
+          {isCurrentTurnForMe ? (
             hasDrawnCardThisTurn ? (
               <span>You drew a card! Play it if valid, or click &quot;Pass Turn&quot;.</span>
-            ) : humanCanPlayAnyCard ? (
+            ) : myCanPlayAnyCard ? (
               <span>Your Turn — Select a card from your hand to play!</span>
             ) : (
               <span>No playable cards! Click the Draw Pile to draw a card.</span>
@@ -254,8 +265,8 @@ export default function UnoBoard({
         {/* Player's Hand Horizontal Tray */}
         <div className="w-full overflow-x-auto pb-2 pt-3 scrollbar-none">
           <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
-            {humanPlayer.hand.map((card) => {
-              const isPlayable = isHumanTurn && canPlayCard(card, topCard, activeColor)
+            {handCards.map((card) => {
+              const isPlayable = isCurrentTurnForMe && canPlayCard(card, topCard, activeColor)
 
               return (
                 <div key={card.id} className="transition-transform duration-150">
@@ -267,7 +278,7 @@ export default function UnoBoard({
                     className={
                       isPlayable
                         ? 'ring-2 ring-white/90 shadow-xl'
-                        : isHumanTurn
+                        : isCurrentTurnForMe
                         ? 'opacity-40 grayscale-[25%]'
                         : 'opacity-75'
                     }
