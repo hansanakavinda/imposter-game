@@ -397,7 +397,7 @@ export default function UnoGame({
             setAiDiscardPile(newDiscardPile)
             setAiPlayers(
               updatedPlayers.map((p, idx) =>
-                idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+                idx === targetIdx ? { ...p, hand: [...drawnCards, ...p.hand] } : p
               )
             )
             currentSkippedInfo = {
@@ -432,7 +432,7 @@ export default function UnoGame({
             setAiDiscardPile(newDiscardPile)
             setAiPlayers(
               updatedPlayers.map((p, idx) =>
-                idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+                idx === targetIdx ? { ...p, hand: [...drawnCards, ...p.hand] } : p
               )
             )
             currentSkippedInfo = {
@@ -568,7 +568,7 @@ export default function UnoGame({
           currentDraw = newDrawPile
           currentDiscard = newDiscardPile
           updatedPlayers = updatedPlayers.map((p, idx) =>
-            idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+            idx === targetIdx ? { ...p, hand: [...drawnCards, ...p.hand] } : p
           )
           currentSkippedInfo = {
             playerId: targetPlayer.id,
@@ -605,7 +605,7 @@ export default function UnoGame({
           currentDraw = newDrawPile
           currentDiscard = newDiscardPile
           updatedPlayers = updatedPlayers.map((p, idx) =>
-            idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+            idx === targetIdx ? { ...p, hand: [...drawnCards, ...p.hand] } : p
           )
           currentSkippedInfo = {
             playerId: targetPlayer.id,
@@ -680,7 +680,7 @@ export default function UnoGame({
       )
       const humanPlayer = aiPlayers[aiCurrentPlayerIndex]
       const updatedPlayers = aiPlayers.map((p, idx) =>
-        idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+        idx === aiCurrentPlayerIndex ? { ...p, hand: [...drawnCards, ...p.hand] } : p
       )
       const nextPlayerIdx = getNextActivePlayerIndex(
         aiCurrentPlayerIndex,
@@ -720,7 +720,7 @@ export default function UnoGame({
 
     const drawnCard = drawnCards[0]
     const updatedPlayers = aiPlayers.map((p, idx) =>
-      idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, drawnCard] } : p
+      idx === aiCurrentPlayerIndex ? { ...p, hand: [drawnCard, ...p.hand] } : p
     )
 
     setAiPlayers(updatedPlayers)
@@ -797,7 +797,7 @@ export default function UnoGame({
             aiDiscardPile
           )
           const updatedPlayers = aiPlayers.map((p, idx) =>
-            idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+            idx === aiCurrentPlayerIndex ? { ...p, hand: [...drawnCards, ...p.hand] } : p
           )
           const nextIdx = getNextActivePlayerIndex(
             aiCurrentPlayerIndex,
@@ -860,7 +860,7 @@ export default function UnoGame({
 
         if (drawnCards.length > 0) {
           const drawnCard = drawnCards[0]
-          const newHand = [...activePlayer.hand, drawnCard]
+          const newHand = [drawnCard, ...activePlayer.hand]
 
           if (canPlayCard(drawnCard, aiTopCard, aiActiveColor)) {
             const chosenColor =
@@ -1170,7 +1170,7 @@ export default function UnoGame({
             g.drawPile = newDrawPile
             g.discardPile = newDiscardPile
             const targetHand = g.hands.get(targetPlayer.id) || []
-            g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+            g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
             currentSkippedInfo = {
               playerId: targetPlayer.id,
               playerName: targetPlayer.name,
@@ -1202,7 +1202,7 @@ export default function UnoGame({
             g.drawPile = newDrawPile
             g.discardPile = newDiscardPile
             const targetHand = g.hands.get(targetPlayer.id) || []
-            g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+            g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
             currentSkippedInfo = {
               playerId: targetPlayer.id,
               playerName: targetPlayer.name,
@@ -1315,7 +1315,7 @@ export default function UnoGame({
           g.drawPile = newDrawPile
           g.discardPile = newDiscardPile
           const targetHand = g.hands.get(targetPlayer.id) || []
-          g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+          g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
           currentSkippedInfo = {
             playerId: targetPlayer.id,
             playerName: targetPlayer.name,
@@ -1352,7 +1352,7 @@ export default function UnoGame({
           g.drawPile = newDrawPile
           g.discardPile = newDiscardPile
           const targetHand = g.hands.get(targetPlayer.id) || []
-          g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+          g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
           currentSkippedInfo = {
             playerId: targetPlayer.id,
             playerName: targetPlayer.name,
@@ -1416,7 +1416,7 @@ export default function UnoGame({
         g.drawPile = newDrawPile
         g.discardPile = newDiscardPile
         const currentHand = g.hands.get(playerId) || []
-        g.hands.set(playerId, [...currentHand, ...drawnCards])
+        g.hands.set(playerId, [...drawnCards, ...currentHand])
         g.pendingDrawCount = 0
         g.pendingStackType = null
         g.hasDrawnThisTurn = false
@@ -1454,7 +1454,7 @@ export default function UnoGame({
       g.drawPile = newDrawPile
       g.discardPile = newDiscardPile
       const currentHand = g.hands.get(playerId) || []
-      g.hands.set(playerId, [...currentHand, drawnCards[0]])
+      g.hands.set(playerId, [drawnCards[0], ...currentHand])
       g.hasDrawnThisTurn = true
       g.skippedInfo = null
       g.actionMessage = `${player.name} drew a card.`

@@ -19,7 +19,7 @@ import UnoCard from './UnoCard'
 import UnoSettingsModal from './UnoSettingsModal'
 import { COLOR_CONFIG, CARD_COLORS, getRankBadge } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
-import { playClickSound } from '../../../utils/sound'
+import { playClickSound, playCardDrawSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
 
@@ -127,6 +127,150 @@ export default function UnoBoard({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
 
+  // Flying cards animation & highlight for newly drawn cards
+  const [flyingCards, setFlyingCards] = useState([])
+  const [newlyDrawnCardIds, setNewlyDrawnCardIds] = useState(new Set())
+  const prevHandCardIdsRef = useRef(new Set())
+  const hasInitializedHandRef = useRef(false)
+  const drawPileRef = useRef(null)
+  const handTrayRef = useRef(null)
+  const turnTrackRef = useRef(null)
+  const activeNodeRef = useRef(null)
+
+  // Track player turn cycles to keep "NEW" badges until player's next turn to play
+  const myTurnIndexRef = useRef(0)
+  const drawnTurnInfoRef = useRef(null) // { turnIndex, wasDuringMyTurn }
+  const prevIsMyTurnRef = useRef(isCurrentTurnForMe)
+
+  useEffect(() => {
+    // When local player's turn starts (isCurrentTurnForMe transitions from false to true):
+    if (!prevIsMyTurnRef.current && isCurrentTurnForMe) {
+      myTurnIndexRef.current += 1
+    }
+
+    // When local player's turn ends (isCurrentTurnForMe transitions from true to false):
+    if (prevIsMyTurnRef.current && !isCurrentTurnForMe) {
+      if (drawnTurnInfoRef.current) {
+        // If cards were drawn outside our turn or on a previous turn,
+        // and we have now completed our next turn to play: clear the badges!
+        if (
+          !drawnTurnInfoRef.current.wasDuringMyTurn ||
+          myTurnIndexRef.current > drawnTurnInfoRef.current.turnIndex
+        ) {
+          setNewlyDrawnCardIds(new Set())
+          drawnTurnInfoRef.current = null
+        }
+      }
+    }
+
+    prevIsMyTurnRef.current = isCurrentTurnForMe
+  }, [isCurrentTurnForMe])
+
+  // Trigger card flight & highlight when player draws new cards from pile
+  useEffect(() => {
+    const currentIds = new Set(handCards.map((c) => c.id))
+
+    // First time hand loads (e.g. 7 cards at start): register ids without draw animation
+    if (!hasInitializedHandRef.current) {
+      if (handCards.length > 0) {
+        hasInitializedHandRef.current = true
+        prevHandCardIdsRef.current = currentIds
+      }
+      return
+    }
+
+    // Hand was emptied (e.g. match reset)
+    if (handCards.length === 0) {
+      hasInitializedHandRef.current = false
+      prevHandCardIdsRef.current = new Set()
+      setNewlyDrawnCardIds(new Set())
+      drawnTurnInfoRef.current = null
+      return
+    }
+
+    // Find cards that were just added to the hand
+    const addedCards = handCards.filter((c) => !prevHandCardIdsRef.current.has(c.id))
+    prevHandCardIdsRef.current = currentIds
+
+    if (addedCards.length > 0) {
+      // 1. Reset sorting so newly drawn cards appear immediately at the start of the hand
+      setHandSortMode('none')
+
+      // Scroll hand tray to start so new cards are immediately in view
+      if (handTrayRef.current) {
+        handTrayRef.current.scrollTo({ left: 0, behavior: 'smooth' })
+      }
+
+      // 2. Record turn info for newly drawn cards
+      drawnTurnInfoRef.current = {
+        turnIndex: myTurnIndexRef.current,
+        wasDuringMyTurn: isCurrentTurnForMe,
+      }
+
+      // 3. Highlight newly drawn cards with "NEW" badge & amber ring
+      const newIds = new Set(addedCards.map((c) => c.id))
+      setNewlyDrawnCardIds(newIds)
+
+      // 3. Staggered flying card animation from draw pile down to hand
+      const drawRect = drawPileRef.current?.getBoundingClientRect()
+      const trayRect = handTrayRef.current?.getBoundingClientRect()
+
+      const startX = drawRect
+        ? drawRect.left + drawRect.width / 2 - 36
+        : window.innerWidth / 2 - 36
+      const startY = drawRect
+        ? drawRect.top + drawRect.height / 2 - 48
+        : window.innerHeight / 2 - 48
+
+      const targetY = trayRect ? trayRect.top + 4 : window.innerHeight - 130
+
+      addedCards.forEach((card, index) => {
+        const targetX = trayRect
+          ? Math.min(trayRect.left + 12 + index * 48, window.innerWidth - 85)
+          : Math.min(20 + index * 48, window.innerWidth - 85)
+
+        const animId = `draw-${card.id}-${Date.now()}-${index}`
+
+        setTimeout(() => {
+          playCardDrawSound()
+
+          setFlyingCards((prev) => [
+            ...prev,
+            {
+              animId,
+              card,
+              startX,
+              startY,
+              targetX,
+              targetY,
+              phase: 'start',
+            },
+          ])
+
+          // Trigger smooth CSS transform on next animation frame
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setFlyingCards((prev) =>
+                prev.map((fc) => (fc.animId === animId ? { ...fc, phase: 'flying' } : fc))
+              )
+            })
+          })
+
+          // Settle into hand after flight duration
+          setTimeout(() => {
+            setFlyingCards((prev) => prev.filter((fc) => fc.animId !== animId))
+          }, 550)
+        }, index * 320)
+      })
+    }
+  }, [handCards, isCurrentTurnForMe])
+
+  const handlePlayCardWithBadgeClear = (card) => {
+    setNewlyDrawnCardIds(new Set())
+    drawnTurnInfoRef.current = null
+    onPlayCard(card)
+  }
+
   const handleHeaderSync = () => {
     if (!onSyncState || isSyncing) return
     playClickSound()
@@ -145,10 +289,6 @@ export default function UnoBoard({
     }
     return handCards
   }, [handCards, handSortMode])
-
-  const handTrayRef = useRef(null)
-  const turnTrackRef = useRef(null)
-  const activeNodeRef = useRef(null)
 
   // Auto-scroll the turn track when currentPlayerIndex changes so active player is visible
   useEffect(() => {
@@ -557,7 +697,7 @@ export default function UnoBoard({
         {/* Center Card Play Area (Draw Pile & Discard Pile) */}
         <div className="flex items-center justify-center gap-6 sm:gap-10">
           {/* Draw Pile */}
-          <div className="flex flex-col items-center">
+          <div ref={drawPileRef} className="flex flex-col items-center">
             <div className="relative group">
               {/* Stack effect */}
               <div className="absolute inset-0 bg-zinc-900 rounded-xl translate-x-1.5 translate-y-1.5 border border-zinc-800 pointer-events-none" />
@@ -881,23 +1021,40 @@ export default function UnoBoard({
             <div
               ref={handTrayRef}
               onWheel={handleTrayWheel}
-              className="w-full overflow-x-auto pb-2 pt-1 touch-pan-x overscroll-x-contain select-none scroll-smooth"
+              className="w-full overflow-x-auto pb-2 pt-4 touch-pan-x overscroll-x-contain select-none scroll-smooth"
             >
               <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
                 {displayedHandCards.map((card) => {
                   const isPlayable =
                     isCurrentTurnForMe &&
                     canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
+                  const isNewlyDrawn = newlyDrawnCardIds.has(card.id)
+                  const isFlying = flyingCards.some((fc) => fc.card.id === card.id)
 
                   return (
-                    <div key={card.id} className="transition-transform duration-150 flex-shrink-0 touch-pan-x">
+                    <div
+                      key={card.id}
+                      className={`relative transition-all duration-300 flex-shrink-0 touch-pan-x ${
+                        isFlying ? 'opacity-0 scale-75' : 'opacity-100 scale-100'
+                      }`}
+                    >
+                      {/* Bouncing "NEW" pill badge above freshly drawn cards */}
+                      {isNewlyDrawn && !isFlying && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-zinc-950 font-black text-[8px] sm:text-[9px] uppercase tracking-wider shadow-lg border border-amber-300 flex items-center gap-0.5 animate-bounce pointer-events-none whitespace-nowrap">
+                          <span>✨</span>
+                          <span>NEW</span>
+                        </div>
+                      )}
+
                       <UnoCard
                         card={card}
                         size="md"
                         isPlayable={isPlayable}
-                        onClick={isPlayable ? () => onPlayCard(card) : undefined}
+                        onClick={isPlayable ? () => handlePlayCardWithBadgeClear(card) : undefined}
                         className={
-                          isPlayable
+                          isNewlyDrawn && !isFlying
+                            ? 'ring-3 ring-amber-400 shadow-xl shadow-amber-500/40 -translate-y-1'
+                            : isPlayable
                             ? 'ring-2 ring-white/90 shadow-xl -translate-y-1 sm:-translate-y-2'
                             : isCurrentTurnForMe
                             ? 'opacity-40 grayscale-[25%]'
@@ -912,6 +1069,48 @@ export default function UnoBoard({
           </>
         )}
       </div>
+
+      {/* Flying Cards Animation Layer: cards flying from Draw Pile down into the Hand */}
+      {flyingCards.length > 0 && (
+        <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+          {flyingCards.map((fc) => {
+            const isFlying = fc.phase === 'flying'
+            return (
+              <div
+                key={fc.animId}
+                className="absolute transition-all ease-out duration-500 will-change-transform"
+                style={{
+                  left: 0,
+                  top: 0,
+                  transform: isFlying
+                    ? `translate3d(${fc.targetX}px, ${fc.targetY}px, 0) scale(1) rotate(0deg)`
+                    : `translate3d(${fc.startX}px, ${fc.startY}px, 0) scale(0.65) rotate(-12deg)`,
+                  opacity: isFlying ? 1 : 0.9,
+                }}
+              >
+                <div
+                  className={`transition-transform duration-300 ${
+                    isFlying ? 'rotate-y-0' : 'rotate-y-180'
+                  }`}
+                  style={{ perspective: 600 }}
+                >
+                  <div className="relative shadow-2xl rounded-xl ring-4 ring-amber-400/90 shadow-amber-500/40">
+                    <UnoCard
+                      card={fc.card}
+                      isBack={!isFlying}
+                      size="md"
+                      isPlayable={false}
+                    />
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-zinc-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-0.5 whitespace-nowrap animate-bounce">
+                      <span>✨ DRAW</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* In-Game Settings / Menu Modal */}
       <UnoSettingsModal
