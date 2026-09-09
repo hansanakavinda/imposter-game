@@ -174,9 +174,9 @@ export default function UnoBoard({
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-3 py-2 flex flex-col justify-between min-h-[88vh] select-none">
+    <div className="w-full max-w-2xl mx-auto px-3 flex flex-col justify-between min-h-[88vh] select-none">
       {/* 1. Top Section: Header Bar & Turn Order Track */}
-      <div className="w-full pt-1 pb-2">
+      <div className="w-full pt-1 pb-3">
         {/* Disconnection Warning Banner (when connection lost during multiplayer match) */}
         {isMultiplayer && connectionStatus === 'disconnected' && (
           <div className="mb-2.5 p-2.5 rounded-2xl bg-red-950/90 border border-red-500/60 text-red-200 text-xs flex items-center justify-between shadow-lg shadow-red-950/60 max-w-lg mx-auto animate-pulse">
@@ -274,7 +274,7 @@ export default function UnoBoard({
         </div>
 
         {/* Turn Order Header Bar */}
-        <div className="flex items-center justify-between px-1 mb-1.5 max-w-lg mx-auto text-xs">
+        <div className="flex items-center justify-between px-1 mb-2.5 sm:mb-3 max-w-lg mx-auto text-xs">
           <div className="flex items-center gap-1.5 font-bold text-zinc-400">
             <span className="uppercase tracking-wider text-[10px]">Turn Order</span>
             <span
@@ -303,7 +303,7 @@ export default function UnoBoard({
         </div>
 
         {/* Players Turn Flow Row with Direction Arrows */}
-        <div ref={turnTrackRef} className="w-full overflow-x-auto scrollbar-none py-1 px-0.5">
+        <div ref={turnTrackRef} className="w-full overflow-x-auto scrollbar-none pt-3.5 pb-2 px-0.5">
           <div className="flex items-center justify-center gap-1 sm:gap-1.5 min-w-max mx-auto">
             {players.map((p, idx) => {
               const pRank =
@@ -505,7 +505,7 @@ export default function UnoBoard({
       </div>
 
       {/* 2. Middle Section: The Table Arena */}
-      <div className="relative my-auto flex flex-col items-center justify-center py-4">
+      <div className="relative my-auto flex flex-col items-center justify-center py-4 mt-1 sm:mt-2">
         {/* Active Direction & Color Status Bar */}
         <div className="flex items-center gap-3 mb-4">
           {/* Turn Direction */}

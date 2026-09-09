@@ -2302,7 +2302,7 @@ export default function UnoGame({
     screen === 'ai_playing' && !aiWinner && Boolean(aiActivePlayer && !aiActivePlayer.isHuman)
 
   return (
-    <div className="w-full flex-1 flex flex-col justify-center py-1">
+    <div className="w-full flex-1 flex flex-col justify-center">
       {/* 1. Mode Select Screen */}
       {screen === 'mode_select' && (
         <UnoModeSelect
