@@ -9,9 +9,34 @@ const PEER_PREFIX = 'party-arcade-uno-v1-'
 let dynamicIceConfig = null
 
 /**
- * Preload ICE configuration from Metered REST API if domain and apiKey are provided.
+ * Preload ICE configuration.
+ * 1. First tries the secure serverless endpoint /api/turn.
+ * 2. Falls back to direct REST fetch if VITE_METERED_DOMAIN & VITE_METERED_API_KEY exist.
  */
 export async function preloadIceConfig() {
+  if (dynamicIceConfig) return dynamicIceConfig
+
+  // 1. Fetch from secure serverless route /api/turn
+  try {
+    const res = await fetch('/api/turn')
+    if (res.ok) {
+      const data = await res.json()
+      if (data && (Array.isArray(data.iceServers) || Array.isArray(data))) {
+        const servers = Array.isArray(data.iceServers) ? data.iceServers : data
+        if (servers.length > 0) {
+          dynamicIceConfig = {
+            iceServers: servers,
+            iceCandidatePoolSize: 10,
+          }
+          return dynamicIceConfig
+        }
+      }
+    }
+  } catch {
+    // /api/turn unavailable, continue to fallbacks
+  }
+
+  // 2. Direct REST fetch if client env vars are provided
   const domain = import.meta.env.VITE_METERED_DOMAIN
   const apiKey = import.meta.env.VITE_METERED_API_KEY
 
@@ -25,11 +50,14 @@ export async function preloadIceConfig() {
           iceServers: Array.isArray(servers) ? servers : [servers],
           iceCandidatePoolSize: 10,
         }
+        return dynamicIceConfig
       }
     } catch (e) {
       console.warn('[Network] Dynamic TURN fetch failed, falling back:', e)
     }
   }
+
+  return getIceConfig()
 }
 
 /**
