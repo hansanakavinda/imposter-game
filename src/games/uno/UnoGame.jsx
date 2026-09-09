@@ -27,7 +27,7 @@ export default function UnoGame({
   onCloseRules,
   initialRoomCode = '',
 }) {
-  // Screens: 'mode_select' | 'ai_lobby' | 'ai_playing' | 'ai_gameover' | 'mp_lobby' | 'mp_playing' | 'mp_gameover'
+  // Screen state
   const [screen, setScreen] = useState(() => (initialRoomCode ? 'mp_lobby' : 'mode_select'))
   const [internalRulesOpen, setInternalRulesOpen] = useState(false)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
@@ -52,7 +52,7 @@ export default function UnoGame({
   const botTimeoutRef = useRef(null)
 
   // ==========================================
-  // 2. MULTIPLAYER WEBRTC STATE
+  // 2. MULTIPLAYER STATE
   // ==========================================
   const [mpRoomState, setMpRoomState] = useState({
     isInRoom: false,
@@ -65,9 +65,10 @@ export default function UnoGame({
   })
 
   const [myPlayerId, setMyPlayerId] = useState(0)
+  const myPlayerIdRef = useRef(0)
   const [myHand, setMyHand] = useState([])
 
-  // Shared multiplayer board state
+  // Shared multiplayer board state (for UI rendering on both Host and Clients)
   const [mpPlayers, setMpPlayers] = useState([])
   const [mpTopCard, setMpTopCard] = useState(null)
   const [mpActiveColor, setMpActiveColor] = useState(null)
@@ -80,16 +81,27 @@ export default function UnoGame({
   const [mpHasCalledUnoThisRound, setMpHasCalledUnoThisRound] = useState(false)
   const [mpWinner, setMpWinner] = useState(null)
 
-  // Host-only master deck & piles
-  const hostMasterStateRef = useRef({
+  // Authoritative host master state (immune to React stale closures)
+  const hostGameRef = useRef({
+    roomCode: '',
+    players: [],
     drawPile: [],
     discardPile: [],
     hands: new Map(), // playerId -> card[]
+    topCard: null,
+    activeColor: null,
+    currentPlayerIndex: 0,
+    direction: 1,
+    unoCalledPlayers: new Set(),
+    hasDrawnThisTurn: false,
+    winner: null,
+    actionMessage: '',
   })
 
-  // Network peer instances
+  // Network peer instances and dynamic callbacks ref
   const hostNetworkRef = useRef(null)
   const clientNetworkRef = useRef(null)
+  const onClientDataRef = useRef(null)
 
   const showRules = isRulesOpen !== undefined ? isRulesOpen : internalRulesOpen
   const handleCloseRules = onCloseRules || (() => setInternalRulesOpen(false))
@@ -169,7 +181,7 @@ export default function UnoGame({
     setAiCurrentPlayerIndex(0)
     setAiDirection(1)
     setAiHasDrawnCardThisTurn(false)
-    setAiActionMessage('Game started! Match color or number.')
+    setAiActionMessage('Game started! You have the first move.')
     setAiUnoCalledPlayers(new Set())
     setAiHasCalledUnoThisRound(false)
     setAiWinner(null)
@@ -462,89 +474,111 @@ export default function UnoGame({
   // 3. MULTIPLAYER WEBRTC GAME ENGINE
   // ==========================================
 
-  // Broadcasts sanitized game state to all players and updates host local state
-  const hostBroadcastGameState = useCallback(
-    ({
-      topCard,
-      activeColor,
-      currentPlayerIndex,
-      direction,
-      actionMessage,
-      unoCalledPlayers,
-      winner = null,
-    }) => {
-      const handsMap = hostMasterStateRef.current.hands
-      const drawPile = hostMasterStateRef.current.drawPile
+  // Broadcasts state to all connected clients & updates host UI
+  const hostBroadcastGameState = useCallback((customMessage = null) => {
+    const g = hostGameRef.current
+    if (!g) return
 
-      const sanitizedPlayers = mpRoomState.players.map((p) => ({
-        id: p.id,
-        name: p.name,
-        avatar: p.avatar,
-        isHost: p.isHost,
-        cardCount: handsMap.get(p.id)?.length || 0,
-      }))
+    const sanitizedPlayers = g.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatar: p.avatar,
+      isHost: p.isHost,
+      cardCount: g.hands.get(p.id)?.length || 0,
+    }))
 
-      // Update Host's local view
-      setMpPlayers(sanitizedPlayers)
-      setMpTopCard(topCard)
-      setMpActiveColor(activeColor)
-      setMpCurrentPlayerIndex(currentPlayerIndex)
-      setMpDirection(direction)
-      setMpDrawPileCount(drawPile.length)
-      setMpActionMessage(actionMessage)
-      setMpUnoCalledPlayers(new Set(unoCalledPlayers))
-      setMyHand(handsMap.get(0) || [])
+    const message = customMessage !== null ? customMessage : g.actionMessage || ''
 
-      if (winner) {
-        setMpWinner(winner)
-        setScreen('mp_gameover')
+    // 1. Update Host local UI
+    setMpPlayers(sanitizedPlayers)
+    setMpTopCard(g.topCard)
+    setMpActiveColor(g.activeColor)
+    setMpCurrentPlayerIndex(g.currentPlayerIndex)
+    setMpDirection(g.direction)
+    setMpDrawPileCount(g.drawPile.length)
+    setMpActionMessage(message)
+    setMpUnoCalledPlayers(new Set(g.unoCalledPlayers))
+    setMpHasDrawnCardThisTurn(g.hasDrawnThisTurn)
+    setMyHand([...(g.hands.get(0) || [])])
+
+    if (g.winner) {
+      setMpWinner(g.winner)
+      setScreen('mp_gameover')
+    }
+
+    // 2. Broadcast personalized state to each client over WebRTC
+    if (hostNetworkRef.current) {
+      g.players.forEach((p) => {
+        if (!p.isHost && p.peerId) {
+          hostNetworkRef.current.sendTo(p.peerId, {
+            type: 'SYNC_GAME_STATE',
+            yourPlayerId: p.id,
+            hand: [...(g.hands.get(p.id) || [])],
+            topCard: g.topCard,
+            activeColor: g.activeColor,
+            currentPlayerIndex: g.currentPlayerIndex,
+            direction: g.direction,
+            drawPileCount: g.drawPile.length,
+            players: sanitizedPlayers,
+            actionMessage: message,
+            unoCalledPlayers: Array.from(g.unoCalledPlayers),
+            hasDrawnThisTurn: g.hasDrawnThisTurn,
+            winner: g.winner,
+          })
+        }
+      })
+    }
+  }, [])
+
+  // Authoritative host card play execution
+  const hostProcessPlayCard = useCallback(
+    (playerId, cardId, chosenColor = null, fallbackCard = null) => {
+      const g = hostGameRef.current
+      if (!g) return
+
+      // Validate turn: allow if current player matches playerId
+      if (g.currentPlayerIndex !== playerId) {
+        console.warn(`[Host] Player ${playerId} played out of turn. Active player is ${g.currentPlayerIndex}`)
+        return
       }
 
-      // Send personalized state to each client
-      if (hostNetworkRef.current) {
-        mpRoomState.players.forEach((p) => {
-          if (!p.isHost && p.peerId) {
-            hostNetworkRef.current.sendTo(p.peerId, {
-              type: 'SYNC_GAME_STATE',
-              hand: handsMap.get(p.id) || [],
-              topCard,
-              activeColor,
-              currentPlayerIndex,
-              direction,
-              drawPileCount: drawPile.length,
-              players: sanitizedPlayers,
-              actionMessage,
-              unoCalledPlayers: Array.from(unoCalledPlayers),
-              winner,
-            })
-          }
-        })
+      const player = g.players.find((p) => p.id === playerId)
+      if (!player) {
+        console.warn(`[Host] Player not found for id ${playerId}`)
+        return
       }
-    },
-    [mpRoomState.players]
-  )
 
-  // Host executes an action for ANY player (Host or Client)
-  const hostExecutePlayCard = useCallback(
-    (playerIndex, card, chosenColor = null) => {
-      const handsMap = hostMasterStateRef.current.hands
-      let drawPile = hostMasterStateRef.current.drawPile
-      let discardPile = hostMasterStateRef.current.discardPile
+      const currentHand = g.hands.get(playerId) || []
+      let cardIndex = currentHand.findIndex((c) => c.id === cardId)
+      if (cardIndex === -1 && fallbackCard) {
+        cardIndex = currentHand.findIndex(
+          (c) => c.color === fallbackCard.color && c.label === fallbackCard.label && c.type === fallbackCard.type
+        )
+      }
+      if (cardIndex === -1) {
+        console.warn(`[Host] Card ${cardId} not found in player ${playerId}'s hand`)
+        return
+      }
 
-      const player = mpRoomState.players[playerIndex]
-      if (!player) return
-
-      const currentHand = handsMap.get(player.id) || []
-      const nextHand = currentHand.filter((c) => c.id !== card.id)
-      handsMap.set(player.id, nextHand)
-
+      const card = currentHand[cardIndex]
       const isWild = card.color === CARD_COLORS.WILD
       const effectiveColor = isWild ? chosenColor : card.color
 
-      discardPile.push(card)
-      hostMasterStateRef.current.discardPile = discardPile
+      // Check legal move
+      if (!canPlayCard(card, g.topCard, g.activeColor)) {
+        console.warn(`[Host] Card ${card.label} (${card.color}) cannot be played on topCard`, g.topCard, g.activeColor)
+        return
+      }
 
-      // Audio cues
+      // Remove card from hand and push to discard pile
+      const nextHand = currentHand.filter((_, idx) => idx !== cardIndex)
+      g.hands.set(playerId, nextHand)
+      g.discardPile.push(card)
+      g.topCard = card
+      g.activeColor = effectiveColor
+      g.hasDrawnThisTurn = false
+
+      // Audio feedback
       if (card.type === CARD_TYPES.DRAW_TWO || card.type === CARD_TYPES.WILD_DRAW_FOUR) {
         playActionCardSound(true)
       } else if (card.type === CARD_TYPES.SKIP || card.type === CARD_TYPES.REVERSE) {
@@ -553,74 +587,70 @@ export default function UnoGame({
         playCardPlaySound()
       }
 
-      // Win check
+      // Win condition
       if (nextHand.length === 0) {
-        hostBroadcastGameState({
-          topCard: card,
-          activeColor: effectiveColor,
-          currentPlayerIndex: playerIndex,
-          direction: mpDirection,
-          actionMessage: `${player.name} won the match!`,
-          unoCalledPlayers: mpUnoCalledPlayers,
-          winner: player,
-        })
+        g.winner = player
+        g.actionMessage = `🎉 ${player.name} emptied their hand and won!`
+        hostBroadcastGameState()
         return
       }
 
+      // UNO reminder check
+      if (nextHand.length === 1) {
+        if (g.unoCalledPlayers.has(playerId)) {
+          playUnoCallSound()
+        }
+      }
+
+      // Action card effects
       let step = 1
-      let newDirection = mpDirection
       let message = `${player.name} played ${card.color !== CARD_COLORS.WILD ? card.color : ''} ${card.label}`
 
       if (card.type === CARD_TYPES.REVERSE) {
-        if (mpRoomState.players.length === 2) {
+        if (g.players.length === 2) {
           step = 2
           message = `${player.name} played Reverse! Next turn skipped.`
         } else {
-          newDirection = mpDirection * -1
-          setMpDirection(newDirection)
+          g.direction = g.direction * -1
           message = `${player.name} reversed direction!`
         }
       }
 
       if (card.type === CARD_TYPES.SKIP) {
         step = 2
-        const skippedIdx = getNextPlayerIndex(playerIndex, 1, mpRoomState.players, newDirection)
-        message = `${player.name} skipped ${mpRoomState.players[skippedIdx].name}!`
+        const skippedIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        message = `${player.name} skipped ${g.players[skippedIdx]?.name}!`
       }
 
       if (card.type === CARD_TYPES.DRAW_TWO) {
         step = 2
-        const targetIdx = getNextPlayerIndex(playerIndex, 1, mpRoomState.players, newDirection)
-        const targetPlayer = mpRoomState.players[targetIdx]
+        const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        const targetPlayer = g.players[targetIdx]
         const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
           2,
-          drawPile,
-          discardPile
+          g.drawPile,
+          g.discardPile
         )
-        hostMasterStateRef.current.drawPile = newDrawPile
-        hostMasterStateRef.current.discardPile = newDiscardPile
-        drawPile = newDrawPile
-        discardPile = newDiscardPile
-        const targetHand = handsMap.get(targetPlayer.id) || []
-        handsMap.set(targetPlayer.id, [...targetHand, ...drawnCards])
+        g.drawPile = newDrawPile
+        g.discardPile = newDiscardPile
+        const targetHand = g.hands.get(targetPlayer.id) || []
+        g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
         message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and skipped turn!`
       }
 
       if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
         step = 2
-        const targetIdx = getNextPlayerIndex(playerIndex, 1, mpRoomState.players, newDirection)
-        const targetPlayer = mpRoomState.players[targetIdx]
+        const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        const targetPlayer = g.players[targetIdx]
         const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
           4,
-          drawPile,
-          discardPile
+          g.drawPile,
+          g.discardPile
         )
-        hostMasterStateRef.current.drawPile = newDrawPile
-        hostMasterStateRef.current.discardPile = newDiscardPile
-        drawPile = newDrawPile
-        discardPile = newDiscardPile
-        const targetHand = handsMap.get(targetPlayer.id) || []
-        handsMap.set(targetPlayer.id, [...targetHand, ...drawnCards])
+        g.drawPile = newDrawPile
+        g.discardPile = newDiscardPile
+        const targetHand = g.hands.get(targetPlayer.id) || []
+        g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
         message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards!`
       }
 
@@ -628,126 +658,139 @@ export default function UnoGame({
         message = `${player.name} played Wild! Color is ${effectiveColor}.`
       }
 
-      const nextPlayerIdx = getNextPlayerIndex(
-        playerIndex,
-        step,
-        mpRoomState.players,
-        newDirection
-      )
+      const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, step, g.players, g.direction)
+      g.currentPlayerIndex = nextIdx
+      g.actionMessage = message
 
-      setMpHasDrawnCardThisTurn(false)
-      setMpHasCalledUnoThisRound(false)
-
-      hostBroadcastGameState({
-        topCard: card,
-        activeColor: effectiveColor,
-        currentPlayerIndex: nextPlayerIdx,
-        direction: newDirection,
-        actionMessage: message,
-        unoCalledPlayers: mpUnoCalledPlayers,
-      })
+      hostBroadcastGameState()
     },
-    [
-      mpRoomState.players,
-      mpDirection,
-      mpUnoCalledPlayers,
-      getNextPlayerIndex,
-      drawCardsFromPile,
-      hostBroadcastGameState,
-    ]
+    [getNextPlayerIndex, drawCardsFromPile, hostBroadcastGameState]
   )
 
-  // Host handles Draw Card action
-  const hostExecuteDrawCard = useCallback(
-    (playerIndex) => {
-      const handsMap = hostMasterStateRef.current.hands
-      const drawPile = hostMasterStateRef.current.drawPile
-      const discardPile = hostMasterStateRef.current.discardPile
+  // Authoritative host card draw execution
+  const hostProcessDrawCard = useCallback(
+    (playerId) => {
+      const g = hostGameRef.current
+      if (!g || g.currentPlayerIndex !== playerId) return
 
-      const player = mpRoomState.players[playerIndex]
+      const player = g.players.find((p) => p.id === playerId)
       if (!player) return
 
       playCardDrawSound()
       const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
         1,
-        drawPile,
-        discardPile
+        g.drawPile,
+        g.discardPile
       )
       if (drawnCards.length === 0) return
 
-      hostMasterStateRef.current.drawPile = newDrawPile
-      hostMasterStateRef.current.discardPile = newDiscardPile
+      g.drawPile = newDrawPile
+      g.discardPile = newDiscardPile
+      const currentHand = g.hands.get(playerId) || []
+      g.hands.set(playerId, [...currentHand, drawnCards[0]])
+      g.hasDrawnThisTurn = true
+      g.actionMessage = `${player.name} drew a card.`
 
-      const currentHand = handsMap.get(player.id) || []
-      handsMap.set(player.id, [...currentHand, drawnCards[0]])
-
-      setMpHasDrawnCardThisTurn(true)
-
-      hostBroadcastGameState({
-        topCard: mpTopCard,
-        activeColor: mpActiveColor,
-        currentPlayerIndex: playerIndex,
-        direction: mpDirection,
-        actionMessage: `${player.name} drew a card.`,
-        unoCalledPlayers: mpUnoCalledPlayers,
-      })
+      hostBroadcastGameState()
     },
-    [
-      mpRoomState.players,
-      mpTopCard,
-      mpActiveColor,
-      mpDirection,
-      mpUnoCalledPlayers,
-      drawCardsFromPile,
-      hostBroadcastGameState,
-    ]
+    [drawCardsFromPile, hostBroadcastGameState]
   )
 
-  // Host handles Pass Turn action
-  const hostExecutePassTurn = useCallback(
-    (playerIndex) => {
-      const nextPlayerIdx = getNextPlayerIndex(
-        playerIndex,
-        1,
-        mpRoomState.players,
-        mpDirection
-      )
-      setMpHasDrawnCardThisTurn(false)
-      setMpHasCalledUnoThisRound(false)
+  // Authoritative host turn pass execution
+  const hostProcessPassTurn = useCallback(
+    (playerId) => {
+      const g = hostGameRef.current
+      if (!g || g.currentPlayerIndex !== playerId) return
 
-      hostBroadcastGameState({
-        topCard: mpTopCard,
-        activeColor: mpActiveColor,
-        currentPlayerIndex: nextPlayerIdx,
-        direction: mpDirection,
-        actionMessage: `${mpRoomState.players[playerIndex]?.name} passed turn.`,
-        unoCalledPlayers: mpUnoCalledPlayers,
-      })
+      const player = g.players.find((p) => p.id === playerId)
+      const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+      g.currentPlayerIndex = nextIdx
+      g.hasDrawnThisTurn = false
+      g.actionMessage = `${player?.name || 'Player'} passed turn.`
+
+      hostBroadcastGameState()
     },
-    [
-      mpRoomState.players,
-      mpDirection,
-      mpTopCard,
-      mpActiveColor,
-      mpUnoCalledPlayers,
-      getNextPlayerIndex,
-      hostBroadcastGameState,
-    ]
+    [getNextPlayerIndex, hostBroadcastGameState]
   )
+
+  // Authoritative host UNO shout execution
+  const hostProcessCallUno = useCallback(
+    (playerId, playerName) => {
+      const g = hostGameRef.current
+      if (!g) return
+
+      playUnoCallSound()
+      g.unoCalledPlayers.add(playerId)
+      g.actionMessage = `🔔 ${playerName} shouted UNO!`
+
+      if (hostNetworkRef.current) {
+        hostNetworkRef.current.broadcast({
+          type: 'UNO_SHOUTED',
+          playerId,
+          playerName,
+        })
+      }
+
+      hostBroadcastGameState()
+    },
+    [hostBroadcastGameState]
+  )
+
+  // Connect client data ref to latest authoritative processors
+  useEffect(() => {
+    onClientDataRef.current = (clientPeerId, data) => {
+      if (!data) return
+      const g = hostGameRef.current
+      if (!g) return
+
+      // Look up player directly by peer connection ID
+      const player = g.players.find((p) => p.peerId === clientPeerId)
+      const playerId = player ? player.id : (data.playerId !== undefined ? data.playerId : g.currentPlayerIndex)
+
+      if (data.type === 'ACTION_PLAY_CARD') {
+        hostProcessPlayCard(playerId, data.cardId, data.chosenColor, data.card)
+      } else if (data.type === 'ACTION_DRAW_CARD') {
+        hostProcessDrawCard(playerId)
+      } else if (data.type === 'ACTION_PASS_TURN') {
+        hostProcessPassTurn(playerId)
+      } else if (data.type === 'ACTION_CALL_UNO') {
+        hostProcessCallUno(playerId, player?.name || data.playerName || 'Player')
+      }
+    }
+  }, [hostProcessPlayCard, hostProcessDrawCard, hostProcessPassTurn, hostProcessCallUno])
 
   // Host creates room
   const handleCreateRoom = ({ name, avatar, maxPlayers }) => {
     const code = generateRoomCode()
+    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true }
+
+    hostGameRef.current = {
+      roomCode: code,
+      players: [hostPlayer],
+      drawPile: [],
+      discardPile: [],
+      hands: new Map(),
+      topCard: null,
+      activeColor: null,
+      currentPlayerIndex: 0,
+      direction: 1,
+      unoCalledPlayers: new Set(),
+      hasDrawnThisTurn: false,
+      winner: null,
+      actionMessage: '',
+    }
+
     setMpRoomState({
       isInRoom: false,
       isHost: true,
       roomCode: code,
-      players: [{ id: 0, name, avatar, isHost: true, isYou: true }],
+      players: [hostPlayer],
       maxPlayers,
       isConnecting: true,
       error: '',
     })
     setMyPlayerId(0)
+    myPlayerIdRef.current = 0
 
     const hostPeer = initHostPeer({
       roomCode: code,
@@ -758,59 +801,53 @@ export default function UnoGame({
           isConnecting: false,
         }))
       },
-      onClientJoin: (clientPeerId, clientPlayer) => {
-        setMpRoomState((prev) => {
-          if (prev.players.length >= prev.maxPlayers) return prev
-          const newPlayer = {
-            id: prev.players.length,
-            peerId: clientPeerId,
-            name: clientPlayer.name || 'Friend',
-            avatar: clientPlayer.avatar || '😎',
-            isHost: false,
-            isYou: false,
-          }
-          const updatedPlayers = [...prev.players, newPlayer]
+      onClientJoin: (clientPeerId, clientPlayer, conn) => {
+        const currentPlayers = hostGameRef.current.players
+        if (currentPlayers.length >= maxPlayers) return
 
-          // Broadcast room update to all clients
-          setTimeout(() => {
-            hostPeer.broadcast({
-              type: 'ROOM_UPDATE',
-              roomCode: prev.roomCode,
-              players: updatedPlayers,
-            })
-          }, 100)
+        const newPlayer = {
+          id: currentPlayers.length,
+          peerId: clientPeerId,
+          name: clientPlayer.name || `Player ${currentPlayers.length + 1}`,
+          avatar: clientPlayer.avatar || '😎',
+          isHost: false,
+          isYou: false,
+        }
+        const updatedPlayers = [...currentPlayers, newPlayer]
+        hostGameRef.current.players = updatedPlayers
 
-          return { ...prev, players: updatedPlayers }
+        // Immediately send direct WELCOME message with their assigned player ID
+        conn.send({
+          type: 'WELCOME',
+          playerId: newPlayer.id,
+          roomCode: code,
+          players: updatedPlayers,
         })
-      },
-      onClientLeave: (clientPeerId) => {
-        setMpRoomState((prev) => {
-          const updatedPlayers = prev.players.filter((p) => p.peerId !== clientPeerId)
+
+        // Broadcast room update to all players
+        setTimeout(() => {
           hostPeer.broadcast({
             type: 'ROOM_UPDATE',
-            roomCode: prev.roomCode,
+            roomCode: code,
             players: updatedPlayers,
           })
-          return { ...prev, players: updatedPlayers }
+        }, 50)
+
+        setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
+      },
+      onClientLeave: (clientPeerId) => {
+        const updatedPlayers = hostGameRef.current.players.filter((p) => p.peerId !== clientPeerId)
+        hostGameRef.current.players = updatedPlayers
+        hostPeer.broadcast({
+          type: 'ROOM_UPDATE',
+          roomCode: code,
+          players: updatedPlayers,
         })
+        setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
       },
       onClientData: (clientPeerId, data) => {
-        // Handle incoming game moves from clients
-        if (data.type === 'ACTION_PLAY_CARD') {
-          hostExecutePlayCard(data.playerIndex, data.card, data.chosenColor)
-        } else if (data.type === 'ACTION_DRAW_CARD') {
-          hostExecuteDrawCard(data.playerIndex)
-        } else if (data.type === 'ACTION_PASS_TURN') {
-          hostExecutePassTurn(data.playerIndex)
-        } else if (data.type === 'ACTION_CALL_UNO') {
-          playUnoCallSound()
-          setMpUnoCalledPlayers((prev) => new Set(prev).add(data.playerId))
-          setMpActionMessage(`${data.playerName} shouted UNO!`)
-          hostPeer.broadcast({
-            type: 'UNO_SHOUTED',
-            playerName: data.playerName,
-            playerId: data.playerId,
-          })
+        if (onClientDataRef.current) {
+          onClientDataRef.current(clientPeerId, data)
         }
       },
       onError: (err) => {
@@ -846,19 +883,31 @@ export default function UnoGame({
         }))
       },
       onData: (data) => {
-        if (data.type === 'ROOM_UPDATE') {
-          // Identify own ID
-          const me = data.players.find((p) => !p.isHost && p.name === name)
-          if (me) setMyPlayerId(me.id)
-
+        if (data.type === 'WELCOME') {
+          setMyPlayerId(data.playerId)
+          myPlayerIdRef.current = data.playerId
+          if (data.players) {
+            setMpRoomState((prev) => ({
+              ...prev,
+              players: data.players.map((p) => ({
+                ...p,
+                isYou: p.id === data.playerId,
+              })),
+            }))
+          }
+        } else if (data.type === 'ROOM_UPDATE') {
           setMpRoomState((prev) => ({
             ...prev,
             players: data.players.map((p) => ({
               ...p,
-              isYou: p.name === name,
+              isYou: p.id === myPlayerIdRef.current || (!p.isHost && p.name === name),
             })),
           }))
         } else if (data.type === 'SYNC_GAME_STATE') {
+          if (data.yourPlayerId !== undefined) {
+            setMyPlayerId(data.yourPlayerId)
+            myPlayerIdRef.current = data.yourPlayerId
+          }
           setMyHand(data.hand || [])
           setMpPlayers(data.players || [])
           setMpTopCard(data.topCard)
@@ -868,7 +917,7 @@ export default function UnoGame({
           setMpDrawPileCount(data.drawPileCount)
           setMpActionMessage(data.actionMessage)
           setMpUnoCalledPlayers(new Set(data.unoCalledPlayers || []))
-          setMpHasDrawnCardThisTurn(false)
+          setMpHasDrawnCardThisTurn(data.hasDrawnThisTurn || false)
           setMpHasCalledUnoThisRound(false)
 
           if (data.winner) {
@@ -880,7 +929,7 @@ export default function UnoGame({
         } else if (data.type === 'UNO_SHOUTED') {
           playUnoCallSound()
           setMpUnoCalledPlayers((prev) => new Set(prev).add(data.playerId))
-          setMpActionMessage(`${data.playerName} shouted UNO!`)
+          setMpActionMessage(`🔔 ${data.playerName} shouted UNO!`)
         }
       },
       onDisconnected: () => {
@@ -902,42 +951,42 @@ export default function UnoGame({
     clientNetworkRef.current = clientPeer
   }
 
-  // Host starts the multiplayer match
+  // Host starts the match (Host ALWAYS has the first move: currentPlayerIndex = 0)
   const handleHostStartGame = () => {
+    const g = hostGameRef.current
     const freshDeck = createUnoDeck()
     const { hands, drawPile, discardPile, initialColor } = dealHands(
       freshDeck,
-      mpRoomState.players.length
+      g.players.length
     )
 
     const handsMap = new Map()
-    mpRoomState.players.forEach((p, idx) => {
+    g.players.forEach((p, idx) => {
       handsMap.set(p.id, hands[idx])
     })
 
-    hostMasterStateRef.current = {
-      drawPile,
-      discardPile,
-      hands: handsMap,
-    }
+    g.drawPile = drawPile
+    g.discardPile = discardPile
+    g.hands = handsMap
+    g.topCard = discardPile[discardPile.length - 1]
+    g.activeColor = initialColor
+    g.currentPlayerIndex = 0 // Host makes the first move!
+    g.direction = 1
+    g.hasDrawnThisTurn = false
+    g.unoCalledPlayers = new Set()
+    g.winner = null
+    g.actionMessage = 'Game started! Host has the first move.'
 
     setScreen('mp_playing')
-    setMpDirection(1)
     setMpCurrentPlayerIndex(0)
+    setMyPlayerId(0)
+    myPlayerIdRef.current = 0
     setMpWinner(null)
 
-    hostBroadcastGameState({
-      topCard: discardPile[discardPile.length - 1],
-      activeColor: initialColor,
-      currentPlayerIndex: 0,
-      direction: 1,
-      actionMessage: 'Multiplayer Match Started! Good luck!',
-      unoCalledPlayers: new Set(),
-      winner: null,
-    })
+    hostBroadcastGameState('Game started! Host has the first move.')
   }
 
-  // Multiplayer player action dispatchers
+  // Action dispatchers (work for both Host locally and Clients over network)
   const handleMpPlayCard = (card) => {
     if (card.color === CARD_COLORS.WILD) {
       setPendingCard(card)
@@ -949,11 +998,12 @@ export default function UnoGame({
 
   const dispatchMpPlayCard = (card, color) => {
     if (mpRoomState.isHost) {
-      hostExecutePlayCard(mpCurrentPlayerIndex, card, color)
+      hostProcessPlayCard(0, card.id, color, card)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_PLAY_CARD',
-        playerIndex: mpCurrentPlayerIndex,
+        playerId: myPlayerIdRef.current,
+        cardId: card.id,
         card,
         chosenColor: color,
       })
@@ -963,45 +1013,36 @@ export default function UnoGame({
   const handleMpDrawCard = () => {
     if (mpHasDrawnCardThisTurn) return
     if (mpRoomState.isHost) {
-      hostExecuteDrawCard(mpCurrentPlayerIndex)
+      hostProcessDrawCard(0)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_DRAW_CARD',
-        playerIndex: mpCurrentPlayerIndex,
+        playerId: myPlayerIdRef.current,
       })
     }
   }
 
   const handleMpPassTurn = () => {
     if (mpRoomState.isHost) {
-      hostExecutePassTurn(mpCurrentPlayerIndex)
+      hostProcessPassTurn(0)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_PASS_TURN',
-        playerIndex: mpCurrentPlayerIndex,
+        playerId: myPlayerIdRef.current,
       })
     }
   }
 
   const handleMpCallUno = () => {
     setMpHasCalledUnoThisRound(true)
-    playUnoCallSound()
-    const myPlayer = mpRoomState.players.find((p) => p.id === myPlayerId)
+    const myPlayer = mpRoomState.players.find((p) => p.id === myPlayerIdRef.current)
 
     if (mpRoomState.isHost) {
-      setMpUnoCalledPlayers((prev) => new Set(prev).add(myPlayerId))
-      setMpActionMessage('You shouted UNO!')
-      if (hostNetworkRef.current) {
-        hostNetworkRef.current.broadcast({
-          type: 'UNO_SHOUTED',
-          playerName: myPlayer?.name || 'Host',
-          playerId: myPlayerId,
-        })
-      }
+      hostProcessCallUno(0, myPlayer?.name || 'Host')
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_CALL_UNO',
-        playerId: myPlayerId,
+        playerId: myPlayerIdRef.current,
         playerName: myPlayer?.name || 'Friend',
       })
     }
@@ -1024,7 +1065,7 @@ export default function UnoGame({
     setScreen('mode_select')
   }
 
-  // Handle wild color modal selection
+  // Handle color picker selection
   const handleColorSelected = (color) => {
     setColorPickerOpen(false)
     if (!pendingCard) return
@@ -1037,7 +1078,7 @@ export default function UnoGame({
     setPendingCard(null)
   }
 
-  // Active turn checks
+  // Derived checks for AI mode
   const aiActivePlayer = aiPlayers[aiCurrentPlayerIndex]
   const isAiHumanTurn = Boolean(aiActivePlayer && aiActivePlayer.isHuman)
   const isAiWaitingForBot =

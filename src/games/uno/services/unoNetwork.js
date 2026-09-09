@@ -45,6 +45,9 @@ export function initHostPeer({
   })
 
   peer.on('connection', (conn) => {
+    // Immediately register connection instance
+    connections.set(conn.peer, conn)
+
     conn.on('open', () => {
       connections.set(conn.peer, conn)
     })
@@ -63,11 +66,12 @@ export function initHostPeer({
     })
 
     conn.on('error', (err) => {
-      console.warn('Connection error with peer:', conn.peer, err)
+      console.warn('[Host] Connection error with peer:', conn.peer, err)
     })
   })
 
   peer.on('error', (err) => {
+    console.error('[Host] Peer error:', err)
     if (onError) onError(err)
   })
 
@@ -75,24 +79,24 @@ export function initHostPeer({
     peer,
     connections,
     broadcast: (data) => {
-      connections.forEach((conn) => {
-        if (conn.open) {
-          try {
-            conn.send(data)
-          } catch (e) {
-            console.error('Failed to send to client:', e)
-          }
+      connections.forEach((conn, clientPeerId) => {
+        try {
+          conn.send(data)
+        } catch (e) {
+          console.error('[Host] Broadcast failed for client:', clientPeerId, e)
         }
       })
     },
     sendTo: (clientPeerId, data) => {
       const conn = connections.get(clientPeerId)
-      if (conn && conn.open) {
+      if (conn) {
         try {
           conn.send(data)
         } catch (e) {
-          console.error('Failed to send to client:', e)
+          console.error('[Host] sendTo failed for client:', clientPeerId, e)
         }
+      } else {
+        console.warn('[Host] sendTo: no active connection for peer:', clientPeerId)
       }
     },
     destroy: () => {
@@ -126,15 +130,20 @@ export function initClientPeer({
       reliable: true,
     })
 
-    hostConn.on('open', () => {
-      // Send JOIN payload to host
-      hostConn.send({
-        type: 'JOIN',
-        player,
-      })
+    const handleOpen = () => {
+      try {
+        hostConn.send({
+          type: 'JOIN',
+          player,
+        })
+      } catch (e) {
+        console.error('[Client] Failed to send JOIN payload:', e)
+      }
 
       if (onConnected) onConnected(hostConn)
-    })
+    }
+
+    hostConn.on('open', handleOpen)
 
     hostConn.on('data', (data) => {
       if (onData) onData(data)
@@ -145,23 +154,27 @@ export function initClientPeer({
     })
 
     hostConn.on('error', (err) => {
+      console.error('[Client] hostConn error:', err)
       if (onError) onError(err)
     })
   })
 
   peer.on('error', (err) => {
+    console.error('[Client] Peer error:', err)
     if (onError) onError(err)
   })
 
   return {
     peer,
     sendAction: (data) => {
-      if (hostConn && hostConn.open) {
-        try {
-          hostConn.send(data)
-        } catch (e) {
-          console.error('Failed to send action to host:', e)
-        }
+      if (!hostConn) {
+        console.warn('[Client] sendAction skipped: hostConn is null')
+        return
+      }
+      try {
+        hostConn.send(data)
+      } catch (e) {
+        console.error('[Client] Failed to send action to host:', e)
       }
     },
     destroy: () => {
