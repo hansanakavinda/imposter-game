@@ -176,17 +176,51 @@ export default function UnoBoard({
           {/* Discard Pile */}
           <div className="flex flex-col items-center">
             <div className="relative">
+              {/* Vibrant active color halo glow */}
+              <div
+                className="absolute -inset-3 rounded-2xl blur-xl opacity-75 transition-all duration-500 pointer-events-none"
+                style={{
+                  backgroundColor: activeColorConfig.hex || '#ef4444',
+                  boxShadow: `0 0 35px 8px ${activeColorConfig.hex || '#ef4444'}50`,
+                }}
+              />
+
+              {/* Stack effect representing underneath cards */}
+              <div className="absolute inset-0 bg-zinc-800/90 rounded-xl rotate-6 translate-x-1.5 translate-y-1 border border-white/20 shadow-md pointer-events-none" />
+              <div className="absolute inset-0 bg-zinc-700/90 rounded-xl -rotate-4 -translate-x-1 translate-y-0.5 border border-white/20 shadow-md pointer-events-none" />
+
+              {/* Floating Active Color Badge when top card is Wild */}
+              {topCard?.color === CARD_COLORS.WILD && (
+                <div
+                  className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                  <span>Color: {activeColorConfig.name}</span>
+                </div>
+              )}
+
               <UnoCard
                 card={topCard}
                 size="md"
                 isPlayable={false}
+                activeColor={activeColor}
                 style={{ transform: 'rotate(-2deg)' }}
-                className="shadow-2xl border-white"
+                className="relative z-10 shadow-2xl border-white ring-3 ring-white/90 brightness-105"
               />
             </div>
-            <span className="text-[11px] font-semibold text-zinc-400 mt-2">
-              Discard Pile
-            </span>
+
+            {/* Clear Discard Pile label and active color tag */}
+            <div className="flex items-center gap-1.5 mt-2.5">
+              <span className="text-[11px] font-semibold text-zinc-300">
+                Discard Pile
+              </span>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-white shadow-sm flex items-center gap-1 ${activeColorConfig.bg}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                {activeColorConfig.name}
+              </span>
+            </div>
           </div>
         </div>
 

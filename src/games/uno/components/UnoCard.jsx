@@ -9,6 +9,7 @@ export default function UnoCard({
   size = 'md',
   className = '',
   style = {},
+  activeColor = null,
 }) {
   const sizeClasses = {
     sm: 'w-12 h-18 text-xs rounded-lg',
@@ -41,6 +42,10 @@ export default function UnoCard({
 
   const config = COLOR_CONFIG[card.color] || COLOR_CONFIG[CARD_COLORS.WILD]
   const isWild = card.color === CARD_COLORS.WILD
+  const chosenConfig =
+    isWild && activeColor && activeColor !== CARD_COLORS.WILD
+      ? COLOR_CONFIG[activeColor]
+      : null
 
   return (
     <button
@@ -59,7 +64,7 @@ export default function UnoCard({
         isPlayable && onClick
           ? 'cursor-pointer hover:-translate-y-3 hover:shadow-2xl ring-2 ring-white/60 active:scale-95'
           : 'cursor-default'
-      } ${className}`}
+      } ${chosenConfig ? `ring-2 ${chosenConfig.ring}` : ''} ${className}`}
     >
       {/* Top Left Mini Index */}
       <div className="flex items-center gap-0.5 leading-none z-10">
@@ -105,6 +110,15 @@ export default function UnoCard({
           {card.label}
         </span>
       </div>
+
+      {/* Active Color Stripe for Wild Card */}
+      {chosenConfig && (
+        <div
+          className={`absolute bottom-0 inset-x-0 py-0.5 text-center text-[8px] sm:text-[9px] font-black uppercase text-white shadow-md z-20 ${chosenConfig.bg}`}
+        >
+          {chosenConfig.name}
+        </div>
+      )}
 
       {/* Subtle shine highlight */}
       <div className="absolute -top-10 -left-10 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
