@@ -11,8 +11,11 @@ import {
   ChevronRight,
   Flame,
   ArrowUpDown,
+  Settings,
+  AlertTriangle,
 } from 'lucide-react'
 import UnoCard from './UnoCard'
+import UnoSettingsModal from './UnoSettingsModal'
 import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { playClickSound } from '../../../utils/sound'
@@ -41,6 +44,15 @@ export default function UnoBoard({
   skippedInfo = null,
   pendingDrawCount = 0,
   pendingStackType = null,
+  isMultiplayer = false,
+  isHost = false,
+  roomCode = '',
+  onSyncState = null,
+  onReturnToLobby = null,
+  onLeaveGame = null,
+  onOpenRules = null,
+  connectionStatus = 'connected',
+  onReconnect = null,
 }) {
   const myPlayer = players.find((p) => p.id === myPlayerId) || players[0]
   const handCards = myHand || myPlayer?.hand || EMPTY_HAND
@@ -72,6 +84,16 @@ export default function UnoBoard({
     handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound && pendingDrawCount === 0
 
   const [handSortMode, setHandSortMode] = useState('none') // 'none' | 'color' | 'number'
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  const handleHeaderSync = () => {
+    if (!onSyncState || isSyncing) return
+    playClickSound()
+    setIsSyncing(true)
+    onSyncState()
+    setTimeout(() => setIsSyncing(false), 800)
+  }
 
   // Memoize sorted cards for smooth rendering and persistent sort preference
   const displayedHandCards = useMemo(() => {
@@ -100,8 +122,104 @@ export default function UnoBoard({
 
   return (
     <div className="w-full max-w-2xl mx-auto px-3 py-2 flex flex-col justify-between min-h-[88vh] select-none">
-      {/* 1. Top Section: Turn Order Track & Direction Flow */}
+      {/* 1. Top Section: Header Bar & Turn Order Track */}
       <div className="w-full pt-1 pb-2">
+        {/* Disconnection Warning Banner (when connection lost during multiplayer match) */}
+        {isMultiplayer && connectionStatus === 'disconnected' && (
+          <div className="mb-2.5 p-2.5 rounded-2xl bg-red-950/90 border border-red-500/60 text-red-200 text-xs flex items-center justify-between shadow-lg shadow-red-950/60 max-w-lg mx-auto animate-pulse">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <div>
+                <div className="font-bold text-white text-xs leading-tight">Connection Lost</div>
+                <div className="text-[10px] text-red-300">Your hand and seat are preserved</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {onReconnect && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound()
+                    onReconnect()
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-[11px] transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  Reconnect
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound()
+                  setIsSettingsOpen(true)
+                }}
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold transition cursor-pointer"
+              >
+                Menu
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Board Top Utility Bar: Room Info & Settings Menu Button */}
+        <div className="flex items-center justify-between px-1 mb-2 max-w-lg mx-auto text-xs">
+          {/* Room / Mode Info */}
+          <div className="flex items-center gap-2">
+            {isMultiplayer && roomCode ? (
+              <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1.5 shadow-sm">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected'
+                      ? 'bg-emerald-400 animate-pulse'
+                      : connectionStatus === 'reconnecting'
+                      ? 'bg-amber-400 animate-ping'
+                      : 'bg-rose-500'
+                  }`}
+                />
+                <span>Room {roomCode}</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400 flex items-center gap-1 shadow-sm">
+                <span>🤖</span>
+                <span>Solo vs Bots</span>
+              </span>
+            )}
+          </div>
+
+          {/* Top Actions: Quick State Sync & Settings Menu */}
+          <div className="flex items-center gap-1.5">
+            {isMultiplayer && onSyncState && (
+              <button
+                type="button"
+                onClick={handleHeaderSync}
+                disabled={isSyncing}
+                title="Sync game state with host"
+                className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                <RotateCw
+                  className={`w-3.5 h-3.5 ${
+                    isSyncing ? 'animate-spin text-amber-400' : 'text-blue-400'
+                  }`}
+                />
+                <span className="hidden sm:inline">Sync</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound()
+                setIsSettingsOpen(true)
+              }}
+              title="Game settings, rules, and exit options"
+              className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+            >
+              <Settings className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Menu</span>
+            </button>
+          </div>
+        </div>
+
         {/* Turn Order Header Bar */}
         <div className="flex items-center justify-between px-1 mb-1.5 max-w-lg mx-auto text-xs">
           <div className="flex items-center gap-1.5 font-bold text-zinc-400">
@@ -673,6 +791,21 @@ export default function UnoBoard({
           </div>
         </div>
       </div>
+
+      {/* In-Game Settings / Menu Modal */}
+      <UnoSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isMultiplayer={isMultiplayer}
+        isHost={isHost}
+        roomCode={roomCode}
+        onSyncState={onSyncState}
+        onOpenRules={onOpenRules}
+        onReturnToLobby={onReturnToLobby}
+        onLeaveGame={onLeaveGame}
+        connectionStatus={connectionStatus}
+        onReconnect={onReconnect}
+      />
     </div>
   )
 }

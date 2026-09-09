@@ -88,6 +88,13 @@ export default function UnoGame({
   const [mpStackingEnabled, setMpStackingEnabled] = useState(true)
   const [mpPendingDrawCount, setMpPendingDrawCount] = useState(0)
   const [mpPendingStackType, setMpPendingStackType] = useState(null)
+  const [mpConnectionStatus, setMpConnectionStatus] = useState('connected') // 'connected' | 'reconnecting' | 'disconnected'
+  const myProfileRef = useRef({ name: 'Player', avatar: '😎', roomCode: '' })
+  const screenRef = useRef(screen)
+
+  useEffect(() => {
+    screenRef.current = screen
+  }, [screen])
 
   // Authoritative host master state (immune to React stale closures)
   const hostGameRef = useRef({
@@ -1024,9 +1031,11 @@ export default function UnoGame({
         hostProcessPassTurn(playerId)
       } else if (data.type === 'ACTION_CALL_UNO') {
         hostProcessCallUno(playerId, player?.name || data.playerName || 'Player')
+      } else if (data.type === 'ACTION_REQUEST_SYNC') {
+        hostBroadcastGameState('Host synchronized game state.')
       }
     }
-  }, [hostProcessPlayCard, hostProcessDrawCard, hostProcessPassTurn, hostProcessCallUno])
+  }, [hostProcessPlayCard, hostProcessDrawCard, hostProcessPassTurn, hostProcessCallUno, hostBroadcastGameState])
 
   // Host creates room
   const handleCreateRoom = ({ name, avatar, maxPlayers, enableStacking = true }) => {
@@ -1079,7 +1088,72 @@ export default function UnoGame({
         }))
       },
       onClientJoin: (clientPeerId, clientPlayer, conn) => {
-        const currentPlayers = hostGameRef.current.players
+        const g = hostGameRef.current
+        const currentPlayers = g.players
+
+        // 1. Check if this is an EXISTING player reconnecting
+        const existingPlayer = currentPlayers.find(
+          (p) => !p.isHost && (p.name === clientPlayer.name || p.peerId === clientPeerId)
+        )
+
+        if (existingPlayer) {
+          existingPlayer.peerId = clientPeerId
+          existingPlayer.connected = true
+
+          // Immediately send direct WELCOME message with their assigned player ID
+          conn.send({
+            type: 'WELCOME',
+            playerId: existingPlayer.id,
+            roomCode: code,
+            players: currentPlayers,
+            stackingEnabled: g.stackingEnabled !== false,
+          })
+
+          // If a match is active, immediately send them their current hand and game state!
+          if (g.drawPile.length > 0 || g.topCard !== null) {
+            const sanitizedPlayers = currentPlayers.map((p) => ({
+              id: p.id,
+              name: p.name,
+              avatar: p.avatar,
+              isHost: p.isHost,
+              cardCount: g.hands.get(p.id)?.length || 0,
+            }))
+
+            conn.send({
+              type: 'SYNC_GAME_STATE',
+              yourPlayerId: existingPlayer.id,
+              hand: [...(g.hands.get(existingPlayer.id) || [])],
+              topCard: g.topCard,
+              activeColor: g.activeColor,
+              currentPlayerIndex: g.currentPlayerIndex,
+              direction: g.direction,
+              drawPileCount: g.drawPile.length,
+              players: sanitizedPlayers,
+              actionMessage: `${existingPlayer.name} reconnected to the game!`,
+              unoCalledPlayers: Array.from(g.unoCalledPlayers),
+              hasDrawnThisTurn: g.hasDrawnThisTurn,
+              winner: g.winner,
+              skippedInfo: g.skippedInfo || null,
+              pendingDrawCount: g.pendingDrawCount || 0,
+              pendingStackType: g.pendingStackType || null,
+              stackingEnabled: g.stackingEnabled !== false,
+            })
+            hostBroadcastGameState(`${existingPlayer.name} reconnected!`)
+          } else {
+            setTimeout(() => {
+              hostPeer.broadcast({
+                type: 'ROOM_UPDATE',
+                roomCode: code,
+                players: currentPlayers,
+                stackingEnabled: g.stackingEnabled !== false,
+              })
+            }, 50)
+          }
+
+          setMpRoomState((prev) => ({ ...prev, players: currentPlayers }))
+          return
+        }
+
         if (currentPlayers.length >= maxPlayers) return
 
         const newPlayer = {
@@ -1089,9 +1163,10 @@ export default function UnoGame({
           avatar: clientPlayer.avatar || '😎',
           isHost: false,
           isYou: false,
+          connected: true,
         }
         const updatedPlayers = [...currentPlayers, newPlayer]
-        hostGameRef.current.players = updatedPlayers
+        g.players = updatedPlayers
 
         // Immediately send direct WELCOME message with their assigned player ID
         conn.send({
@@ -1099,7 +1174,7 @@ export default function UnoGame({
           playerId: newPlayer.id,
           roomCode: code,
           players: updatedPlayers,
-          stackingEnabled: hostGameRef.current.stackingEnabled !== false,
+          stackingEnabled: g.stackingEnabled !== false,
         })
 
         // Broadcast room update to all players
@@ -1108,19 +1183,35 @@ export default function UnoGame({
             type: 'ROOM_UPDATE',
             roomCode: code,
             players: updatedPlayers,
-            stackingEnabled: hostGameRef.current.stackingEnabled !== false,
+            stackingEnabled: g.stackingEnabled !== false,
           })
         }, 50)
 
         setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
       },
       onClientLeave: (clientPeerId) => {
-        const updatedPlayers = hostGameRef.current.players.filter((p) => p.peerId !== clientPeerId)
-        hostGameRef.current.players = updatedPlayers
+        const g = hostGameRef.current
+        const player = g.players.find((p) => p.peerId === clientPeerId)
+        if (!player) return
+
+        // If match is active, DO NOT delete player from the match!
+        // Keep seat and hand intact so they can reconnect without corrupting turn order
+        const isGameActive = g.drawPile.length > 0 || g.topCard !== null
+        if (isGameActive && !g.winner) {
+          player.peerId = null
+          player.connected = false
+          hostBroadcastGameState(`${player.name} temporarily disconnected. Waiting for reconnect...`)
+          return
+        }
+
+        // If in lobby, remove player normally
+        const updatedPlayers = g.players.filter((p) => p.peerId !== clientPeerId)
+        g.players = updatedPlayers
         hostPeer.broadcast({
           type: 'ROOM_UPDATE',
           roomCode: code,
           players: updatedPlayers,
+          stackingEnabled: g.stackingEnabled !== false,
         })
         setMpRoomState((prev) => ({ ...prev, players: updatedPlayers }))
       },
@@ -1143,6 +1234,8 @@ export default function UnoGame({
 
   // Client joins room
   const handleJoinRoom = ({ name, avatar, roomCode }) => {
+    myProfileRef.current = { name, avatar, roomCode }
+    setMpConnectionStatus('reconnecting')
     setMpRoomState((prev) => ({
       ...prev,
       isConnecting: true,
@@ -1153,6 +1246,7 @@ export default function UnoGame({
       roomCode,
       player: { name, avatar },
       onConnected: () => {
+        setMpConnectionStatus('connected')
         setMpRoomState((prev) => ({
           ...prev,
           isInRoom: true,
@@ -1191,6 +1285,7 @@ export default function UnoGame({
             })),
           }))
         } else if (data.type === 'SYNC_GAME_STATE') {
+          setMpConnectionStatus('connected')
           if (data.yourPlayerId !== undefined) {
             setMyPlayerId(data.yourPlayerId)
             myPlayerIdRef.current = data.yourPlayerId
@@ -1219,6 +1314,11 @@ export default function UnoGame({
           } else {
             setScreen('mp_playing')
           }
+        } else if (data.type === 'ROOM_RESET_TO_LOBBY') {
+          setScreen('mp_lobby')
+          setMpPendingDrawCount(0)
+          setMpPendingStackType(null)
+          setMpActionMessage('Host returned all players to room lobby.')
         } else if (data.type === 'UNO_SHOUTED') {
           playUnoCallSound()
           setMpUnoCalledPlayers((prev) => new Set(prev).add(data.playerId))
@@ -1226,13 +1326,19 @@ export default function UnoGame({
         }
       },
       onDisconnected: () => {
-        setMpRoomState((prev) => ({
-          ...prev,
-          error: 'Host disconnected. Game ended.',
-        }))
-        setScreen('mp_lobby')
+        setMpConnectionStatus('disconnected')
+        if (screenRef.current === 'mp_playing') {
+          setMpActionMessage('Connection interrupted. Click Menu or Reconnect to restore state.')
+        } else {
+          setMpRoomState((prev) => ({
+            ...prev,
+            error: 'Disconnected from host.',
+          }))
+          setScreen('mp_lobby')
+        }
       },
       onError: () => {
+        setMpConnectionStatus('disconnected')
         setMpRoomState((prev) => ({
           ...prev,
           isConnecting: false,
@@ -1347,6 +1453,44 @@ export default function UnoGame({
     }
   }
 
+  const handleSyncGameStateMp = useCallback(() => {
+    if (mpRoomState.isHost) {
+      hostBroadcastGameState('Host synchronized game state.')
+    } else if (clientNetworkRef.current) {
+      clientNetworkRef.current.sendAction({
+        type: 'ACTION_REQUEST_SYNC',
+        playerId: myPlayerIdRef.current,
+      })
+    }
+  }, [mpRoomState.isHost, hostBroadcastGameState])
+
+  const handleHostReturnAllToLobby = useCallback(() => {
+    const g = hostGameRef.current
+    if (!g) return
+    g.drawPile = []
+    g.discardPile = []
+    g.hands = new Map()
+    g.topCard = null
+    g.activeColor = null
+    g.winner = null
+    g.skippedInfo = null
+    g.pendingDrawCount = 0
+    g.pendingStackType = null
+    if (hostNetworkRef.current) {
+      hostNetworkRef.current.broadcast({ type: 'ROOM_RESET_TO_LOBBY' })
+    }
+    setScreen('mp_lobby')
+    setMpPendingDrawCount(0)
+    setMpPendingStackType(null)
+    setMpActionMessage('Host returned all players to room lobby.')
+  }, [])
+
+  const handleClientReturnToLobby = useCallback(() => {
+    setScreen('mp_lobby')
+    setMpPendingDrawCount(0)
+    setMpPendingStackType(null)
+  }, [])
+
   const handleLeaveMpRoom = () => {
     if (hostNetworkRef.current) hostNetworkRef.current.destroy()
     if (clientNetworkRef.current) clientNetworkRef.current.destroy()
@@ -1363,6 +1507,15 @@ export default function UnoGame({
     })
     setScreen('mode_select')
   }
+
+  const handleReconnectMp = useCallback(() => {
+    if (!myProfileRef.current || !myProfileRef.current.roomCode) return
+    setMpConnectionStatus('reconnecting')
+    if (clientNetworkRef.current) {
+      clientNetworkRef.current.destroy()
+    }
+    handleJoinRoom(myProfileRef.current)
+  }, [])
 
   // Handle color picker selection
   const handleColorSelected = (color) => {
@@ -1428,6 +1581,11 @@ export default function UnoGame({
           skippedInfo={aiSkippedInfo}
           pendingDrawCount={aiPendingDrawCount}
           pendingStackType={aiPendingStackType}
+          isMultiplayer={false}
+          isHost={false}
+          onReturnToLobby={() => setScreen('ai_lobby')}
+          onLeaveGame={() => setScreen('mode_select')}
+          onOpenRules={() => setInternalRulesOpen(true)}
         />
       )}
 
@@ -1478,6 +1636,15 @@ export default function UnoGame({
           skippedInfo={mpSkippedInfo}
           pendingDrawCount={mpPendingDrawCount}
           pendingStackType={mpPendingStackType}
+          isMultiplayer={true}
+          isHost={mpRoomState.isHost}
+          roomCode={mpRoomState.roomCode}
+          onSyncState={handleSyncGameStateMp}
+          onReturnToLobby={mpRoomState.isHost ? handleHostReturnAllToLobby : handleClientReturnToLobby}
+          onLeaveGame={handleLeaveMpRoom}
+          onOpenRules={() => setInternalRulesOpen(true)}
+          connectionStatus={mpConnectionStatus}
+          onReconnect={handleReconnectMp}
         />
       )}
 
@@ -1486,7 +1653,7 @@ export default function UnoGame({
           winner={mpWinner}
           players={mpPlayers}
           onPlayAgain={mpRoomState.isHost ? handleHostStartGame : undefined}
-          onResetToLobby={handleLeaveMpRoom}
+          onResetToLobby={mpRoomState.isHost ? handleHostReturnAllToLobby : handleClientReturnToLobby}
           onBackToMenu={onBackToMenu}
         />
       )}
