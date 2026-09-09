@@ -6,8 +6,15 @@ import UnoBoard from './components/UnoBoard'
 import ColorPickerModal from './components/ColorPickerModal'
 import UnoGameOverModal from './components/UnoGameOverModal'
 import UnoRulesModal from './components/UnoRulesModal'
-import { CARD_COLORS, CARD_TYPES } from './constants/unoConstants'
-import { createUnoDeck, dealHands, canPlayCard, shuffleDeck } from './utils/deck'
+import UnoFinishedRankModal from './components/UnoFinishedRankModal'
+import { CARD_COLORS, CARD_TYPES, getRankBadge } from './constants/unoConstants'
+import {
+  createUnoDeck,
+  dealHands,
+  canPlayCard,
+  shuffleDeck,
+  getNextActivePlayerIndex,
+} from './utils/deck'
 import { getAiMove, chooseAiColor } from './utils/unoAi'
 import {
   initHostPeer,
@@ -33,10 +40,20 @@ export default function UnoGame({
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [pendingCard, setPendingCard] = useState(null)
 
+  // Celebration modal when local player empties hand
+  const [finishedCelebration, setFinishedCelebration] = useState({
+    isOpen: false,
+    rank: 1,
+    playerName: 'You',
+    activeRemaining: 2,
+  })
+  const hasShownMyCelebrationRef = useRef(false)
+
   // ==========================================
   // 1. SOLO VS AI STATE
   // ==========================================
   const [aiPlayers, setAiPlayers] = useState([])
+  const [aiRankings, setAiRankings] = useState([]) // [{ playerId, name, avatar, isHuman, rank, remainingCards }]
   const [aiDrawPile, setAiDrawPile] = useState([])
   const [aiDiscardPile, setAiDiscardPile] = useState([])
   const [aiTopCard, setAiTopCard] = useState(null)
@@ -74,6 +91,7 @@ export default function UnoGame({
 
   // Shared multiplayer board state (for UI rendering on both Host and Clients)
   const [mpPlayers, setMpPlayers] = useState([])
+  const [mpRankings, setMpRankings] = useState([]) // [{ playerId, name, avatar, isHost, rank, remainingCards }]
   const [mpTopCard, setMpTopCard] = useState(null)
   const [mpActiveColor, setMpActiveColor] = useState(null)
   const [mpCurrentPlayerIndex, setMpCurrentPlayerIndex] = useState(0)
@@ -110,6 +128,7 @@ export default function UnoGame({
     unoCalledPlayers: new Set(),
     hasDrawnThisTurn: false,
     winner: null,
+    rankings: [], // [{ playerId, name, avatar, isHost, rank, remainingCards }]
     actionMessage: '',
     skippedInfo: null,
     stackingEnabled: true,
@@ -128,14 +147,6 @@ export default function UnoGame({
   // ==========================================
   // SHARED CARD ENGINE HELPERS
   // ==========================================
-  const getNextPlayerIndex = useCallback(
-    (currentIdx, step = 1, currentPlayers = [], currentDir = 1) => {
-      const len = currentPlayers.length
-      if (len === 0) return 0
-      return (currentIdx + currentDir * step + len * 100) % len
-    },
-    []
-  )
 
   const drawCardsFromPile = useCallback(
     (count, currentDrawPile, currentDiscardPile) => {
@@ -190,9 +201,11 @@ export default function UnoGame({
     const populatedPlayers = initialPlayers.map((p, idx) => ({
       ...p,
       hand: hands[idx],
+      rank: null,
     }))
 
     setAiPlayers(populatedPlayers)
+    setAiRankings([])
     setAiDrawPile(dealtDraw)
     setAiDiscardPile(dealtDiscard)
     setAiTopCard(dealtDiscard[dealtDiscard.length - 1])
@@ -208,11 +221,13 @@ export default function UnoGame({
     setAiStackingEnabled(enableStacking)
     setAiPendingDrawCount(0)
     setAiPendingStackType(null)
+    setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
+    hasShownMyCelebrationRef.current = false
     setScreen('ai_playing')
   }
 
   const handlePlayAgainAi = () => {
-    const resetPlayers = aiPlayers.map((p) => ({ ...p, hand: [] }))
+    const resetPlayers = aiPlayers.map((p) => ({ ...p, hand: [], rank: null }))
     handleStartAiGame({ players: resetPlayers, enableStacking: aiStackingEnabled })
   }
 
@@ -237,15 +252,184 @@ export default function UnoGame({
         playCardPlaySound()
       }
 
+      // If player emptied their hand, record placement!
       if (nextHand.length === 0) {
+        const finishedRank = aiRankings.length + 1
+        const rankRecord = {
+          playerId: player.id,
+          name: player.name,
+          avatar: player.avatar,
+          isHuman: player.isHuman,
+          rank: finishedRank,
+          remainingCards: 0,
+        }
+        const newRankings = [...aiRankings, rankRecord]
+        setAiRankings(newRankings)
+
         const updatedPlayers = aiPlayers.map((p, idx) =>
-          idx === playerIndex ? { ...p, hand: nextHand } : p
+          idx === playerIndex ? { ...p, hand: nextHand, rank: finishedRank } : p
         )
         setAiPlayers(updatedPlayers)
         setAiTopCard(card)
         setAiDiscardPile((prev) => [...prev, card])
-        setAiWinner(player)
-        setScreen('ai_gameover')
+
+        const remainingActive = updatedPlayers.filter((p) => p.hand.length > 0)
+
+        // If only 1 player remains with cards, match is over!
+        if (remainingActive.length <= 1) {
+          if (remainingActive.length === 1) {
+            const lastPlayer = remainingActive[0]
+            const lastRank = finishedRank + 1
+            const lastRecord = {
+              playerId: lastPlayer.id,
+              name: lastPlayer.name,
+              avatar: lastPlayer.avatar,
+              isHuman: lastPlayer.isHuman,
+              rank: lastRank,
+              remainingCards: lastPlayer.hand.length,
+            }
+            newRankings.push(lastRecord)
+            setAiRankings(newRankings)
+            setAiPlayers(
+              updatedPlayers.map((p) => (p.id === lastPlayer.id ? { ...p, rank: lastRank } : p))
+            )
+          }
+          setAiWinner(newRankings[0])
+          setScreen('ai_gameover')
+          return
+        }
+
+        // More than 1 active player remains: match continues!
+        if (player.isHuman) {
+          setFinishedCelebration({
+            isOpen: true,
+            rank: finishedRank,
+            playerName: 'You',
+            activeRemaining: remainingActive.length,
+          })
+        }
+
+        const rankBadge = getRankBadge(finishedRank)
+        let step = 1
+        let newDirection = aiDirection
+        let currentSkippedInfo = null
+
+        if (card.type === CARD_TYPES.REVERSE) {
+          if (remainingActive.length === 2) {
+            step = 1
+          } else {
+            newDirection = aiDirection * -1
+            setAiDirection(newDirection)
+          }
+        } else if (card.type === CARD_TYPES.SKIP) {
+          step = 2
+          const skippedIdx = getNextActivePlayerIndex(
+            playerIndex,
+            1,
+            updatedPlayers,
+            newDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
+          const targetPlayer = updatedPlayers[skippedIdx]
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'skip',
+            cardsDrawn: 0,
+          }
+        } else if (card.type === CARD_TYPES.DRAW_TWO) {
+          if (aiStackingEnabled) {
+            setAiPendingDrawCount((aiPendingDrawCount || 0) + 2)
+            setAiPendingStackType(CARD_TYPES.DRAW_TWO)
+            step = 1
+          } else {
+            step = 2
+            const targetIdx = getNextActivePlayerIndex(
+              playerIndex,
+              1,
+              updatedPlayers,
+              newDirection,
+              (p) => p.hand.length === 0 || p.rank != null
+            )
+            const targetPlayer = updatedPlayers[targetIdx]
+            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+              2,
+              aiDrawPile,
+              [...aiDiscardPile, card]
+            )
+            setAiDrawPile(newDrawPile)
+            setAiDiscardPile(newDiscardPile)
+            setAiPlayers(
+              updatedPlayers.map((p, idx) =>
+                idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+              )
+            )
+            currentSkippedInfo = {
+              playerId: targetPlayer.id,
+              playerName: targetPlayer.name,
+              playedByName: player.name,
+              cardType: 'draw2',
+              cardsDrawn: 2,
+            }
+          }
+        } else if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
+          if (aiStackingEnabled) {
+            setAiPendingDrawCount((aiPendingDrawCount || 0) + 4)
+            setAiPendingStackType(CARD_TYPES.WILD_DRAW_FOUR)
+            step = 1
+          } else {
+            step = 2
+            const targetIdx = getNextActivePlayerIndex(
+              playerIndex,
+              1,
+              updatedPlayers,
+              newDirection,
+              (p) => p.hand.length === 0 || p.rank != null
+            )
+            const targetPlayer = updatedPlayers[targetIdx]
+            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+              4,
+              aiDrawPile,
+              [...aiDiscardPile, card]
+            )
+            setAiDrawPile(newDrawPile)
+            setAiDiscardPile(newDiscardPile)
+            setAiPlayers(
+              updatedPlayers.map((p, idx) =>
+                idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+              )
+            )
+            currentSkippedInfo = {
+              playerId: targetPlayer.id,
+              playerName: targetPlayer.name,
+              playedByName: player.name,
+              cardType: 'wild4',
+              cardsDrawn: 4,
+            }
+          }
+        }
+
+        if (card.type !== CARD_TYPES.DRAW_TWO && card.type !== CARD_TYPES.WILD_DRAW_FOUR) {
+          setAiPendingDrawCount(0)
+          setAiPendingStackType(null)
+        }
+
+        const nextIdx = getNextActivePlayerIndex(
+          playerIndex,
+          step,
+          updatedPlayers,
+          newDirection,
+          (p) => p.hand.length === 0 || p.rank != null
+        )
+        setAiCurrentPlayerIndex(nextIdx)
+        setAiActiveColor(effectiveColor)
+        setAiHasDrawnCardThisTurn(false)
+        setAiHasCalledUnoThisRound(false)
+        setAiSkippedInfo(currentSkippedInfo)
+        setAiActionMessage(
+          `${rankBadge.medal} ${player.name} finished in ${rankBadge.label}! (${remainingActive.length} players still battling)`
+        )
         return
       }
 
@@ -270,9 +454,16 @@ export default function UnoGame({
       let currentSkippedInfo = null
 
       if (card.type === CARD_TYPES.REVERSE) {
-        if (aiPlayers.length === 2) {
+        const activeCountNow = aiPlayers.filter((p) => p.hand.length > 0).length
+        if (activeCountNow === 2) {
           step = 2
-          const skippedIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const skippedIdx = getNextActivePlayerIndex(
+            playerIndex,
+            1,
+            aiPlayers,
+            newDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
           const targetPlayer = aiPlayers[skippedIdx]
           currentSkippedInfo = {
             playerId: targetPlayer.id,
@@ -291,7 +482,13 @@ export default function UnoGame({
 
       if (card.type === CARD_TYPES.SKIP) {
         step = 2
-        const skippedIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+        const skippedIdx = getNextActivePlayerIndex(
+          playerIndex,
+          1,
+          aiPlayers,
+          newDirection,
+          (p) => p.hand.length === 0 || p.rank != null
+        )
         const targetPlayer = aiPlayers[skippedIdx]
         currentSkippedInfo = {
           playerId: targetPlayer.id,
@@ -300,7 +497,7 @@ export default function UnoGame({
           cardType: 'skip',
           cardsDrawn: 0,
         }
-        message = `${player.name} skipped ${targetPlayer.name}!`
+        message = `${player.name} skipped ${targetPlayer?.name}!`
       }
 
       let currentDraw = [...aiDrawPile]
@@ -320,7 +517,13 @@ export default function UnoGame({
           message = `${player.name} played +2! Stack is +${newPendingDrawCount} cards! Next player must counter or draw!`
         } else {
           step = 2
-          const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const targetIdx = getNextActivePlayerIndex(
+            playerIndex,
+            1,
+            aiPlayers,
+            newDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
           const targetPlayer = aiPlayers[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             2,
@@ -351,7 +554,13 @@ export default function UnoGame({
           message = `${player.name} played Wild +4! Color is now ${effectiveColor}. Stack is +${newPendingDrawCount} cards!`
         } else {
           step = 2
-          const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const targetIdx = getNextActivePlayerIndex(
+            playerIndex,
+            1,
+            aiPlayers,
+            newDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
           const targetPlayer = aiPlayers[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             4,
@@ -378,11 +587,12 @@ export default function UnoGame({
         message = `${player.name} played Wild! Color is now ${effectiveColor}.`
       }
 
-      const nextPlayerIdx = getNextPlayerIndex(
+      const nextPlayerIdx = getNextActivePlayerIndex(
         playerIndex,
         step,
         updatedPlayers,
-        newDirection
+        newDirection,
+        (p) => p.hand.length === 0 || p.rank != null
       )
 
       setAiPlayers(updatedPlayers)
@@ -400,11 +610,11 @@ export default function UnoGame({
     },
     [
       aiPlayers,
+      aiRankings,
       aiDirection,
       aiDrawPile,
       aiDiscardPile,
       aiHasCalledUnoThisRound,
-      getNextPlayerIndex,
       drawCardsFromPile,
       aiStackingEnabled,
       aiPendingDrawCount,
@@ -437,7 +647,13 @@ export default function UnoGame({
       const updatedPlayers = aiPlayers.map((p, idx) =>
         idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
       )
-      const nextPlayerIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, updatedPlayers, aiDirection)
+      const nextPlayerIdx = getNextActivePlayerIndex(
+        aiCurrentPlayerIndex,
+        1,
+        updatedPlayers,
+        aiDirection,
+        (p) => p.hand.length === 0 || p.rank != null
+      )
       setAiPlayers(updatedPlayers)
       setAiDrawPile(newDrawPile)
       setAiDiscardPile(newDiscardPile)
@@ -481,26 +697,48 @@ export default function UnoGame({
   }
 
   const handlePassTurnAi = () => {
-    const nextPlayerIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
+    if (!aiHasDrawnCardThisTurn && aiPendingDrawCount === 0) return
+    const nextPlayerIdx = getNextActivePlayerIndex(
+      aiCurrentPlayerIndex,
+      1,
+      aiPlayers,
+      aiDirection,
+      (p) => p.hand.length === 0 || p.rank != null
+    )
     setAiCurrentPlayerIndex(nextPlayerIdx)
     setAiHasDrawnCardThisTurn(false)
     setAiHasCalledUnoThisRound(false)
     setAiSkippedInfo(null)
-    setAiActionMessage(`${aiPlayers[aiCurrentPlayerIndex].name} passed turn.`)
+    const currentP = aiPlayers[aiCurrentPlayerIndex]
+    setAiActionMessage(`${currentP.name} passed turn.`)
   }
 
   const handleCallUnoAi = () => {
-    setAiHasCalledUnoThisRound(true)
     playUnoCallSound()
-    setAiActionMessage('You shouted UNO!')
+    setAiHasCalledUnoThisRound(true)
+    setAiUnoCalledPlayers((prev) => new Set(prev).add(0))
+    setAiActionMessage('You shouted UNO! 1 card remaining!')
   }
 
-  // AI Bot automated loop
+  // AI Bots automatic turn loop
   useEffect(() => {
     if (screen !== 'ai_playing' || aiWinner) return
 
     const activePlayer = aiPlayers[aiCurrentPlayerIndex]
-    if (!activePlayer || activePlayer.isHuman) return
+    if (!activePlayer || activePlayer.isHuman || activePlayer.hand.length === 0 || activePlayer.rank) {
+      // If current player has finished, automatically advance turn to next active player
+      if (activePlayer && (activePlayer.hand.length === 0 || activePlayer.rank)) {
+        const nextIdx = getNextActivePlayerIndex(
+          aiCurrentPlayerIndex,
+          1,
+          aiPlayers,
+          aiDirection,
+          (p) => p.hand.length === 0 || p.rank != null
+        )
+        setAiCurrentPlayerIndex(nextIdx)
+      }
+      return
+    }
 
     botTimeoutRef.current = setTimeout(() => {
       // 1. Stack Counter Check for Bot
@@ -526,7 +764,13 @@ export default function UnoGame({
           const updatedPlayers = aiPlayers.map((p, idx) =>
             idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
           )
-          const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, updatedPlayers, aiDirection)
+          const nextIdx = getNextActivePlayerIndex(
+            aiCurrentPlayerIndex,
+            1,
+            updatedPlayers,
+            aiDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
           setAiPlayers(updatedPlayers)
           setAiDrawPile(newDrawPile)
           setAiDiscardPile(newDiscardPile)
@@ -547,7 +791,14 @@ export default function UnoGame({
           return
         }
       }
-      const nextPlayerIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
+
+      const nextPlayerIdx = getNextActivePlayerIndex(
+        aiCurrentPlayerIndex,
+        1,
+        aiPlayers,
+        aiDirection,
+        (p) => p.hand.length === 0 || p.rank != null
+      )
       const nextPlayer = aiPlayers[nextPlayerIdx]
       const nextPlayerCount = nextPlayer ? nextPlayer.hand.length : 7
 
@@ -600,14 +851,26 @@ export default function UnoGame({
             setAiPlayers(updatedPlayers)
             setAiDrawPile(newDrawPile)
             setAiDiscardPile(newDiscardPile)
-            const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
+            const nextIdx = getNextActivePlayerIndex(
+              aiCurrentPlayerIndex,
+              1,
+              aiPlayers,
+              aiDirection,
+              (p) => p.hand.length === 0 || p.rank != null
+            )
             setAiCurrentPlayerIndex(nextIdx)
             setAiHasDrawnCardThisTurn(false)
             setAiSkippedInfo(null)
             setAiActionMessage(`${activePlayer.name} drew a card and passed.`)
           }
         } else {
-          const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
+          const nextIdx = getNextActivePlayerIndex(
+            aiCurrentPlayerIndex,
+            1,
+            aiPlayers,
+            aiDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
           setAiCurrentPlayerIndex(nextIdx)
           setAiHasDrawnCardThisTurn(false)
           setAiSkippedInfo(null)
@@ -628,7 +891,6 @@ export default function UnoGame({
     aiDrawPile,
     aiDiscardPile,
     aiDirection,
-    getNextPlayerIndex,
     drawCardsFromPile,
     executeAiPlayCard,
     aiPendingDrawCount,
@@ -644,18 +906,23 @@ export default function UnoGame({
     const g = hostGameRef.current
     if (!g) return
 
-    const sanitizedPlayers = g.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      avatar: p.avatar,
-      isHost: p.isHost,
-      cardCount: g.hands.get(p.id)?.length || 0,
-    }))
+    const sanitizedPlayers = g.players.map((p) => {
+      const pRank = p.rank || (g.rankings || []).find((r) => r.playerId === p.id)?.rank || null
+      return {
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        isHost: p.isHost,
+        cardCount: g.hands.get(p.id)?.length || 0,
+        rank: pRank,
+      }
+    })
 
     const message = customMessage !== null ? customMessage : g.actionMessage || ''
 
     // 1. Update Host local UI
     setMpPlayers(sanitizedPlayers)
+    setMpRankings(g.rankings || [])
     setMpTopCard(g.topCard)
     setMpActiveColor(g.activeColor)
     setMpCurrentPlayerIndex(g.currentPlayerIndex)
@@ -689,6 +956,7 @@ export default function UnoGame({
             direction: g.direction,
             drawPileCount: g.drawPile.length,
             players: sanitizedPlayers,
+            rankings: g.rankings || [],
             actionMessage: message,
             unoCalledPlayers: Array.from(g.unoCalledPlayers),
             hasDrawnThisTurn: g.hasDrawnThisTurn,
@@ -768,10 +1036,163 @@ export default function UnoGame({
         playCardPlaySound()
       }
 
-      // Win condition
+      // If player emptied their hand, record placement!
       if (nextHand.length === 0) {
-        g.winner = player
-        g.actionMessage = `🎉 ${player.name} emptied their hand and won!`
+        const currentRank = (g.rankings || []).length + 1
+        const rankRecord = {
+          playerId: player.id,
+          name: player.name,
+          avatar: player.avatar,
+          isHost: player.isHost,
+          rank: currentRank,
+          remainingCards: 0,
+        }
+        g.rankings = [...(g.rankings || []), rankRecord]
+        player.rank = currentRank
+
+        const remainingActive = g.players.filter((p) => (g.hands.get(p.id) || []).length > 0)
+
+        // If only 1 player remains with cards, match is over!
+        if (remainingActive.length <= 1) {
+          if (remainingActive.length === 1) {
+            const lastPlayer = remainingActive[0]
+            const lastRank = currentRank + 1
+            lastPlayer.rank = lastRank
+            g.rankings.push({
+              playerId: lastPlayer.id,
+              name: lastPlayer.name,
+              avatar: lastPlayer.avatar,
+              isHost: lastPlayer.isHost,
+              rank: lastRank,
+              remainingCards: (g.hands.get(lastPlayer.id) || []).length,
+            })
+          }
+          g.winner = g.rankings[0]
+          g.actionMessage = `🏆 Tournament complete! 1st Place: ${g.rankings[0].name}!`
+          hostBroadcastGameState()
+          return
+        }
+
+        // More than 1 active player remains: match continues!
+        if (player.id === 0) {
+          hasShownMyCelebrationRef.current = true
+          setFinishedCelebration({
+            isOpen: true,
+            rank: currentRank,
+            playerName: 'You',
+            activeRemaining: remainingActive.length,
+          })
+        }
+
+        const rankBadge = getRankBadge(currentRank)
+        let step = 1
+        let message = `${rankBadge.medal} ${player.name} finished in ${rankBadge.label}! (${remainingActive.length} players still battling)`
+        let currentSkippedInfo = null
+
+        if (card.type === CARD_TYPES.REVERSE) {
+          if (remainingActive.length === 2) {
+            step = 1
+          } else {
+            g.direction = g.direction * -1
+          }
+        } else if (card.type === CARD_TYPES.SKIP) {
+          step = 2
+          const skippedIdx = getNextActivePlayerIndex(
+            g.currentPlayerIndex,
+            1,
+            g.players,
+            g.direction,
+            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+          )
+          const targetPlayer = g.players[skippedIdx]
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'skip',
+            cardsDrawn: 0,
+          }
+        } else if (card.type === CARD_TYPES.DRAW_TWO) {
+          if (g.stackingEnabled !== false) {
+            g.pendingDrawCount = (g.pendingDrawCount || 0) + 2
+            g.pendingStackType = CARD_TYPES.DRAW_TWO
+            step = 1
+          } else {
+            step = 2
+            const targetIdx = getNextActivePlayerIndex(
+              g.currentPlayerIndex,
+              1,
+              g.players,
+              g.direction,
+              (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+            )
+            const targetPlayer = g.players[targetIdx]
+            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+              2,
+              g.drawPile,
+              g.discardPile
+            )
+            g.drawPile = newDrawPile
+            g.discardPile = newDiscardPile
+            const targetHand = g.hands.get(targetPlayer.id) || []
+            g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+            currentSkippedInfo = {
+              playerId: targetPlayer.id,
+              playerName: targetPlayer.name,
+              playedByName: player.name,
+              cardType: 'draw2',
+              cardsDrawn: 2,
+            }
+          }
+        } else if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
+          if (g.stackingEnabled !== false) {
+            g.pendingDrawCount = (g.pendingDrawCount || 0) + 4
+            g.pendingStackType = CARD_TYPES.WILD_DRAW_FOUR
+            step = 1
+          } else {
+            step = 2
+            const targetIdx = getNextActivePlayerIndex(
+              g.currentPlayerIndex,
+              1,
+              g.players,
+              g.direction,
+              (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+            )
+            const targetPlayer = g.players[targetIdx]
+            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+              4,
+              g.drawPile,
+              g.discardPile
+            )
+            g.drawPile = newDrawPile
+            g.discardPile = newDiscardPile
+            const targetHand = g.hands.get(targetPlayer.id) || []
+            g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+            currentSkippedInfo = {
+              playerId: targetPlayer.id,
+              playerName: targetPlayer.name,
+              playedByName: player.name,
+              cardType: 'wild4',
+              cardsDrawn: 4,
+            }
+          }
+        }
+
+        if (card.type !== CARD_TYPES.DRAW_TWO && card.type !== CARD_TYPES.WILD_DRAW_FOUR) {
+          g.pendingDrawCount = 0
+          g.pendingStackType = null
+        }
+
+        const nextIdx = getNextActivePlayerIndex(
+          g.currentPlayerIndex,
+          step,
+          g.players,
+          g.direction,
+          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+        )
+        g.currentPlayerIndex = nextIdx
+        g.actionMessage = message
+        g.skippedInfo = currentSkippedInfo
         hostBroadcastGameState()
         return
       }
@@ -789,9 +1210,16 @@ export default function UnoGame({
       let currentSkippedInfo = null
 
       if (card.type === CARD_TYPES.REVERSE) {
-        if (g.players.length === 2) {
+        const remainingActive = g.players.filter((p) => (g.hands.get(p.id) || []).length > 0)
+        if (remainingActive.length === 2) {
           step = 2
-          const skippedIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const skippedIdx = getNextActivePlayerIndex(
+            g.currentPlayerIndex,
+            1,
+            g.players,
+            g.direction,
+            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+          )
           const targetPlayer = g.players[skippedIdx]
           currentSkippedInfo = {
             playerId: targetPlayer.id,
@@ -809,7 +1237,13 @@ export default function UnoGame({
 
       if (card.type === CARD_TYPES.SKIP) {
         step = 2
-        const skippedIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        const skippedIdx = getNextActivePlayerIndex(
+          g.currentPlayerIndex,
+          1,
+          g.players,
+          g.direction,
+          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+        )
         const targetPlayer = g.players[skippedIdx]
         currentSkippedInfo = {
           playerId: targetPlayer.id,
@@ -830,7 +1264,13 @@ export default function UnoGame({
           currentSkippedInfo = null
         } else {
           step = 2
-          const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const targetIdx = getNextActivePlayerIndex(
+            g.currentPlayerIndex,
+            1,
+            g.players,
+            g.direction,
+            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+          )
           const targetPlayer = g.players[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             2,
@@ -861,7 +1301,13 @@ export default function UnoGame({
           currentSkippedInfo = null
         } else {
           step = 2
-          const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const targetIdx = getNextActivePlayerIndex(
+            g.currentPlayerIndex,
+            1,
+            g.players,
+            g.direction,
+            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+          )
           const targetPlayer = g.players[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             4,
@@ -896,14 +1342,20 @@ export default function UnoGame({
         g.pendingStackType = null
       }
 
-      const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, step, g.players, g.direction)
+      const nextIdx = getNextActivePlayerIndex(
+        g.currentPlayerIndex,
+        step,
+        g.players,
+        g.direction,
+        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+      )
       g.currentPlayerIndex = nextIdx
       g.actionMessage = message
       g.skippedInfo = currentSkippedInfo
 
       hostBroadcastGameState()
     },
-    [getNextPlayerIndex, drawCardsFromPile, hostBroadcastGameState]
+    [drawCardsFromPile, hostBroadcastGameState]
   )
 
   // Authoritative host card draw execution
@@ -934,7 +1386,13 @@ export default function UnoGame({
         g.pendingStackType = null
         g.hasDrawnThisTurn = false
 
-        const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        const nextIdx = getNextActivePlayerIndex(
+          g.currentPlayerIndex,
+          1,
+          g.players,
+          g.direction,
+          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+        )
         const nextPlayer = g.players[nextIdx]
         g.currentPlayerIndex = nextIdx
         g.skippedInfo = {
@@ -968,7 +1426,7 @@ export default function UnoGame({
 
       hostBroadcastGameState()
     },
-    [getNextPlayerIndex, drawCardsFromPile, hostBroadcastGameState]
+    [drawCardsFromPile, hostBroadcastGameState]
   )
 
   // Authoritative host turn pass execution
@@ -978,7 +1436,13 @@ export default function UnoGame({
       if (!g || g.currentPlayerIndex !== playerId) return
 
       const player = g.players.find((p) => p.id === playerId)
-      const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+      const nextIdx = getNextActivePlayerIndex(
+        g.currentPlayerIndex,
+        1,
+        g.players,
+        g.direction,
+        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+      )
       g.currentPlayerIndex = nextIdx
       g.hasDrawnThisTurn = false
       g.skippedInfo = null
@@ -986,7 +1450,7 @@ export default function UnoGame({
 
       hostBroadcastGameState()
     },
-    [getNextPlayerIndex, hostBroadcastGameState]
+    [hostBroadcastGameState]
   )
 
   // Authoritative host UNO shout execution
@@ -1308,8 +1772,24 @@ export default function UnoGame({
             setMpStackingEnabled(data.stackingEnabled)
           }
 
+          if (data.rankings) {
+            setMpRankings(data.rankings)
+            const myRankRecord = data.rankings.find((r) => r.playerId === myPlayerIdRef.current)
+            if (myRankRecord && !hasShownMyCelebrationRef.current && !data.winner) {
+              hasShownMyCelebrationRef.current = true
+              const remainingActive = (data.players || []).filter((p) => (p.cardCount || 0) > 0).length
+              setFinishedCelebration({
+                isOpen: true,
+                rank: myRankRecord.rank,
+                playerName: 'You',
+                activeRemaining: remainingActive,
+              })
+            }
+          }
+
           if (data.winner) {
             setMpWinner(data.winner)
+            setFinishedCelebration((prev) => ({ ...prev, isOpen: false }))
             setScreen('mp_gameover')
           } else {
             setScreen('mp_playing')
@@ -1318,6 +1798,9 @@ export default function UnoGame({
           setScreen('mp_lobby')
           setMpPendingDrawCount(0)
           setMpPendingStackType(null)
+          setMpRankings([])
+          hasShownMyCelebrationRef.current = false
+          setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
           setMpActionMessage('Host returned all players to room lobby.')
         } else if (data.type === 'UNO_SHOUTED') {
           playUnoCallSound()
@@ -1362,6 +1845,7 @@ export default function UnoGame({
     const handsMap = new Map()
     g.players.forEach((p, idx) => {
       handsMap.set(p.id, hands[idx])
+      p.rank = null
     })
 
     g.drawPile = drawPile
@@ -1374,6 +1858,7 @@ export default function UnoGame({
     g.hasDrawnThisTurn = false
     g.unoCalledPlayers = new Set()
     g.winner = null
+    g.rankings = []
     g.actionMessage = 'Game started! Host has the first move.'
     g.skippedInfo = null
     g.pendingDrawCount = 0
@@ -1384,9 +1869,12 @@ export default function UnoGame({
     setMyPlayerId(0)
     myPlayerIdRef.current = 0
     setMpWinner(null)
+    setMpRankings([])
     setMpSkippedInfo(null)
     setMpPendingDrawCount(0)
     setMpPendingStackType(null)
+    hasShownMyCelebrationRef.current = false
+    setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
 
     hostBroadcastGameState('Game started! Host has the first move.')
   }
@@ -1473,6 +1961,10 @@ export default function UnoGame({
     g.topCard = null
     g.activeColor = null
     g.winner = null
+    g.rankings = []
+    g.players.forEach((p) => {
+      p.rank = null
+    })
     g.skippedInfo = null
     g.pendingDrawCount = 0
     g.pendingStackType = null
@@ -1482,6 +1974,9 @@ export default function UnoGame({
     setScreen('mp_lobby')
     setMpPendingDrawCount(0)
     setMpPendingStackType(null)
+    setMpRankings([])
+    hasShownMyCelebrationRef.current = false
+    setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
     setMpActionMessage('Host returned all players to room lobby.')
   }, [])
 
@@ -1489,6 +1984,9 @@ export default function UnoGame({
     setScreen('mp_lobby')
     setMpPendingDrawCount(0)
     setMpPendingStackType(null)
+    setMpRankings([])
+    hasShownMyCelebrationRef.current = false
+    setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
   }, [])
 
   const handleLeaveMpRoom = () => {
@@ -1562,6 +2060,7 @@ export default function UnoGame({
       {screen === 'ai_playing' && (
         <UnoBoard
           players={aiPlayers}
+          rankings={aiRankings}
           currentPlayerIndex={aiCurrentPlayerIndex}
           direction={aiDirection}
           topCard={aiTopCard}
@@ -1593,6 +2092,8 @@ export default function UnoGame({
         <UnoGameOverModal
           winner={aiWinner}
           players={aiPlayers}
+          rankings={aiRankings}
+          myPlayerId={0}
           onPlayAgain={handlePlayAgainAi}
           onResetToLobby={() => setScreen('ai_lobby')}
           onBackToMenu={onBackToMenu}
@@ -1616,6 +2117,7 @@ export default function UnoGame({
       {screen === 'mp_playing' && (
         <UnoBoard
           players={mpPlayers}
+          rankings={mpRankings}
           currentPlayerIndex={mpCurrentPlayerIndex}
           direction={mpDirection}
           topCard={mpTopCard}
@@ -1652,6 +2154,8 @@ export default function UnoGame({
         <UnoGameOverModal
           winner={mpWinner}
           players={mpPlayers}
+          rankings={mpRankings}
+          myPlayerId={myPlayerId}
           onPlayAgain={mpRoomState.isHost ? handleHostStartGame : undefined}
           onResetToLobby={mpRoomState.isHost ? handleHostReturnAllToLobby : handleClientReturnToLobby}
           onBackToMenu={onBackToMenu}
@@ -1666,6 +2170,17 @@ export default function UnoGame({
 
       {/* Rules Modal */}
       <UnoRulesModal isOpen={showRules} onClose={handleCloseRules} />
+
+      {/* Player Finished Ranking Celebration Modal */}
+      <UnoFinishedRankModal
+        isOpen={finishedCelebration.isOpen}
+        rank={finishedCelebration.rank}
+        playerName={finishedCelebration.playerName}
+        activeRemaining={finishedCelebration.activeRemaining}
+        onClose={() =>
+          setFinishedCelebration((prev) => ({ ...prev, isOpen: false }))
+        }
+      />
     </div>
   )
 }

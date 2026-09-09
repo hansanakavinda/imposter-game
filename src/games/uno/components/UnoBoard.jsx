@@ -13,10 +13,11 @@ import {
   ArrowUpDown,
   Settings,
   AlertTriangle,
+  Eye,
 } from 'lucide-react'
 import UnoCard from './UnoCard'
 import UnoSettingsModal from './UnoSettingsModal'
-import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
+import { COLOR_CONFIG, CARD_COLORS, getRankBadge } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { playClickSound } from '../../../utils/sound'
 
@@ -53,35 +54,74 @@ export default function UnoBoard({
   onOpenRules = null,
   connectionStatus = 'connected',
   onReconnect = null,
+  rankings = [],
 }) {
   const myPlayer = players.find((p) => p.id === myPlayerId) || players[0]
-  const handCards = myHand || myPlayer?.hand || EMPTY_HAND
+  const myPlayerRank =
+    myPlayer?.rank || rankings.find((r) => r.playerId === myPlayer?.id)?.rank || null
+  const isSpectating = Boolean(myPlayerRank)
+  const handCards = isSpectating ? EMPTY_HAND : myHand || myPlayer?.hand || EMPTY_HAND
   const activePlayer = players[currentPlayerIndex]
-  const nextPlayerIndex =
-    players.length > 0
-      ? (currentPlayerIndex + direction * 1 + players.length * 100) % players.length
-      : 0
+
+  // Detect finished players
+  const isFinishedPlayer = (p) =>
+    Boolean(
+      p.rank ||
+        rankings.some((r) => r.playerId === p.id) ||
+        ((p.hand ? p.hand.length : p.cardCount) === 0 && (p.rank || rankings.length > 0))
+    )
+
+  const activePlayers = useMemo(
+    () => players.filter((p) => !isFinishedPlayer(p)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [players, rankings]
+  )
+
+  // Find next active player in the direction
+  const nextPlayerIndex = useMemo(() => {
+    if (players.length === 0) return 0
+    if (activePlayers.length <= 1) return currentPlayerIndex
+    let curr = currentPlayerIndex
+    for (let i = 0; i < players.length; i++) {
+      curr = (curr + direction * 1 + players.length * 100) % players.length
+      if (!isFinishedPlayer(players[curr])) {
+        return curr
+      }
+    }
+    return (currentPlayerIndex + direction * 1 + players.length * 100) % players.length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players, currentPlayerIndex, direction, activePlayers])
+
   const nextPlayer = players[nextPlayerIndex]
 
   const isCurrentTurnForMe =
-    isHumanTurn !== undefined ? isHumanTurn : activePlayer?.id === myPlayer?.id
-  const isMyTurnSkipped = skippedInfo?.playerId === myPlayer?.id
+    !isSpectating &&
+    (isHumanTurn !== undefined ? isHumanTurn : activePlayer?.id === myPlayer?.id)
+  const isMyTurnSkipped = !isSpectating && skippedInfo?.playerId === myPlayer?.id
 
   const activeColorConfig =
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
 
-  const myCanPlayAnyCard = handCards.some((card) =>
-    canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
-  )
+  const myCanPlayAnyCard =
+    !isSpectating &&
+    handCards.some((card) =>
+      canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
+    )
 
   const myCanStack =
+    !isSpectating &&
     pendingDrawCount > 0 &&
     handCards.some((card) =>
       canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
     )
 
   const showUnoButton =
-    handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound && pendingDrawCount === 0
+    !isSpectating &&
+    handCards.length <= 2 &&
+    isCurrentTurnForMe &&
+    !hasCalledUnoThisRound &&
+    pendingDrawCount === 0
+
 
   const [handSortMode, setHandSortMode] = useState('none') // 'none' | 'color' | 'number'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -253,19 +293,25 @@ export default function UnoBoard({
         <div className="w-full overflow-x-auto scrollbar-none py-1 px-0.5">
           <div className="flex items-center justify-center gap-1 sm:gap-2 min-w-max mx-auto">
             {players.map((p, idx) => {
-              const isActive = idx === currentPlayerIndex
-              const isNext = idx === nextPlayerIndex
+              const pRank =
+                p.rank || rankings.find((r) => r.playerId === p.id)?.rank || null
+              const isPlayerFinished = Boolean(pRank)
+              const badgeInfo = pRank ? getRankBadge(pRank) : null
+              const isActive = idx === currentPlayerIndex && !isPlayerFinished
+              const isNext = idx === nextPlayerIndex && !isPlayerFinished
               const isMe = p.id === myPlayer?.id
-              const isSkipped = skippedInfo?.playerId === p.id
+              const isSkipped = skippedInfo?.playerId === p.id && !isPlayerFinished
               const cardCount =
-                p.id === myPlayer?.id
+                isPlayerFinished
+                  ? 0
+                  : p.id === myPlayer?.id
                   ? handCards.length
                   : p.cardCount !== undefined
                   ? p.cardCount
                   : p.hand
                   ? p.hand.length
                   : 0
-              const hasUno = cardCount === 1
+              const hasUno = cardCount === 1 && !isPlayerFinished
               const calledUno = unoCalledPlayers?.has(p.id)
 
               return (
@@ -273,7 +319,9 @@ export default function UnoBoard({
                   {/* Player Card Node */}
                   <div
                     className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[72px] sm:min-w-[84px] ${
-                      isSkipped
+                      isPlayerFinished
+                        ? 'bg-zinc-900/40 border border-amber-500/30 opacity-75'
+                        : isSkipped
                         ? 'bg-red-950/70 border-2 border-red-500 shadow-lg shadow-red-950/50 ring-2 ring-red-500/40 animate-pulse'
                         : isActive
                         ? 'bg-amber-500/20 border-2 border-amber-400 shadow-xl shadow-amber-500/20 ring-2 ring-amber-400/50 scale-105 z-10'
@@ -283,7 +331,11 @@ export default function UnoBoard({
                     }`}
                   >
                     {/* Status Badges */}
-                    {isSkipped ? (
+                    {isPlayerFinished ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-black text-[8px] uppercase tracking-wider shadow">
+                        {badgeInfo?.medal} {badgeInfo?.shortLabel}
+                      </span>
+                    ) : isSkipped ? (
                       <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
                         SKIPPED
                       </span>
@@ -305,7 +357,9 @@ export default function UnoBoard({
                     <div className="relative">
                       <div
                         className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg sm:text-xl shadow-inner ${
-                          isSkipped
+                          isPlayerFinished
+                            ? 'bg-zinc-900 border-2 border-amber-400/50'
+                            : isSkipped
                             ? 'bg-red-950 border border-red-500/60'
                             : isActive
                             ? 'bg-zinc-800 border-2 border-amber-400'
@@ -340,23 +394,33 @@ export default function UnoBoard({
                       )}
                     </div>
 
-                    {/* Card Count */}
-                    <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-zinc-400">
-                      <span>🃏</span>
-                      <span>{cardCount}</span>
-                    </div>
+                    {/* Card Count / Finished Rank */}
+                    {isPlayerFinished ? (
+                      <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-amber-400">
+                        <span>{badgeInfo?.medal}</span>
+                        <span>{badgeInfo?.shortLabel}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-zinc-400">
+                        <span>🃏</span>
+                        <span>{cardCount}</span>
+                      </div>
+                    )}
 
                     {/* Turn Status Message */}
-                    {isActive && (
+                    {isPlayerFinished ? (
+                      <span className="text-[9px] text-zinc-400 font-medium mt-0.5">
+                        Spectating
+                      </span>
+                    ) : isActive ? (
                       <span className="text-[9px] text-amber-300 font-semibold animate-pulse mt-0.5">
                         {isMe ? 'Your Turn' : p.isHuman ? 'Thinking...' : isWaitingForBot ? 'Thinking...' : 'Moving...'}
                       </span>
-                    )}
-                    {isNext && !isActive && (
+                    ) : isNext ? (
                       <span className="text-[9px] text-blue-300 font-medium mt-0.5">
                         {isMe ? 'You Are Next' : 'Next Up'}
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Direction Arrow Between Players */}
@@ -632,12 +696,21 @@ export default function UnoBoard({
         {/* Turn Prompt Banner */}
         <div
           className={`py-1.5 px-3 rounded-xl text-center text-xs font-bold transition-all ${
-            isCurrentTurnForMe
+            isSpectating
+              ? 'bg-zinc-900 text-zinc-300 border border-zinc-800/80 flex items-center justify-center gap-2'
+              : isCurrentTurnForMe
               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
               : 'bg-zinc-900 text-zinc-400 border border-zinc-800/80'
           }`}
         >
-          {isCurrentTurnForMe ? (
+          {isSpectating ? (
+            <>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+              <span>
+                Spectating: {activePlayer?.name}&apos;s turn (Next: {nextPlayer?.name || '...'}). {activePlayers.length} players battling!
+              </span>
+            </>
+          ) : isCurrentTurnForMe ? (
             pendingDrawCount > 0 ? (
               myCanStack ? (
                 <span className="text-amber-300 font-bold flex items-center justify-center gap-1">
@@ -670,126 +743,160 @@ export default function UnoBoard({
           )}
         </div>
 
-        {/* Hand Toolbar: Sorting Options & Scroll controls */}
-        <div className="flex items-center justify-between px-1 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
-              <ArrowUpDown className="w-3 h-3 text-zinc-400" />
-              <span className="hidden sm:inline">Sort:</span>
-            </span>
-
-            <div className="inline-flex p-0.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm">
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  setHandSortMode((prev) => (prev === 'color' ? 'none' : 'color'))
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  handSortMode === 'color'
-                    ? 'bg-gradient-to-r from-red-600/30 via-amber-500/20 to-blue-600/30 text-white border border-white/30 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-                }`}
-                title="Group cards by Color (Red, Yellow, Green, Blue, Wild)"
-              >
-                <span>🎨</span>
-                <span>By Color</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  setHandSortMode((prev) => (prev === 'number' ? 'none' : 'number'))
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  handSortMode === 'number'
-                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-                }`}
-                title="Group cards by Number / Face Value (0-9, Actions, Wilds)"
-              >
-                <span>🔢</span>
-                <span>By Number</span>
-              </button>
-
-              {handSortMode !== 'none' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClickSound()
-                    setHandSortMode('none')
-                  }}
-                  className="px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer flex items-center gap-0.5"
-                  title="Reset to default draw order"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span className="hidden sm:inline">Reset</span>
-                </button>
-              )}
+        {isSpectating ? (
+          <div className="w-full max-w-lg mx-auto p-4 sm:p-5 rounded-3xl bg-zinc-950/80 border border-zinc-800/90 text-center space-y-3 shadow-2xl animate-fadeIn my-1">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold shadow-sm">
+              <span className="text-base">{getRankBadge(myPlayerRank).medal}</span>
+              <span>You Finished {getRankBadge(myPlayerRank).label}!</span>
             </div>
-          </div>
 
-          {/* Quick scroll arrows for wide hand */}
-          {handCards.length > 4 && (
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-zinc-400 hidden sm:inline">Scroll:</span>
-              <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
-                <button
-                  type="button"
-                  onClick={() => scrollTray(-180)}
-                  aria-label="Scroll cards left"
-                  title="Scroll left"
-                  className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => scrollTray(180)}
-                  aria-label="Scroll cards right"
-                  title="Scroll right"
-                  className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+            <div className="space-y-1">
+              <h4 className="text-sm sm:text-base font-black text-white flex items-center justify-center gap-2">
+                <Eye className="w-4 h-4 text-emerald-400" />
+                <span>Spectator Mode Active</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              </h4>
+              <p className="text-xs text-zinc-300 max-w-xs mx-auto leading-relaxed">
+                {activePlayers.length > 1
+                  ? `You cleared all your cards! Sit back and spectate while the remaining ${activePlayers.length} players battle for the finish.`
+                  : 'The remaining players are finishing up the match!'}
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-center gap-4 text-[11px] text-zinc-400">
+              <div>
+                Active Turn: <strong className="text-amber-300 font-bold">{activePlayer?.name || '...'}</strong>
+              </div>
+              <span>•</span>
+              <div>
+                Next: <strong className="text-blue-300 font-bold">{nextPlayer?.name || '...'}</strong>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Player's Hand Horizontal Tray */}
-        <div
-          ref={handTrayRef}
-          onWheel={handleTrayWheel}
-          className="w-full overflow-x-auto pb-2 pt-1 touch-pan-x overscroll-x-contain select-none scroll-smooth"
-        >
-          <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
-            {displayedHandCards.map((card) => {
-              const isPlayable =
-                isCurrentTurnForMe &&
-                canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
-
-              return (
-                <div key={card.id} className="transition-transform duration-150 flex-shrink-0 touch-pan-x">
-                  <UnoCard
-                    card={card}
-                    size="md"
-                    isPlayable={isPlayable}
-                    onClick={isPlayable ? () => onPlayCard(card) : undefined}
-                    className={
-                      isPlayable
-                        ? 'ring-2 ring-white/90 shadow-xl -translate-y-1 sm:-translate-y-2'
-                        : isCurrentTurnForMe
-                        ? 'opacity-40 grayscale-[25%]'
-                        : 'opacity-95 shadow-md'
-                    }
-                  />
-                </div>
-              )
-            })}
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Hand Toolbar: Sorting Options & Scroll controls */}
+            <div className="flex items-center justify-between px-1 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
+                  <ArrowUpDown className="w-3 h-3 text-zinc-400" />
+                  <span className="hidden sm:inline">Sort:</span>
+                </span>
+
+                <div className="inline-flex p-0.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound()
+                      setHandSortMode((prev) => (prev === 'color' ? 'none' : 'color'))
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      handSortMode === 'color'
+                        ? 'bg-gradient-to-r from-red-600/30 via-amber-500/20 to-blue-600/30 text-white border border-white/30 shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                    }`}
+                    title="Group cards by Color (Red, Yellow, Green, Blue, Wild)"
+                  >
+                    <span>🎨</span>
+                    <span>By Color</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound()
+                      setHandSortMode((prev) => (prev === 'number' ? 'none' : 'number'))
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      handSortMode === 'number'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                    }`}
+                    title="Group cards by Number / Face Value (0-9, Actions, Wilds)"
+                  >
+                    <span>🔢</span>
+                    <span>By Number</span>
+                  </button>
+
+                  {handSortMode !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound()
+                        setHandSortMode('none')
+                      }}
+                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer flex items-center gap-0.5"
+                      title="Reset to default draw order"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick scroll arrows for wide hand */}
+              {handCards.length > 4 && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-zinc-400 hidden sm:inline">Scroll:</span>
+                  <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => scrollTray(-180)}
+                      aria-label="Scroll cards left"
+                      title="Scroll left"
+                      className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollTray(180)}
+                      aria-label="Scroll cards right"
+                      title="Scroll right"
+                      className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Player's Hand Horizontal Tray */}
+            <div
+              ref={handTrayRef}
+              onWheel={handleTrayWheel}
+              className="w-full overflow-x-auto pb-2 pt-1 touch-pan-x overscroll-x-contain select-none scroll-smooth"
+            >
+              <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
+                {displayedHandCards.map((card) => {
+                  const isPlayable =
+                    isCurrentTurnForMe &&
+                    canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
+
+                  return (
+                    <div key={card.id} className="transition-transform duration-150 flex-shrink-0 touch-pan-x">
+                      <UnoCard
+                        card={card}
+                        size="md"
+                        isPlayable={isPlayable}
+                        onClick={isPlayable ? () => onPlayCard(card) : undefined}
+                        className={
+                          isPlayable
+                            ? 'ring-2 ring-white/90 shadow-xl -translate-y-1 sm:-translate-y-2'
+                            : isCurrentTurnForMe
+                            ? 'opacity-40 grayscale-[25%]'
+                            : 'opacity-95 shadow-md'
+                        }
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* In-Game Settings / Menu Modal */}

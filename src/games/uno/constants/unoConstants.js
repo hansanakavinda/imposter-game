@@ -74,3 +74,49 @@ export const PLAYABLE_COLORS = [
   CARD_COLORS.GREEN,
   CARD_COLORS.YELLOW,
 ]
+
+export function getRankBadge(rank) {
+  switch (rank) {
+    case 1:
+      return {
+        label: '1st Place',
+        shortLabel: '1st',
+        medal: '🥇',
+        title: 'Winner',
+        text: 'text-amber-300',
+        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        ring: 'ring-amber-400',
+      }
+    case 2:
+      return {
+        label: '2nd Place',
+        shortLabel: '2nd',
+        medal: '🥈',
+        title: 'Runner-up',
+        text: 'text-slate-200',
+        badge: 'bg-slate-400/20 text-slate-200 border-slate-400/40',
+        ring: 'ring-slate-300',
+      }
+    case 3:
+      return {
+        label: '3rd Place',
+        shortLabel: '3rd',
+        medal: '🥉',
+        title: '3rd Place',
+        text: 'text-amber-500',
+        badge: 'bg-amber-700/20 text-amber-400 border-amber-600/40',
+        ring: 'ring-amber-600',
+      }
+    default:
+      return {
+        label: `${rank}th Place`,
+        shortLabel: `${rank}th`,
+        medal: '🏅',
+        title: `${rank}th Place`,
+        text: 'text-zinc-400',
+        badge: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+        ring: 'ring-zinc-600',
+      }
+  }
+}
+

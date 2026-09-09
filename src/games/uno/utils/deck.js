@@ -250,3 +250,45 @@ export function sortCardsByNumber(cards) {
   })
 }
 
+/**
+ * Advance turn index to the next active player in the current direction,
+ * skipping any player who has already finished (e.g. 0 cards remaining / ranked).
+ */
+export function getNextActivePlayerIndex(
+  currentIdx,
+  step = 1,
+  currentPlayers = [],
+  currentDir = 1,
+  isFinishedFn = () => false
+) {
+  const len = currentPlayers.length
+  if (len === 0) return 0
+
+  const activeIndices = []
+  for (let i = 0; i < len; i++) {
+    if (!isFinishedFn(currentPlayers[i])) {
+      activeIndices.push(i)
+    }
+  }
+
+  if (activeIndices.length === 0) return currentIdx
+  if (activeIndices.length === 1) return activeIndices[0]
+
+  let idx = currentIdx
+  let stepsCounted = 0
+  const maxAttempts = len * 3
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    idx = (idx + currentDir * 1 + len * 100) % len
+    if (!isFinishedFn(currentPlayers[idx])) {
+      stepsCounted++
+      if (stepsCounted === step) {
+        return idx
+      }
+    }
+  }
+
+  return activeIndices[0]
+}
+
+
