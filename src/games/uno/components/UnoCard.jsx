@@ -45,15 +45,20 @@ export default function UnoCard({
   return (
     <button
       type="button"
-      onClick={isPlayable && onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
-      disabled={!isPlayable}
+      onClick={(e) => {
+        if (!isPlayable || !onClick) return
+        e.stopPropagation()
+        onClick()
+      }}
+      aria-disabled={!isPlayable}
+      tabIndex={isPlayable ? 0 : -1}
       style={style}
-      className={`relative select-none flex-shrink-0 border-2 border-white/80 shadow-md flex flex-col justify-between p-1.5 sm:p-2 overflow-hidden transition-all duration-200 group text-left touch-manipulation ${
+      className={`relative select-none flex-shrink-0 border-2 border-white/80 shadow-md flex flex-col justify-between p-1.5 sm:p-2 overflow-hidden transition-all duration-200 group text-left touch-pan-x ${
         config.bg
       } ${sizeClasses} ${
         isPlayable && onClick
           ? 'cursor-pointer hover:-translate-y-3 hover:shadow-2xl ring-2 ring-white/60 active:scale-95'
-          : 'opacity-40 cursor-not-allowed filter grayscale-[30%]'
+          : 'cursor-default'
       } ${className}`}
     >
       {/* Top Left Mini Index */}

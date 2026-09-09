@@ -1,5 +1,5 @@
-import React from 'react'
-import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight } from 'lucide-react'
+import React, { useRef } from 'react'
+import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react'
 import UnoCard from './UnoCard'
 import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
 import { canPlayCard } from '../utils/deck'
@@ -41,6 +41,20 @@ export default function UnoBoard({
 
   const showUnoButton =
     handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound
+
+  const handTrayRef = useRef(null)
+
+  const handleTrayWheel = (e) => {
+    if (e.deltaY !== 0 && handTrayRef.current) {
+      handTrayRef.current.scrollLeft += e.deltaY
+    }
+  }
+
+  const scrollTray = (offset) => {
+    if (handTrayRef.current) {
+      handTrayRef.current.scrollBy({ left: offset, behavior: 'smooth' })
+    }
+  }
 
   return (
     <div className="w-full max-w-2xl mx-auto px-3 py-2 flex flex-col justify-between min-h-[88vh] select-none">
@@ -191,13 +205,39 @@ export default function UnoBoard({
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <span className="text-xl">{myPlayer.avatar || '😎'}</span>
-            <div>
-              <span className="text-xs font-bold text-white block leading-tight">
-                {myPlayer.name} (You)
-              </span>
-              <span className="text-[10px] text-zinc-400">
-                {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
-              </span>
+            <div className="flex items-center gap-2">
+              <div>
+                <span className="text-xs font-bold text-white block leading-tight">
+                  {myPlayer.name} (You)
+                </span>
+                <span className="text-[10px] text-zinc-400">
+                  {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
+                </span>
+              </div>
+
+              {/* Quick scroll arrows if hand has multiple cards */}
+              {handCards.length > 4 && (
+                <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 ml-1">
+                  <button
+                    type="button"
+                    onClick={() => scrollTray(-180)}
+                    aria-label="Scroll cards left"
+                    title="Scroll left"
+                    className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scrollTray(180)}
+                    aria-label="Scroll cards right"
+                    title="Scroll right"
+                    className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded active:scale-90 transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -263,13 +303,17 @@ export default function UnoBoard({
         </div>
 
         {/* Player's Hand Horizontal Tray */}
-        <div className="w-full overflow-x-auto pb-2 pt-3 scrollbar-none">
+        <div
+          ref={handTrayRef}
+          onWheel={handleTrayWheel}
+          className="w-full overflow-x-auto pb-2 pt-3 touch-pan-x overscroll-x-contain select-none scroll-smooth"
+        >
           <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
             {handCards.map((card) => {
               const isPlayable = isCurrentTurnForMe && canPlayCard(card, topCard, activeColor)
 
               return (
-                <div key={card.id} className="transition-transform duration-150">
+                <div key={card.id} className="transition-transform duration-150 flex-shrink-0 touch-pan-x">
                   <UnoCard
                     card={card}
                     size="md"
@@ -277,10 +321,10 @@ export default function UnoBoard({
                     onClick={isPlayable ? () => onPlayCard(card) : undefined}
                     className={
                       isPlayable
-                        ? 'ring-2 ring-white/90 shadow-xl'
+                        ? 'ring-2 ring-white/90 shadow-xl -translate-y-1 sm:-translate-y-2'
                         : isCurrentTurnForMe
                         ? 'opacity-40 grayscale-[25%]'
-                        : 'opacity-75'
+                        : 'opacity-95 shadow-md'
                     }
                   />
                 </div>
