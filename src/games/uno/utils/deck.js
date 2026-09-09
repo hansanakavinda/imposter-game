@@ -179,3 +179,74 @@ export function dealHands(deck, playerCount, handSize = 7) {
     initialColor: topCard.color,
   }
 }
+
+/**
+ * Canonical color sorting order (Red -> Yellow -> Green -> Blue -> Wild)
+ */
+const COLOR_SORT_ORDER = {
+  [CARD_COLORS.RED]: 1,
+  [CARD_COLORS.YELLOW]: 2,
+  [CARD_COLORS.GREEN]: 3,
+  [CARD_COLORS.BLUE]: 4,
+  [CARD_COLORS.WILD]: 5,
+}
+
+/**
+ * Action and special card rank ordering for sorting (numbers 0-9 use face value)
+ */
+const ACTION_RANK_ORDER = {
+  [CARD_TYPES.SKIP]: 10,
+  [CARD_TYPES.REVERSE]: 11,
+  [CARD_TYPES.DRAW_TWO]: 12,
+  [CARD_TYPES.WILD]: 13,
+  [CARD_TYPES.WILD_DRAW_FOUR]: 14,
+}
+
+/**
+ * Helper to get numeric rank score for a card
+ */
+function getCardRankScore(card) {
+  if (card.type === CARD_TYPES.NUMBER && typeof card.value === 'number') {
+    return card.value
+  }
+  return ACTION_RANK_ORDER[card.type] ?? 99
+}
+
+/**
+ * Sort a hand of cards primarily by color, secondarily by number/type
+ */
+export function sortCardsByColor(cards) {
+  if (!Array.isArray(cards)) return []
+  return [...cards].sort((a, b) => {
+    const colorOrderA = COLOR_SORT_ORDER[a.color] ?? 99
+    const colorOrderB = COLOR_SORT_ORDER[b.color] ?? 99
+
+    if (colorOrderA !== colorOrderB) {
+      return colorOrderA - colorOrderB
+    }
+
+    // Within same color, sort by rank/value (0 to 9, then action cards)
+    return getCardRankScore(a) - getCardRankScore(b)
+  })
+}
+
+/**
+ * Sort a hand of cards primarily by number/type, secondarily by color
+ */
+export function sortCardsByNumber(cards) {
+  if (!Array.isArray(cards)) return []
+  return [...cards].sort((a, b) => {
+    const rankA = getCardRankScore(a)
+    const rankB = getCardRankScore(b)
+
+    if (rankA !== rankB) {
+      return rankA - rankB
+    }
+
+    // Within same rank/number, sort by color
+    const colorOrderA = COLOR_SORT_ORDER[a.color] ?? 99
+    const colorOrderB = COLOR_SORT_ORDER[b.color] ?? 99
+    return colorOrderA - colorOrderB
+  })
+}
+
