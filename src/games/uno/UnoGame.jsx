@@ -49,6 +49,9 @@ export default function UnoGame({
   const [aiHasCalledUnoThisRound, setAiHasCalledUnoThisRound] = useState(false)
   const [aiWinner, setAiWinner] = useState(null)
   const [aiSkippedInfo, setAiSkippedInfo] = useState(null)
+  const [aiStackingEnabled, setAiStackingEnabled] = useState(true)
+  const [aiPendingDrawCount, setAiPendingDrawCount] = useState(0)
+  const [aiPendingStackType, setAiPendingStackType] = useState(null)
 
   const botTimeoutRef = useRef(null)
 
@@ -82,6 +85,9 @@ export default function UnoGame({
   const [mpHasCalledUnoThisRound, setMpHasCalledUnoThisRound] = useState(false)
   const [mpWinner, setMpWinner] = useState(null)
   const [mpSkippedInfo, setMpSkippedInfo] = useState(null)
+  const [mpStackingEnabled, setMpStackingEnabled] = useState(true)
+  const [mpPendingDrawCount, setMpPendingDrawCount] = useState(0)
+  const [mpPendingStackType, setMpPendingStackType] = useState(null)
 
   // Authoritative host master state (immune to React stale closures)
   const hostGameRef = useRef({
@@ -99,6 +105,9 @@ export default function UnoGame({
     winner: null,
     actionMessage: '',
     skippedInfo: null,
+    stackingEnabled: true,
+    pendingDrawCount: 0,
+    pendingStackType: null,
   })
 
   // Network peer instances and dynamic callbacks ref
@@ -164,7 +173,7 @@ export default function UnoGame({
   // ==========================================
   // SOLO VS AI HANDLERS
   // ==========================================
-  const handleStartAiGame = ({ players: initialPlayers }) => {
+  const handleStartAiGame = ({ players: initialPlayers, enableStacking = true }) => {
     const freshDeck = createUnoDeck()
     const { hands, drawPile: dealtDraw, discardPile: dealtDiscard, initialColor } = dealHands(
       freshDeck,
@@ -188,12 +197,16 @@ export default function UnoGame({
     setAiUnoCalledPlayers(new Set())
     setAiHasCalledUnoThisRound(false)
     setAiWinner(null)
+    setAiSkippedInfo(null)
+    setAiStackingEnabled(enableStacking)
+    setAiPendingDrawCount(0)
+    setAiPendingStackType(null)
     setScreen('ai_playing')
   }
 
   const handlePlayAgainAi = () => {
     const resetPlayers = aiPlayers.map((p) => ({ ...p, hand: [] }))
-    handleStartAiGame({ players: resetPlayers })
+    handleStartAiGame({ players: resetPlayers, enableStacking: aiStackingEnabled })
   }
 
   const executeAiPlayCard = useCallback(
@@ -289,52 +302,69 @@ export default function UnoGame({
         idx === playerIndex ? { ...p, hand: nextHand } : p
       )
 
+      let newPendingDrawCount = 0
+      let newPendingStackType = null
+
       if (card.type === CARD_TYPES.DRAW_TWO) {
-        step = 2
-        const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
-        const targetPlayer = aiPlayers[targetIdx]
-        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-          2,
-          currentDraw,
-          currentDiscard
-        )
-        currentDraw = newDrawPile
-        currentDiscard = newDiscardPile
-        updatedPlayers = updatedPlayers.map((p, idx) =>
-          idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
-        )
-        currentSkippedInfo = {
-          playerId: targetPlayer.id,
-          playerName: targetPlayer.name,
-          playedByName: player.name,
-          cardType: 'draw2',
-          cardsDrawn: 2,
+        if (aiStackingEnabled) {
+          newPendingDrawCount = (aiPendingDrawCount || 0) + 2
+          newPendingStackType = CARD_TYPES.DRAW_TWO
+          step = 1
+          message = `${player.name} played +2! Stack is +${newPendingDrawCount} cards! Next player must counter or draw!`
+        } else {
+          step = 2
+          const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const targetPlayer = aiPlayers[targetIdx]
+          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+            2,
+            currentDraw,
+            currentDiscard
+          )
+          currentDraw = newDrawPile
+          currentDiscard = newDiscardPile
+          updatedPlayers = updatedPlayers.map((p, idx) =>
+            idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+          )
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'draw2',
+            cardsDrawn: 2,
+          }
+          message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
         }
-        message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
-        step = 2
-        const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
-        const targetPlayer = aiPlayers[targetIdx]
-        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-          4,
-          currentDraw,
-          currentDiscard
-        )
-        currentDraw = newDrawPile
-        currentDiscard = newDiscardPile
-        updatedPlayers = updatedPlayers.map((p, idx) =>
-          idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
-        )
-        currentSkippedInfo = {
-          playerId: targetPlayer.id,
-          playerName: targetPlayer.name,
-          playedByName: player.name,
-          cardType: 'wild4',
-          cardsDrawn: 4,
+        if (aiStackingEnabled) {
+          newPendingDrawCount = (aiPendingDrawCount || 0) + 4
+          newPendingStackType = CARD_TYPES.WILD_DRAW_FOUR
+          step = 1
+          message = `${player.name} played Wild +4! Color is now ${effectiveColor}. Stack is +${newPendingDrawCount} cards!`
+        } else {
+          step = 2
+          const targetIdx = getNextPlayerIndex(playerIndex, 1, aiPlayers, newDirection)
+          const targetPlayer = aiPlayers[targetIdx]
+          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+            4,
+            currentDraw,
+            currentDiscard
+          )
+          currentDraw = newDrawPile
+          currentDiscard = newDiscardPile
+          updatedPlayers = updatedPlayers.map((p, idx) =>
+            idx === targetIdx ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+          )
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'wild4',
+            cardsDrawn: 4,
+          }
+          message = `${player.name} played Wild +4! Color is now ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
         }
-        message = `${player.name} played Wild +4! Color is now ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD) {
@@ -358,6 +388,8 @@ export default function UnoGame({
       setAiHasCalledUnoThisRound(false)
       setAiActionMessage(message)
       setAiSkippedInfo(currentSkippedInfo)
+      setAiPendingDrawCount(newPendingDrawCount)
+      setAiPendingStackType(newPendingStackType)
     },
     [
       aiPlayers,
@@ -367,6 +399,8 @@ export default function UnoGame({
       aiHasCalledUnoThisRound,
       getNextPlayerIndex,
       drawCardsFromPile,
+      aiStackingEnabled,
+      aiPendingDrawCount,
     ]
   )
 
@@ -380,8 +414,45 @@ export default function UnoGame({
   }
 
   const handleDrawCardAi = () => {
-    if (aiHasDrawnCardThisTurn) return
+    if (aiHasDrawnCardThisTurn && aiPendingDrawCount === 0) return
     playCardDrawSound()
+
+    // Taking Stack Penalty
+    if (aiPendingDrawCount > 0) {
+      const penaltyCount = aiPendingDrawCount
+      const penaltyType = aiPendingStackType
+      const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+        penaltyCount,
+        aiDrawPile,
+        aiDiscardPile
+      )
+      const humanPlayer = aiPlayers[aiCurrentPlayerIndex]
+      const updatedPlayers = aiPlayers.map((p, idx) =>
+        idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+      )
+      const nextPlayerIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, updatedPlayers, aiDirection)
+      setAiPlayers(updatedPlayers)
+      setAiDrawPile(newDrawPile)
+      setAiDiscardPile(newDiscardPile)
+      setAiPendingDrawCount(0)
+      setAiPendingStackType(null)
+      setAiCurrentPlayerIndex(nextPlayerIdx)
+      setAiHasDrawnCardThisTurn(false)
+      setAiHasCalledUnoThisRound(false)
+      setAiSkippedInfo({
+        playerId: humanPlayer.id,
+        playerName: humanPlayer.name,
+        playedByName: 'Stack Penalty',
+        cardType: penaltyType,
+        cardsDrawn: penaltyCount,
+      })
+      setAiActionMessage(
+        `You drew ${penaltyCount} cards from the stack penalty! Turn passed to ${updatedPlayers[nextPlayerIdx].name}.`
+      )
+      return
+    }
+
+    // Normal 1-card draw
     const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
       1,
       aiDrawPile,
@@ -425,6 +496,50 @@ export default function UnoGame({
     if (!activePlayer || activePlayer.isHuman) return
 
     botTimeoutRef.current = setTimeout(() => {
+      // 1. Stack Counter Check for Bot
+      if (aiPendingDrawCount > 0) {
+        const stackCard = activePlayer.hand.find((c) => c.type === aiPendingStackType)
+        if (stackCard) {
+          const chosenColor =
+            stackCard.color === CARD_COLORS.WILD
+              ? chooseAiColor(activePlayer.hand)
+              : stackCard.color
+          executeAiPlayCard(aiCurrentPlayerIndex, stackCard, chosenColor)
+          return
+        } else {
+          // Bot takes the stack penalty
+          playCardDrawSound()
+          const penaltyCount = aiPendingDrawCount
+          const penaltyType = aiPendingStackType
+          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+            penaltyCount,
+            aiDrawPile,
+            aiDiscardPile
+          )
+          const updatedPlayers = aiPlayers.map((p, idx) =>
+            idx === aiCurrentPlayerIndex ? { ...p, hand: [...p.hand, ...drawnCards] } : p
+          )
+          const nextIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, updatedPlayers, aiDirection)
+          setAiPlayers(updatedPlayers)
+          setAiDrawPile(newDrawPile)
+          setAiDiscardPile(newDiscardPile)
+          setAiPendingDrawCount(0)
+          setAiPendingStackType(null)
+          setAiCurrentPlayerIndex(nextIdx)
+          setAiHasDrawnCardThisTurn(false)
+          setAiSkippedInfo({
+            playerId: activePlayer.id,
+            playerName: activePlayer.name,
+            playedByName: 'Stack Penalty',
+            cardType: penaltyType,
+            cardsDrawn: penaltyCount,
+          })
+          setAiActionMessage(
+            `${activePlayer.name} drew ${penaltyCount} cards from the stack penalty! Turn passed to ${updatedPlayers[nextIdx].name}.`
+          )
+          return
+        }
+      }
       const nextPlayerIdx = getNextPlayerIndex(aiCurrentPlayerIndex, 1, aiPlayers, aiDirection)
       const nextPlayer = aiPlayers[nextPlayerIdx]
       const nextPlayerCount = nextPlayer ? nextPlayer.hand.length : 7
@@ -509,6 +624,8 @@ export default function UnoGame({
     getNextPlayerIndex,
     drawCardsFromPile,
     executeAiPlayCard,
+    aiPendingDrawCount,
+    aiPendingStackType,
   ])
 
   // ==========================================
@@ -541,6 +658,9 @@ export default function UnoGame({
     setMpUnoCalledPlayers(new Set(g.unoCalledPlayers))
     setMpHasDrawnCardThisTurn(g.hasDrawnThisTurn)
     setMpSkippedInfo(g.skippedInfo || null)
+    setMpPendingDrawCount(g.pendingDrawCount || 0)
+    setMpPendingStackType(g.pendingStackType || null)
+    setMpStackingEnabled(g.stackingEnabled !== false)
     setMyHand([...(g.hands.get(0) || [])])
 
     if (g.winner) {
@@ -567,6 +687,9 @@ export default function UnoGame({
             hasDrawnThisTurn: g.hasDrawnThisTurn,
             winner: g.winner,
             skippedInfo: g.skippedInfo || null,
+            pendingDrawCount: g.pendingDrawCount || 0,
+            pendingStackType: g.pendingStackType || null,
+            stackingEnabled: g.stackingEnabled !== false,
           })
         }
       })
@@ -608,7 +731,15 @@ export default function UnoGame({
       const effectiveColor = isWild ? chosenColor : card.color
 
       // Check legal move
-      if (!canPlayCard(card, g.topCard, g.activeColor)) {
+      if (
+        !canPlayCard(
+          card,
+          g.topCard,
+          g.activeColor,
+          g.pendingDrawCount || 0,
+          g.pendingStackType || null
+        )
+      ) {
         console.warn(`[Host] Card ${card.label} (${card.color}) cannot be played on topCard`, g.topCard, g.activeColor)
         return
       }
@@ -684,53 +815,78 @@ export default function UnoGame({
       }
 
       if (card.type === CARD_TYPES.DRAW_TWO) {
-        step = 2
-        const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
-        const targetPlayer = g.players[targetIdx]
-        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-          2,
-          g.drawPile,
-          g.discardPile
-        )
-        g.drawPile = newDrawPile
-        g.discardPile = newDiscardPile
-        const targetHand = g.hands.get(targetPlayer.id) || []
-        g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
-        currentSkippedInfo = {
-          playerId: targetPlayer.id,
-          playerName: targetPlayer.name,
-          playedByName: player.name,
-          cardType: 'draw2',
-          cardsDrawn: 2,
+        if (g.stackingEnabled !== false) {
+          g.pendingDrawCount = (g.pendingDrawCount || 0) + 2
+          g.pendingStackType = CARD_TYPES.DRAW_TWO
+          step = 1
+          message = `${player.name} played +2! Stack is +${g.pendingDrawCount} cards! Next player must counter or draw!`
+          currentSkippedInfo = null
+        } else {
+          step = 2
+          const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const targetPlayer = g.players[targetIdx]
+          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+            2,
+            g.drawPile,
+            g.discardPile
+          )
+          g.drawPile = newDrawPile
+          g.discardPile = newDiscardPile
+          const targetHand = g.hands.get(targetPlayer.id) || []
+          g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'draw2',
+            cardsDrawn: 2,
+          }
+          message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
         }
-        message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
-        step = 2
-        const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
-        const targetPlayer = g.players[targetIdx]
-        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-          4,
-          g.drawPile,
-          g.discardPile
-        )
-        g.drawPile = newDrawPile
-        g.discardPile = newDiscardPile
-        const targetHand = g.hands.get(targetPlayer.id) || []
-        g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
-        currentSkippedInfo = {
-          playerId: targetPlayer.id,
-          playerName: targetPlayer.name,
-          playedByName: player.name,
-          cardType: 'wild4',
-          cardsDrawn: 4,
+        if (g.stackingEnabled !== false) {
+          g.pendingDrawCount = (g.pendingDrawCount || 0) + 4
+          g.pendingStackType = CARD_TYPES.WILD_DRAW_FOUR
+          step = 1
+          message = `${player.name} played Wild +4! Color is now ${effectiveColor}. Stack is +${g.pendingDrawCount} cards!`
+          currentSkippedInfo = null
+        } else {
+          step = 2
+          const targetIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+          const targetPlayer = g.players[targetIdx]
+          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+            4,
+            g.drawPile,
+            g.discardPile
+          )
+          g.drawPile = newDrawPile
+          g.discardPile = newDiscardPile
+          const targetHand = g.hands.get(targetPlayer.id) || []
+          g.hands.set(targetPlayer.id, [...targetHand, ...drawnCards])
+          currentSkippedInfo = {
+            playerId: targetPlayer.id,
+            playerName: targetPlayer.name,
+            playedByName: player.name,
+            cardType: 'wild4',
+            cardsDrawn: 4,
+          }
+          message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
         }
-        message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
       }
 
       if (card.type === CARD_TYPES.WILD) {
         message = `${player.name} played Wild! Color is ${effectiveColor}.`
+      }
+
+      // If a non-stacking card was played, reset pending stack penalty
+      if (
+        card.type !== CARD_TYPES.DRAW_TWO &&
+        card.type !== CARD_TYPES.WILD_DRAW_FOUR
+      ) {
+        g.pendingDrawCount = 0
+        g.pendingStackType = null
       }
 
       const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, step, g.players, g.direction)
@@ -753,6 +909,41 @@ export default function UnoGame({
       if (!player) return
 
       playCardDrawSound()
+
+      // Taking Stack Penalty
+      if ((g.pendingDrawCount || 0) > 0) {
+        const penaltyCount = g.pendingDrawCount
+        const penaltyType = g.pendingStackType
+        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
+          penaltyCount,
+          g.drawPile,
+          g.discardPile
+        )
+        g.drawPile = newDrawPile
+        g.discardPile = newDiscardPile
+        const currentHand = g.hands.get(playerId) || []
+        g.hands.set(playerId, [...currentHand, ...drawnCards])
+        g.pendingDrawCount = 0
+        g.pendingStackType = null
+        g.hasDrawnThisTurn = false
+
+        const nextIdx = getNextPlayerIndex(g.currentPlayerIndex, 1, g.players, g.direction)
+        const nextPlayer = g.players[nextIdx]
+        g.currentPlayerIndex = nextIdx
+        g.skippedInfo = {
+          playerId: player.id,
+          playerName: player.name,
+          playedByName: 'Stack Penalty',
+          cardType: penaltyType,
+          cardsDrawn: penaltyCount,
+        }
+        g.actionMessage = `${player.name} drew ${penaltyCount} cards from the stack penalty! Turn passed to ${nextPlayer?.name || 'next player'}.`
+
+        hostBroadcastGameState()
+        return
+      }
+
+      // Normal 1-card draw
       const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
         1,
         g.drawPile,
@@ -770,7 +961,7 @@ export default function UnoGame({
 
       hostBroadcastGameState()
     },
-    [drawCardsFromPile, hostBroadcastGameState]
+    [getNextPlayerIndex, drawCardsFromPile, hostBroadcastGameState]
   )
 
   // Authoritative host turn pass execution
@@ -838,7 +1029,7 @@ export default function UnoGame({
   }, [hostProcessPlayCard, hostProcessDrawCard, hostProcessPassTurn, hostProcessCallUno])
 
   // Host creates room
-  const handleCreateRoom = ({ name, avatar, maxPlayers }) => {
+  const handleCreateRoom = ({ name, avatar, maxPlayers, enableStacking = true }) => {
     const code = generateRoomCode()
     const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true }
 
@@ -856,6 +1047,10 @@ export default function UnoGame({
       hasDrawnThisTurn: false,
       winner: null,
       actionMessage: '',
+      skippedInfo: null,
+      stackingEnabled: enableStacking,
+      pendingDrawCount: 0,
+      pendingStackType: null,
     }
 
     setMpRoomState({
@@ -864,9 +1059,13 @@ export default function UnoGame({
       roomCode: code,
       players: [hostPlayer],
       maxPlayers,
+      stackingEnabled: enableStacking,
       isConnecting: true,
       error: '',
     })
+    setMpStackingEnabled(enableStacking)
+    setMpPendingDrawCount(0)
+    setMpPendingStackType(null)
     setMyPlayerId(0)
     myPlayerIdRef.current = 0
 
@@ -900,6 +1099,7 @@ export default function UnoGame({
           playerId: newPlayer.id,
           roomCode: code,
           players: updatedPlayers,
+          stackingEnabled: hostGameRef.current.stackingEnabled !== false,
         })
 
         // Broadcast room update to all players
@@ -908,6 +1108,7 @@ export default function UnoGame({
             type: 'ROOM_UPDATE',
             roomCode: code,
             players: updatedPlayers,
+            stackingEnabled: hostGameRef.current.stackingEnabled !== false,
           })
         }, 50)
 
@@ -964,9 +1165,13 @@ export default function UnoGame({
         if (data.type === 'WELCOME') {
           setMyPlayerId(data.playerId)
           myPlayerIdRef.current = data.playerId
+          if (data.stackingEnabled !== undefined) {
+            setMpStackingEnabled(data.stackingEnabled)
+          }
           if (data.players) {
             setMpRoomState((prev) => ({
               ...prev,
+              stackingEnabled: data.stackingEnabled,
               players: data.players.map((p) => ({
                 ...p,
                 isYou: p.id === data.playerId,
@@ -974,8 +1179,12 @@ export default function UnoGame({
             }))
           }
         } else if (data.type === 'ROOM_UPDATE') {
+          if (data.stackingEnabled !== undefined) {
+            setMpStackingEnabled(data.stackingEnabled)
+          }
           setMpRoomState((prev) => ({
             ...prev,
+            stackingEnabled: data.stackingEnabled !== undefined ? data.stackingEnabled : prev.stackingEnabled,
             players: data.players.map((p) => ({
               ...p,
               isYou: p.id === myPlayerIdRef.current || (!p.isHost && p.name === name),
@@ -998,6 +1207,11 @@ export default function UnoGame({
           setMpHasDrawnCardThisTurn(data.hasDrawnThisTurn || false)
           setMpHasCalledUnoThisRound(false)
           setMpSkippedInfo(data.skippedInfo || null)
+          setMpPendingDrawCount(data.pendingDrawCount || 0)
+          setMpPendingStackType(data.pendingStackType || null)
+          if (data.stackingEnabled !== undefined) {
+            setMpStackingEnabled(data.stackingEnabled)
+          }
 
           if (data.winner) {
             setMpWinner(data.winner)
@@ -1055,12 +1269,18 @@ export default function UnoGame({
     g.unoCalledPlayers = new Set()
     g.winner = null
     g.actionMessage = 'Game started! Host has the first move.'
+    g.skippedInfo = null
+    g.pendingDrawCount = 0
+    g.pendingStackType = null
 
     setScreen('mp_playing')
     setMpCurrentPlayerIndex(0)
     setMyPlayerId(0)
     myPlayerIdRef.current = 0
     setMpWinner(null)
+    setMpSkippedInfo(null)
+    setMpPendingDrawCount(0)
+    setMpPendingStackType(null)
 
     hostBroadcastGameState('Game started! Host has the first move.')
   }
@@ -1090,7 +1310,7 @@ export default function UnoGame({
   }
 
   const handleMpDrawCard = () => {
-    if (mpHasDrawnCardThisTurn) return
+    if (mpHasDrawnCardThisTurn && mpPendingDrawCount === 0) return
     if (mpRoomState.isHost) {
       hostProcessDrawCard(0)
     } else if (clientNetworkRef.current) {
@@ -1206,6 +1426,8 @@ export default function UnoGame({
           hasCalledUnoThisRound={aiHasCalledUnoThisRound}
           myPlayerId={0}
           skippedInfo={aiSkippedInfo}
+          pendingDrawCount={aiPendingDrawCount}
+          pendingStackType={aiPendingStackType}
         />
       )}
 
@@ -1229,7 +1451,7 @@ export default function UnoGame({
           onLeaveRoom={handleLeaveMpRoom}
           onBackToMenu={onBackToMenu}
           onBackToModeSelect={() => setScreen('mode_select')}
-          roomState={mpRoomState}
+          roomState={{ ...mpRoomState, stackingEnabled: mpStackingEnabled }}
         />
       )}
 
@@ -1254,6 +1476,8 @@ export default function UnoGame({
           myPlayerId={myPlayerId}
           myHand={myHand}
           skippedInfo={mpSkippedInfo}
+          pendingDrawCount={mpPendingDrawCount}
+          pendingStackType={mpPendingStackType}
         />
       )}
 

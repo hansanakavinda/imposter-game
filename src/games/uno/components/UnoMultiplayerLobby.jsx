@@ -29,6 +29,7 @@ export default function UnoMultiplayerLobby({
   const [playerName, setPlayerName] = useState('Player 1')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
   const [inputRoomCode, setInputRoomCode] = useState(initialRoomCode)
+  const [enableStacking, setEnableStacking] = useState(true)
   const [copied, setCopied] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
 
@@ -54,6 +55,7 @@ export default function UnoMultiplayerLobby({
       name: playerName.trim() || 'Host',
       avatar: selectedAvatar,
       maxPlayers: 4,
+      enableStacking,
     })
   }
 
@@ -137,6 +139,24 @@ export default function UnoMultiplayerLobby({
                 </>
               )}
             </button>
+          </div>
+
+          {/* Room Rule Pill */}
+          <div className="flex items-center justify-center pt-1">
+            <span
+              className={`px-3 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
+                roomState.stackingEnabled !== false
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+              }`}
+            >
+              <span>{roomState.stackingEnabled !== false ? '🔥' : '🚫'}</span>
+              <span>
+                {roomState.stackingEnabled !== false
+                  ? 'Card Stacking (+2 / +4) ON'
+                  : 'Card Stacking OFF'}
+              </span>
+            </span>
           </div>
         </div>
 
@@ -372,12 +392,48 @@ export default function UnoMultiplayerLobby({
           )}
 
           {tab === 'create' && (
-            <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 text-xs text-zinc-400 space-y-1">
-              <span className="font-bold text-white block">Host Privileges:</span>
-              <p>
-                A unique 4-character room code and direct invite link will be generated for you to share with your friends.
-              </p>
-            </div>
+            <>
+              {/* House Rules: Card Stacking Toggle */}
+              <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center text-sm">
+                    🔥
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white leading-tight">
+                      Card Stacking (+2 / +4)
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      Counter a +2 with another +2, or +4 with +4
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound()
+                    setEnableStacking(!enableStacking)
+                  }}
+                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                    enableStacking ? 'bg-emerald-500' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform absolute top-0.5 left-0.5 ${
+                      enableStacking ? 'translate-x-6' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 text-xs text-zinc-400 space-y-1">
+                <span className="font-bold text-white block">Host Privileges:</span>
+                <p>
+                  A unique 4-character room code and direct invite link will be generated for you to share with your friends.
+                </p>
+              </div>
+            </>
           )}
         </div>
 

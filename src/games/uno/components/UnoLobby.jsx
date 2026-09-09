@@ -11,6 +11,7 @@ const BOT_PRESETS = [
 export default function UnoLobby({ onStartGame, onBackToMenu, onOpenRules }) {
   const [playerName, setPlayerName] = useState('Player 1')
   const [botCount, setBotCount] = useState(3) // 3 bots = 4 total players (standard Uno)
+  const [enableStacking, setEnableStacking] = useState(true)
 
   const handleStart = (e) => {
     e.preventDefault()
@@ -34,6 +35,7 @@ export default function UnoLobby({ onStartGame, onBackToMenu, onOpenRules }) {
 
     onStartGame({
       players: [humanPlayer, ...botPlayers],
+      enableStacking,
     })
   }
 
@@ -126,6 +128,40 @@ export default function UnoLobby({ onStartGame, onBackToMenu, onOpenRules }) {
                 )
               })}
             </div>
+          </div>
+
+          {/* House Rules: Card Stacking Toggle */}
+          <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center text-sm">
+                🔥
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white leading-tight">
+                  Card Stacking (+2 / +4)
+                </div>
+                <div className="text-[10px] text-zinc-400">
+                  Counter a +2 with another +2, or +4 with +4
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound()
+                setEnableStacking(!enableStacking)
+              }}
+              className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                enableStacking ? 'bg-emerald-500' : 'bg-zinc-700'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform absolute top-0.5 left-0.5 ${
+                  enableStacking ? 'translate-x-6' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Table Preview */}

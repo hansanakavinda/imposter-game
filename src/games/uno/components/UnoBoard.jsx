@@ -1,5 +1,5 @@
 import React, { useRef } from 'react'
-import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
+import { RotateCw, RotateCcw, AlertCircle, Sparkles, Check, ArrowRight, ArrowLeft, ChevronLeft, ChevronRight, Flame } from 'lucide-react'
 import UnoCard from './UnoCard'
 import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
 import { canPlayCard } from '../utils/deck'
@@ -25,6 +25,8 @@ export default function UnoBoard({
   myPlayerId = 0,
   myHand = null,
   skippedInfo = null,
+  pendingDrawCount = 0,
+  pendingStackType = null,
 }) {
   const myPlayer = players.find((p) => p.id === myPlayerId) || players[0]
   const handCards = myHand || myPlayer?.hand || []
@@ -43,11 +45,17 @@ export default function UnoBoard({
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
 
   const myCanPlayAnyCard = handCards.some((card) =>
-    canPlayCard(card, topCard, activeColor)
+    canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
   )
 
+  const myCanStack =
+    pendingDrawCount > 0 &&
+    handCards.some((card) =>
+      canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
+    )
+
   const showUnoButton =
-    handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound
+    handCards.length <= 2 && isCurrentTurnForMe && !hasCalledUnoThisRound && pendingDrawCount === 0
 
   const handTrayRef = useRef(null)
 
@@ -301,6 +309,28 @@ export default function UnoBoard({
           </div>
         </div>
 
+        {/* Active Card Stack Warning */}
+        {pendingDrawCount > 0 && (
+          <div className="mb-4 px-4 py-2 rounded-2xl bg-gradient-to-r from-red-600 via-amber-500 to-red-600 text-white shadow-xl shadow-red-950/70 border-2 border-amber-300 flex items-center gap-2.5 animate-bounce max-w-sm mx-auto">
+            <Flame className="w-5 h-5 text-amber-200 fill-amber-300 animate-pulse flex-shrink-0" />
+            <div className="text-left">
+              <div className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                <span>Stack Penalty Active!</span>
+                <span className="px-2 py-0.5 rounded-full bg-black/40 text-amber-300 font-extrabold text-xs">
+                  +{pendingDrawCount} CARDS
+                </span>
+              </div>
+              <p className="text-[10px] text-amber-100 font-bold leading-tight">
+                {isCurrentTurnForMe
+                  ? myCanStack
+                    ? `Play a ${pendingStackType === 'draw2' ? '+2' : '+4'} to counter, or click Draw Pile to take +${pendingDrawCount} cards!`
+                    : `No counter in hand! Click the Draw Pile to draw +${pendingDrawCount} cards.`
+                  : `Waiting for ${activePlayer?.name} to counter or draw +${pendingDrawCount}...`}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Center Card Play Area (Draw Pile & Discard Pile) */}
         <div className="flex items-center justify-center gap-6 sm:gap-10">
           {/* Draw Pile */}
@@ -316,13 +346,23 @@ export default function UnoBoard({
                 onClick={isCurrentTurnForMe ? onDrawCard : undefined}
                 className={
                   isCurrentTurnForMe
-                    ? 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
+                    ? pendingDrawCount > 0
+                      ? 'cursor-pointer ring-4 ring-red-500 hover:scale-105 active:scale-95 shadow-2xl shadow-red-600/50 animate-pulse'
+                      : 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
                     : 'cursor-not-allowed opacity-80'
                 }
               />
             </div>
-            <span className="text-[11px] font-semibold text-zinc-400 mt-2">
-              Draw Pile ({drawPileCount})
+            <span
+              className={`text-[11px] font-semibold mt-2 ${
+                pendingDrawCount > 0 && isCurrentTurnForMe
+                  ? 'text-red-400 font-black animate-pulse'
+                  : 'text-zinc-400'
+              }`}
+            >
+              {pendingDrawCount > 0
+                ? `Draw +${pendingDrawCount} Penalty`
+                : `Draw Pile (${drawPileCount})`}
             </span>
           </div>
 
@@ -452,7 +492,7 @@ export default function UnoBoard({
             )}
 
             {/* Pass Turn Button (after drawing a card) */}
-            {isCurrentTurnForMe && hasDrawnCardThisTurn && (
+            {isCurrentTurnForMe && hasDrawnCardThisTurn && pendingDrawCount === 0 && (
               <button
                 type="button"
                 onClick={() => {
@@ -477,7 +517,17 @@ export default function UnoBoard({
           }`}
         >
           {isCurrentTurnForMe ? (
-            hasDrawnCardThisTurn ? (
+            pendingDrawCount > 0 ? (
+              myCanStack ? (
+                <span className="text-amber-300 font-bold flex items-center justify-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" /> Stack Alert: Play a {pendingStackType === 'draw2' ? '+2' : '+4'} to counter, or click Draw Pile to take +{pendingDrawCount} cards!
+                </span>
+              ) : (
+                <span className="text-red-400 font-bold flex items-center justify-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-red-400" /> Stack Penalty: No counter in hand! Click the Draw Pile to draw +{pendingDrawCount} cards.
+                </span>
+              )
+            ) : hasDrawnCardThisTurn ? (
               <span>You drew a card! Play it if valid, or click &quot;Pass Turn&quot;.</span>
             ) : myCanPlayAnyCard ? (
               <span>Your Turn — Select a card from your hand to play!</span>
@@ -507,7 +557,9 @@ export default function UnoBoard({
         >
           <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
             {handCards.map((card) => {
-              const isPlayable = isCurrentTurnForMe && canPlayCard(card, topCard, activeColor)
+              const isPlayable =
+                isCurrentTurnForMe &&
+                canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
 
               return (
                 <div key={card.id} className="transition-transform duration-150 flex-shrink-0 touch-pan-x">

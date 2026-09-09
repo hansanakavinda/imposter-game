@@ -98,9 +98,27 @@ export function shuffleDeck(deck) {
 
 /**
  * Check if a card is legally playable on the current discard pile
+ * Supports Card Stacking rule (+2 on +2, +4 on +4)
  */
-export function canPlayCard(card, topCard, activeColor) {
+export function canPlayCard(
+  card,
+  topCard,
+  activeColor,
+  pendingDrawCount = 0,
+  pendingStackType = null
+) {
   if (!card || !topCard) return false
+
+  // If a stack penalty is currently active, only matching stacking cards are legal
+  if (pendingDrawCount > 0) {
+    if (pendingStackType === CARD_TYPES.DRAW_TWO) {
+      return card.type === CARD_TYPES.DRAW_TWO
+    }
+    if (pendingStackType === CARD_TYPES.WILD_DRAW_FOUR) {
+      return card.type === CARD_TYPES.WILD_DRAW_FOUR
+    }
+    return false
+  }
 
   // Wild cards can always be played
   if (card.color === CARD_COLORS.WILD) return true
