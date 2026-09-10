@@ -119,7 +119,6 @@ export default function UnoGame({
 
   const botTimeoutRef = useRef(null)
   const botUnoCallTimersRef = useRef({})
-  const botCatchTimersRef = useRef({})
   const botCatchHumanTimerRef = useRef(null)
   const aiPlayersRef = useRef(aiPlayers)
   useEffect(() => {
@@ -137,8 +136,6 @@ export default function UnoGame({
     }
     Object.values(botUnoCallTimersRef.current).forEach((timer) => clearTimeout(timer))
     botUnoCallTimersRef.current = {}
-    Object.values(botCatchTimersRef.current).forEach((timer) => clearTimeout(timer))
-    botCatchTimersRef.current = {}
   }, [])
 
   // ==========================================
@@ -530,10 +527,6 @@ export default function UnoGame({
         clearTimeout(botUnoCallTimersRef.current[targetPlayerId])
         delete botUnoCallTimersRef.current[targetPlayerId]
       }
-      if (botCatchTimersRef.current[targetPlayerId]) {
-        clearTimeout(botCatchTimersRef.current[targetPlayerId])
-        delete botCatchTimersRef.current[targetPlayerId]
-      }
       if (targetPlayerId === 0 && botCatchHumanTimerRef.current) {
         clearTimeout(botCatchHumanTimerRef.current)
         botCatchHumanTimerRef.current = null
@@ -923,10 +916,6 @@ export default function UnoGame({
           if (botUnoCallTimersRef.current[player.id]) {
             clearTimeout(botUnoCallTimersRef.current[player.id])
           }
-          if (botCatchTimersRef.current[player.id]) {
-            clearTimeout(botCatchTimersRef.current[player.id])
-            delete botCatchTimersRef.current[player.id]
-          }
           const willCall = Math.random() < 0.75
           if (willCall) {
             const delay = 2200 + Math.random() * 1600
@@ -939,40 +928,12 @@ export default function UnoGame({
               playUnoCallSound()
               setAiActionMessage(`🔔 ${player.name} shouted UNO! 1 card left!`)
             }, delay)
-          } else {
-            // Bot forgot to call UNO: another bot may catch them after 5.5s if player doesn't
-            botCatchTimersRef.current[player.id] = setTimeout(() => {
-              const latestPlayers = aiPlayersRef.current || []
-              const botTarget = latestPlayers.find((p) => p.id === player.id)
-              if (
-                botTarget &&
-                botTarget.hand.length === 1 &&
-                !botTarget.rank &&
-                !aiUnoCalledPlayersRef.current.has(player.id)
-              ) {
-                const otherActive = latestPlayers.filter(
-                  (p) => p.id !== player.id && p.hand.length > 0 && !p.rank
-                )
-                const botChallengers = otherActive.filter((p) => !p.isHuman)
-                if (botChallengers.length > 0) {
-                  const challenger =
-                    botChallengers[
-                      Math.floor(Math.random() * botChallengers.length)
-                    ]
-                  executeAiCatchUno(challenger.id, player.id)
-                }
-              }
-            }, 5500 + Math.random() * 2000)
           }
         }
       } else {
         if (botUnoCallTimersRef.current[player.id]) {
           clearTimeout(botUnoCallTimersRef.current[player.id])
           delete botUnoCallTimersRef.current[player.id]
-        }
-        if (botCatchTimersRef.current[player.id]) {
-          clearTimeout(botCatchTimersRef.current[player.id])
-          delete botCatchTimersRef.current[player.id]
         }
         if (player.isHuman) {
           if (botCatchHumanTimerRef.current) {
@@ -2076,15 +2037,10 @@ export default function UnoGame({
     [hostBroadcastGameState]
   )
 
-  // Finalize host catch penalty
+  // Finalize host catch penalty (only called when all givers submitted their card)
   const hostFinalizeCatchPenalty = useCallback(() => {
     const g = hostGameRef.current
     if (!g || !g.pendingCatchPenalty) return
-
-    if (g.penaltySafetyTimer) {
-      clearTimeout(g.penaltySafetyTimer)
-      g.penaltySafetyTimer = null
-    }
 
     const {
       targetPlayerId,
@@ -2099,13 +2055,8 @@ export default function UnoGame({
     const finishedGivers = []
 
     giverIds.forEach((giverId) => {
-      let card = givenCards.get(giverId)
+      const card = givenCards.get(giverId)
       const gHand = g.hands.get(giverId) || []
-
-      // If giver didn't submit in time, pick card automatically
-      if (!card && gHand.length > 0) {
-        card = chooseAiCardToGive(gHand) || gHand[0]
-      }
 
       if (card) {
         penaltyCards.push(card)
@@ -2266,17 +2217,6 @@ export default function UnoGame({
         givenCards: new Map(),
       }
 
-      // 15-second safety timer to prevent match stalling if a client doesn't submit
-      if (g.penaltySafetyTimer) {
-        clearTimeout(g.penaltySafetyTimer)
-      }
-      g.penaltySafetyTimer = setTimeout(() => {
-        const liveG = hostGameRef.current
-        if (liveG && liveG.pendingCatchPenalty) {
-          hostFinalizeCatchPenalty()
-        }
-      }, 15000)
-
       // Broadcast penalty selection request to clients
       if (hostNetworkRef.current) {
         hostNetworkRef.current.broadcast({
@@ -2307,7 +2247,7 @@ export default function UnoGame({
       g.actionMessage = waitMessage
       hostBroadcastGameState(waitMessage)
     },
-    [hostBroadcastGameState, hostFinalizeCatchPenalty]
+    [hostBroadcastGameState]
   )
 
   // Host authoritative handler when a player leaves or disconnects
@@ -2334,10 +2274,6 @@ export default function UnoGame({
 
         if (g.pendingCatchPenalty) {
           if (g.pendingCatchPenalty.targetPlayerId === player.id) {
-            if (g.penaltySafetyTimer) {
-              clearTimeout(g.penaltySafetyTimer)
-              g.penaltySafetyTimer = null
-            }
             g.pendingCatchPenalty = null
           } else if (g.pendingCatchPenalty.giverIds.includes(player.id)) {
             g.pendingCatchPenalty.giverIds = g.pendingCatchPenalty.giverIds.filter((id) => id !== player.id)

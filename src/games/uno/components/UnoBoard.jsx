@@ -133,34 +133,18 @@ export default function UnoBoard({
   const turnTrackRef = useRef(null)
   const activeNodeRef = useRef(null)
 
-  // Track player turn cycles to keep "NEW" badges until player's next turn to play
-  const myTurnIndexRef = useRef(0)
-  const drawnTurnInfoRef = useRef(null) // { turnIndex, wasDuringMyTurn }
-  const prevIsMyTurnRef = useRef(isCurrentTurnForMe)
+  // Timer ref to clear "NEW" badges after exactly 10 seconds
+  const newCardHighlightTimerRef = useRef(null)
 
+  // Clean up timer on unmount
   useEffect(() => {
-    // When local player's turn starts (isCurrentTurnForMe transitions from false to true):
-    if (!prevIsMyTurnRef.current && isCurrentTurnForMe) {
-      myTurnIndexRef.current += 1
-    }
-
-    // When local player's turn ends (isCurrentTurnForMe transitions from true to false):
-    if (prevIsMyTurnRef.current && !isCurrentTurnForMe) {
-      if (drawnTurnInfoRef.current) {
-        // If cards were drawn outside our turn or on a previous turn,
-        // and we have now completed our next turn to play: clear the badges!
-        if (
-          !drawnTurnInfoRef.current.wasDuringMyTurn ||
-          myTurnIndexRef.current > drawnTurnInfoRef.current.turnIndex
-        ) {
-          setNewlyDrawnCardIds(new Set())
-          drawnTurnInfoRef.current = null
-        }
+    return () => {
+      if (newCardHighlightTimerRef.current) {
+        clearTimeout(newCardHighlightTimerRef.current)
+        newCardHighlightTimerRef.current = null
       }
     }
-
-    prevIsMyTurnRef.current = isCurrentTurnForMe
-  }, [isCurrentTurnForMe])
+  }, [])
 
   // Trigger card flight & highlight when player draws new cards from pile
   useEffect(() => {
@@ -179,8 +163,11 @@ export default function UnoBoard({
     if (handCards.length === 0) {
       hasInitializedHandRef.current = false
       prevHandCardIdsRef.current = new Set()
+      if (newCardHighlightTimerRef.current) {
+        clearTimeout(newCardHighlightTimerRef.current)
+        newCardHighlightTimerRef.current = null
+      }
       setNewlyDrawnCardIds(new Set())
-      drawnTurnInfoRef.current = null
       return
     }
 
@@ -197,15 +184,17 @@ export default function UnoBoard({
         handTrayRef.current.scrollTo({ left: 0, behavior: 'smooth' })
       }
 
-      // 2. Record turn info for newly drawn cards
-      drawnTurnInfoRef.current = {
-        turnIndex: myTurnIndexRef.current,
-        wasDuringMyTurn: isCurrentTurnForMe,
-      }
-
-      // 3. Highlight newly drawn cards with "NEW" badge & amber ring
+      // 2. Highlight newly drawn cards with "NEW" badge & amber ring for exactly 10 seconds
       const newIds = new Set(addedCards.map((c) => c.id))
       setNewlyDrawnCardIds(newIds)
+
+      if (newCardHighlightTimerRef.current) {
+        clearTimeout(newCardHighlightTimerRef.current)
+      }
+      newCardHighlightTimerRef.current = setTimeout(() => {
+        setNewlyDrawnCardIds(new Set())
+        newCardHighlightTimerRef.current = null
+      }, 10000)
 
       // 3. Staggered flying card animation from draw pile down to hand
       const drawRect = drawPileRef.current?.getBoundingClientRect()

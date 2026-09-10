@@ -13,14 +13,17 @@ export default function UnoGiveCardModal({
 
   if (!isOpen || hand.length === 0) return null
 
+  const isLastCard = hand.length === 1
+
   const effectiveSelectedCardId =
     selectedCardId && hand.some((c) => c.id === selectedCardId)
       ? selectedCardId
-      : hand[0]?.id || null
+      : isLastCard
+      ? hand[0]?.id || null
+      : null
 
   const selectedCard =
-    hand.find((c) => c.id === effectiveSelectedCardId) || hand[0]
-  const isLastCard = hand.length === 1
+    hand.find((c) => c.id === effectiveSelectedCardId) || null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -99,10 +102,12 @@ export default function UnoGiveCardModal({
               playClickSound()
               onGiveCard(selectedCard)
             }}
-            className={`w-full py-3 px-4 rounded-2xl font-black text-sm text-white shadow-lg transition active:scale-95 cursor-pointer flex items-center justify-center gap-2 ${
-              isLastCard
-                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 shadow-amber-950/50'
-                : 'bg-gradient-to-r from-red-600 to-amber-600 hover:brightness-110 shadow-red-950/50'
+            className={`w-full py-3 px-4 rounded-2xl font-black text-sm text-white shadow-lg transition active:scale-95 flex items-center justify-center gap-2 ${
+              !selectedCard
+                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/60'
+                : isLastCard
+                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 shadow-amber-950/50 cursor-pointer'
+                : 'bg-gradient-to-r from-red-600 to-amber-600 hover:brightness-110 shadow-red-950/50 cursor-pointer'
             }`}
           >
             {isLastCard ? (
@@ -110,10 +115,18 @@ export default function UnoGiveCardModal({
                 <Trophy className="w-4 h-4" />
                 <span>Give Last Card &amp; Win!</span>
               </>
-            ) : (
+            ) : selectedCard ? (
               <>
                 <Gift className="w-4 h-4" />
-                <span>Give {selectedCard?.label || 'Card'} to {targetPlayerName}</span>
+                <span>
+                  Give {selectedCard.color !== 'wild' && selectedCard.color ? `${selectedCard.color} ` : ''}
+                  {selectedCard.label || 'Card'} to {targetPlayerName}
+                </span>
+              </>
+            ) : (
+              <>
+                <Gift className="w-4 h-4 text-zinc-500" />
+                <span>Tap a card above to select</span>
               </>
             )}
           </button>
