@@ -22,6 +22,7 @@ import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { playClickSound, playCardDrawSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
+const NEW_CARD_HIGHLIGHT_DURATION_MS = 2000 // 2 seconds highlight for newly drawn cards
 
 export default function UnoBoard({
   players,
@@ -136,7 +137,7 @@ export default function UnoBoard({
   const turnTrackRef = useRef(null)
   const activeNodeRef = useRef(null)
 
-  // Timer ref to clear "NEW" badges after exactly 10 seconds
+  // Timer ref to clear "NEW" badges after highlight duration
   const newCardHighlightTimerRef = useRef(null)
 
   // Clean up timer on unmount
@@ -187,7 +188,7 @@ export default function UnoBoard({
         handTrayRef.current.scrollTo({ left: 0, behavior: 'smooth' })
       }
 
-      // 2. Highlight newly drawn cards with "NEW" badge & amber ring for exactly 10 seconds
+      // 2. Highlight newly drawn cards with "NEW" badge & amber ring for 2 seconds
       const newIds = new Set(addedCards.map((c) => c.id))
       setNewlyDrawnCardIds(newIds)
 
@@ -197,7 +198,7 @@ export default function UnoBoard({
       newCardHighlightTimerRef.current = setTimeout(() => {
         setNewlyDrawnCardIds(new Set())
         newCardHighlightTimerRef.current = null
-      }, 10000)
+      }, NEW_CARD_HIGHLIGHT_DURATION_MS)
 
       // 3. Staggered flying card animation from draw pile down to hand
       const drawRect = drawPileRef.current?.getBoundingClientRect()
