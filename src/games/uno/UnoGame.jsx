@@ -2412,6 +2412,8 @@ export default function UnoGame({
       stackingEnabled: enableStacking,
       pendingDrawCount: 0,
       pendingStackType: null,
+      gameStarted: false,
+      lockedLobbyPlayerNames: null,
     }
 
     setMpRoomState({
@@ -2444,16 +2446,81 @@ export default function UnoGame({
         if (!g) return
         const currentPlayers = g.players
         const roomCapacity = g.maxPlayers || maxPlayers || 4
+        const rawName = clientPlayer?.name || ''
+        const incomingName = rawName.trim()
+        const cleanIncomingName = incomingName.toLowerCase()
 
-        // 1. Check if this is an EXISTING player reconnecting
-        const existingPlayer = currentPlayers.find(
-          (p) =>
-            !p.isHost &&
-            (p.peerId === clientPeerId ||
-              (clientPlayer?.name && p.name.trim().toLowerCase() === clientPlayer.name.trim().toLowerCase()))
+        // 1. Validate that name is not empty
+        if (!incomingName) {
+          try {
+            conn.send({
+              type: 'ROOM_ERROR',
+              error: 'Please enter a valid player name before joining.',
+            })
+          } catch (e) {
+            console.error('[Host] Failed to send empty name ROOM_ERROR:', e)
+          }
+          setTimeout(() => {
+            if (hostNetworkRef.current) {
+              hostNetworkRef.current.removeConnection(clientPeerId)
+            }
+          }, 300)
+          return
+        }
+
+        const isGameStarted = Boolean(
+          g.gameStarted || (g.drawPile && g.drawPile.length > 0) || g.topCard !== null
         )
 
-        if (existingPlayer) {
+        // 2. If the game has already started: only allow registered players from the lobby to reconnect
+        if (isGameStarted) {
+          const wasInLobby = g.lockedLobbyPlayerNames
+            ? g.lockedLobbyPlayerNames.has(cleanIncomingName)
+            : currentPlayers.some((p) => p.name.trim().toLowerCase() === cleanIncomingName)
+
+          const existingPlayer = currentPlayers.find(
+            (p) =>
+              !p.isHost &&
+              (p.peerId === clientPeerId || p.name.trim().toLowerCase() === cleanIncomingName)
+          )
+
+          // External player who was NOT in the lobby when created/started: reject immediately!
+          if (!wasInLobby || !existingPlayer) {
+            try {
+              conn.send({
+                type: 'ROOM_ERROR',
+                error: 'This game has already started. External players cannot join an active match.',
+              })
+            } catch (e) {
+              console.error('[Host] Failed to send game-started ROOM_ERROR:', e)
+            }
+            setTimeout(() => {
+              if (hostNetworkRef.current) {
+                hostNetworkRef.current.removeConnection(clientPeerId)
+              }
+            }, 300)
+            return
+          }
+
+          // Check if this lobby player is ALREADY actively connected (prevent duplicate session / hijack)
+          if (existingPlayer.connected && existingPlayer.peerId && existingPlayer.peerId !== clientPeerId) {
+            try {
+              conn.send({
+                type: 'ROOM_ERROR',
+                error: `A player named "${incomingName}" is already actively connected in this match.`,
+              })
+            } catch (e) {
+              console.error('[Host] Failed to send duplicate active player ROOM_ERROR:', e)
+            }
+            setTimeout(() => {
+              if (hostNetworkRef.current) {
+                hostNetworkRef.current.removeConnection(clientPeerId)
+              }
+            }, 300)
+            return
+          }
+
+          // Legitimate registered player reconnecting to their seat
           if (existingPlayer.peerId && existingPlayer.peerId !== clientPeerId && hostNetworkRef.current) {
             hostNetworkRef.current.removeConnection(existingPlayer.peerId)
           }
@@ -2463,7 +2530,6 @@ export default function UnoGame({
             existingPlayer.avatar = clientPlayer.avatar
           }
 
-          // Immediately send direct WELCOME message with their assigned player ID
           try {
             conn.send({
               type: 'WELCOME',
@@ -2474,63 +2540,75 @@ export default function UnoGame({
               stackingEnabled: g.stackingEnabled !== false,
             })
           } catch (e) {
-            console.error('[Host] Failed to send WELCOME to existing player:', e)
+            console.error('[Host] Failed to send WELCOME to reconnecting player:', e)
           }
 
-          // If a match is active, immediately send them their current hand and game state!
-          if (g.drawPile.length > 0 || g.topCard !== null) {
-            const sanitizedPlayers = currentPlayers.map((p) => ({
+          const sanitizedPlayers = currentPlayers.map((p) => {
+            const pRank = p.rank || (g.rankings || []).find((r) => r.playerId === p.id)?.rank || null
+            return {
               id: p.id,
               name: p.name,
               avatar: p.avatar,
               isHost: p.isHost,
               cardCount: g.hands.get(p.id)?.length || 0,
-            }))
-
-            try {
-              conn.send({
-                type: 'SYNC_GAME_STATE',
-                yourPlayerId: existingPlayer.id,
-                hand: [...(g.hands.get(existingPlayer.id) || [])],
-                topCard: g.topCard,
-                activeColor: g.activeColor,
-                currentPlayerIndex: g.currentPlayerIndex,
-                direction: g.direction,
-                drawPileCount: g.drawPile.length,
-                players: sanitizedPlayers,
-                rankings: g.rankings || [],
-                actionMessage: `${existingPlayer.name} reconnected to the game!`,
-                unoCalledPlayers: Array.from(g.unoCalledPlayers),
-                hasDrawnThisTurn: g.hasDrawnThisTurn,
-                winner: g.winner,
-                skippedInfo: g.skippedInfo || null,
-                pendingDrawCount: g.pendingDrawCount || 0,
-                pendingStackType: g.pendingStackType || null,
-                stackingEnabled: g.stackingEnabled !== false,
-              })
-            } catch (e) {
-              console.error('[Host] Failed to send SYNC_GAME_STATE:', e)
+              rank: pRank,
             }
-            hostBroadcastGameState(`${existingPlayer.name} reconnected!`)
-          } else {
-            setTimeout(() => {
-              if (hostNetworkRef.current) {
-                hostNetworkRef.current.broadcast({
-                  type: 'ROOM_UPDATE',
-                  roomCode: code,
-                  players: currentPlayers,
-                  maxPlayers: roomCapacity,
-                  stackingEnabled: g.stackingEnabled !== false,
-                })
-              }
-            }, 50)
+          })
+
+          try {
+            conn.send({
+              type: 'SYNC_GAME_STATE',
+              yourPlayerId: existingPlayer.id,
+              hand: [...(g.hands.get(existingPlayer.id) || [])],
+              topCard: g.topCard,
+              activeColor: g.activeColor,
+              currentPlayerIndex: g.currentPlayerIndex,
+              direction: g.direction,
+              drawPileCount: g.drawPile.length,
+              players: sanitizedPlayers,
+              rankings: g.rankings || [],
+              actionMessage: `${existingPlayer.name} reconnected to the game!`,
+              unoCalledPlayers: Array.from(g.unoCalledPlayers),
+              hasDrawnThisTurn: g.hasDrawnThisTurn,
+              winner: g.winner,
+              skippedInfo: g.skippedInfo || null,
+              pendingDrawCount: g.pendingDrawCount || 0,
+              pendingStackType: g.pendingStackType || null,
+              stackingEnabled: g.stackingEnabled !== false,
+            })
+          } catch (e) {
+            console.error('[Host] Failed to send SYNC_GAME_STATE on reconnect:', e)
           }
 
+          hostBroadcastGameState(`${existingPlayer.name} reconnected!`)
           setMpRoomState((prev) => ({ ...prev, players: currentPlayers }))
           return
         }
 
-        // 2. New player joining
+        // 3. Game has NOT started yet (In Lobby)
+        // Check if name is already taken by ANY player currently in the room (Host or other joined players)
+        const isNameTaken = currentPlayers.some(
+          (p) => p.peerId !== clientPeerId && p.name.trim().toLowerCase() === cleanIncomingName
+        )
+
+        if (isNameTaken) {
+          try {
+            conn.send({
+              type: 'ROOM_ERROR',
+              error: `The name "${incomingName}" is already taken in this room. Please choose a different name.`,
+            })
+          } catch (e) {
+            console.error('[Host] Failed to send duplicate name ROOM_ERROR:', e)
+          }
+          setTimeout(() => {
+            if (hostNetworkRef.current) {
+              hostNetworkRef.current.removeConnection(clientPeerId)
+            }
+          }, 300)
+          return
+        }
+
+        // 4. Check room capacity
         if (currentPlayers.length >= roomCapacity) {
           try {
             conn.send({
@@ -2538,16 +2616,22 @@ export default function UnoGame({
               error: `Room is full (maximum ${roomCapacity} players).`,
             })
           } catch (e) {
-            console.error('[Host] Failed to send ROOM_ERROR:', e)
+            console.error('[Host] Failed to send ROOM_ERROR for full room:', e)
           }
+          setTimeout(() => {
+            if (hostNetworkRef.current) {
+              hostNetworkRef.current.removeConnection(clientPeerId)
+            }
+          }, 300)
           return
         }
 
+        // 5. Add new player to lobby
         const newId = currentPlayers.length
         const newPlayer = {
           id: newId,
           peerId: clientPeerId,
-          name: clientPlayer?.name || `Player ${newId + 1}`,
+          name: incomingName,
           avatar: clientPlayer?.avatar || '😎',
           isHost: false,
           isYou: false,
@@ -2629,18 +2713,26 @@ export default function UnoGame({
         setMpConnectionStatus('connected')
         setMpRoomState((prev) => ({
           ...prev,
-          isInRoom: true,
-          isHost: false,
           roomCode,
-          isConnecting: false,
+          isConnecting: true,
+          // note: do not set isInRoom: true until host sends WELCOME or SYNC_GAME_STATE!
         }))
       },
       onData: (data) => {
         if (data.type === 'ROOM_ERROR') {
           setMpConnectionStatus('disconnected')
+          if (clientNetworkRef.current) {
+            try {
+              clientNetworkRef.current.destroy()
+            } catch {
+              // ignore
+            }
+            clientNetworkRef.current = null
+          }
           setMpRoomState((prev) => ({
             ...prev,
             isConnecting: false,
+            isInRoom: false,
             error: data.error || 'Unable to join room.',
           }))
           return
@@ -2823,7 +2915,7 @@ export default function UnoGame({
             ...prev,
             isInRoom: false,
             isConnecting: false,
-            error: 'Disconnected from host or room closed.',
+            error: prev.error || 'Disconnected from host or room closed.',
           }))
           setScreen('mp_lobby')
         }
@@ -2833,7 +2925,8 @@ export default function UnoGame({
         setMpRoomState((prev) => ({
           ...prev,
           isConnecting: false,
-          error: err?.message || 'Could not connect to room. Check code and try again.',
+          isInRoom: false,
+          error: prev.error || err?.message || 'Could not connect to room. Check code and try again.',
         }))
       },
     })
@@ -2874,6 +2967,8 @@ export default function UnoGame({
     g.pendingDrawCount = 0
     g.pendingStackType = null
     g.pendingCatchPenalty = null
+    g.gameStarted = true
+    g.lockedLobbyPlayerNames = new Set(g.players.map((p) => p.name.trim().toLowerCase()))
 
     setScreen('mp_playing')
     setMpCurrentPlayerIndex(0)
@@ -3070,6 +3165,11 @@ export default function UnoGame({
     g.skippedInfo = null
     g.pendingDrawCount = 0
     g.pendingStackType = null
+    g.pendingCatchPenalty = null
+    g.unoCalledPlayers = new Set()
+    g.unoPreCalledPlayers = new Set()
+    g.gameStarted = false
+    g.lockedLobbyPlayerNames = null
     if (hostNetworkRef.current) {
       hostNetworkRef.current.broadcast({ type: 'ROOM_RESET_TO_LOBBY' })
     }

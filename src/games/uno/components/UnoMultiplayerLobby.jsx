@@ -95,8 +95,9 @@ export default function UnoMultiplayerLobby({
     e.preventDefault()
     const code = inputRoomCode.trim().toUpperCase()
     if (!code) return
+    const name = playerName.trim()
+    if (!name) return
     playClickSound()
-    const name = playerName.trim() || 'Player'
     try {
       localStorage.setItem('uno_player_name', name)
       localStorage.setItem('uno_player_avatar', selectedAvatar)
@@ -547,7 +548,7 @@ export default function UnoMultiplayerLobby({
           ) : (
             <button
               onClick={handleJoinSubmit}
-              disabled={!inputRoomCode.trim() || roomState?.isConnecting}
+              disabled={!inputRoomCode.trim() || !playerName.trim() || roomState?.isConnecting}
               className="w-full py-4 rounded-2xl font-bold text-sm bg-white hover:bg-zinc-200 text-zinc-950 shadow-lg active:scale-95 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Users className="w-4 h-4" />
