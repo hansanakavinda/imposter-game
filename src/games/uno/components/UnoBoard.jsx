@@ -62,7 +62,8 @@ export default function UnoBoard({
     myPlayer?.rank || rankings.find((r) => r.playerId === myPlayer?.id)?.rank || null
   const isSpectating = Boolean(myPlayerRank)
   const handCards = isSpectating ? EMPTY_HAND : myHand || myPlayer?.hand || EMPTY_HAND
-  const activePlayer = players[currentPlayerIndex]
+  const activePlayer =
+    players[currentPlayerIndex] || players.find((p) => p.id === currentPlayerIndex) || players[0]
 
   // Detect finished players
   const isFinishedPlayer = (p) =>
@@ -97,7 +98,9 @@ export default function UnoBoard({
 
   const isCurrentTurnForMe =
     !isSpectating &&
-    (isHumanTurn !== undefined ? isHumanTurn : activePlayer?.id === myPlayer?.id)
+    (isHumanTurn !== undefined
+      ? isHumanTurn
+      : (activePlayer?.id === myPlayer?.id || currentPlayerIndex === myPlayer?.id))
   const isMyTurnSkipped = !isSpectating && skippedInfo?.playerId === myPlayer?.id
 
   const activeColorConfig =
@@ -252,7 +255,10 @@ export default function UnoBoard({
 
   const handlePlayCardWithBadgeClear = (card) => {
     setNewlyDrawnCardIds(new Set())
-    drawnTurnInfoRef.current = null
+    if (newCardHighlightTimerRef.current) {
+      clearTimeout(newCardHighlightTimerRef.current)
+      newCardHighlightTimerRef.current = null
+    }
     onPlayCard(card)
   }
 

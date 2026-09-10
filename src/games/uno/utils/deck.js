@@ -114,7 +114,7 @@ export function canPlayCard(
   if (!card || !topCard) return false
 
   // If a stack penalty is currently active, only matching stacking cards are legal
-  if (pendingDrawCount > 0) {
+  if (Number(pendingDrawCount) > 0) {
     if (pendingStackType === CARD_TYPES.DRAW_TWO) {
       return card.type === CARD_TYPES.DRAW_TWO
     }
@@ -128,14 +128,25 @@ export function canPlayCard(
   if (card.color === CARD_COLORS.WILD) return true
 
   // Current active color match (e.g. after a wild card or regular color)
-  const targetColor = activeColor || topCard.color
-  if (card.color === targetColor) return true
+  let targetColor = activeColor || topCard.color
+  if (targetColor && targetColor !== CARD_COLORS.WILD) {
+    if (card.color?.toLowerCase() === targetColor?.toLowerCase()) return true
+  }
 
-  // Value match for number cards
+  // Fallback: If top card is wild and activeColor was somehow not set or still wild, any regular color is playable
+  if (topCard.color === CARD_COLORS.WILD && (!activeColor || activeColor === CARD_COLORS.WILD)) {
+    return true
+  }
+
+  // Value match for number cards (handles string vs number values safely)
   if (
     card.type === CARD_TYPES.NUMBER &&
     topCard.type === CARD_TYPES.NUMBER &&
-    card.value === topCard.value
+    card.value !== null &&
+    card.value !== undefined &&
+    topCard.value !== null &&
+    topCard.value !== undefined &&
+    String(card.value) === String(topCard.value)
   ) {
     return true
   }
@@ -143,6 +154,8 @@ export function canPlayCard(
   // Type match for action cards (e.g. playing Blue Skip on Red Skip)
   if (
     card.type !== CARD_TYPES.NUMBER &&
+    card.type !== CARD_TYPES.WILD &&
+    card.type !== CARD_TYPES.WILD_DRAW_FOUR &&
     card.type === topCard.type
   ) {
     return true

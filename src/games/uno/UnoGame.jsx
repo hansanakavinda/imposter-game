@@ -1520,9 +1520,11 @@ export default function UnoGame({
       const g = hostGameRef.current
       if (!g) return
 
-      // Validate turn: allow if current player matches playerId
-      if (g.currentPlayerIndex !== playerId) {
-        console.warn(`[Host] Player ${playerId} played out of turn. Active player is ${g.currentPlayerIndex}`)
+      // Validate turn: allow if current player matches playerId or player at current index
+      const activePlayer = g.players[g.currentPlayerIndex]
+      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
+      if (!isActiveTurn) {
+        console.warn(`[Host] Player ${playerId} played out of turn. Active player is index ${g.currentPlayerIndex} (id ${activePlayer?.id})`)
         return
       }
 
@@ -1546,7 +1548,7 @@ export default function UnoGame({
 
       const card = currentHand[cardIndex]
       const isWild = card.color === CARD_COLORS.WILD
-      const effectiveColor = isWild ? chosenColor : card.color
+      const effectiveColor = isWild ? (chosenColor || CARD_COLORS.RED) : card.color
 
       // Check legal move
       if (
@@ -1910,7 +1912,10 @@ export default function UnoGame({
   const hostProcessDrawCard = useCallback(
     (playerId) => {
       const g = hostGameRef.current
-      if (!g || g.currentPlayerIndex !== playerId) return
+      if (!g) return
+      const activePlayer = g.players[g.currentPlayerIndex]
+      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
+      if (!isActiveTurn) return
 
       const player = g.players.find((p) => p.id === playerId)
       if (!player) return
@@ -1988,7 +1993,10 @@ export default function UnoGame({
   const hostProcessPassTurn = useCallback(
     (playerId) => {
       const g = hostGameRef.current
-      if (!g || g.currentPlayerIndex !== playerId) return
+      if (!g) return
+      const activePlayer = g.players[g.currentPlayerIndex]
+      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
+      if (!isActiveTurn) return
 
       const player = g.players.find((p) => p.id === playerId)
       const nextIdx = getNextActivePlayerIndex(
@@ -2733,16 +2741,30 @@ export default function UnoGame({
 
           if (data.rankings) {
             setMpRankings(data.rankings)
-            const myRankRecord = data.rankings.find((r) => r.playerId === myPlayerIdRef.current)
-            if (myRankRecord && !hasShownMyCelebrationRef.current && !data.winner) {
-              hasShownMyCelebrationRef.current = true
-              const remainingActive = (data.players || []).filter((p) => (p.cardCount || 0) > 0).length
-              setFinishedCelebration({
-                isOpen: true,
-                rank: myRankRecord.rank,
-                playerName: 'You',
-                activeRemaining: remainingActive,
+            if (data.rankings.length === 0) {
+              hasShownMyCelebrationRef.current = false
+              setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
+              setPenaltyGiveCardModal({
+                isOpen: false,
+                mode: 'mp',
+                penaltyId: null,
+                targetPlayerId: null,
+                targetPlayerName: '',
+                challengerId: null,
+                botGifts: [],
               })
+            } else {
+              const myRankRecord = data.rankings.find((r) => r.playerId === myPlayerIdRef.current)
+              if (myRankRecord && !hasShownMyCelebrationRef.current && !data.winner) {
+                hasShownMyCelebrationRef.current = true
+                const remainingActive = (data.players || []).filter((p) => (p.cardCount || 0) > 0).length
+                setFinishedCelebration({
+                  isOpen: true,
+                  rank: myRankRecord.rank,
+                  playerName: 'You',
+                  activeRemaining: remainingActive,
+                })
+              }
             }
           }
 
@@ -2844,12 +2866,14 @@ export default function UnoGame({
     g.direction = 1
     g.hasDrawnThisTurn = false
     g.unoCalledPlayers = new Set()
+    g.unoPreCalledPlayers = new Set()
     g.winner = null
     g.rankings = []
     g.actionMessage = 'Game started! Host has the first move.'
     g.skippedInfo = null
     g.pendingDrawCount = 0
     g.pendingStackType = null
+    g.pendingCatchPenalty = null
 
     setScreen('mp_playing')
     setMpCurrentPlayerIndex(0)
@@ -2862,6 +2886,15 @@ export default function UnoGame({
     setMpPendingStackType(null)
     hasShownMyCelebrationRef.current = false
     setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
+    setPenaltyGiveCardModal({
+      isOpen: false,
+      mode: 'mp',
+      penaltyId: null,
+      targetPlayerId: null,
+      targetPlayerName: '',
+      challengerId: null,
+      botGifts: [],
+    })
 
     hostBroadcastGameState('Game started! Host has the first move.')
   }
@@ -3252,7 +3285,7 @@ export default function UnoGame({
           onDrawCard={handleMpDrawCard}
           onPassTurn={handleMpPassTurn}
           hasDrawnCardThisTurn={mpHasDrawnCardThisTurn}
-          isHumanTurn={mpCurrentPlayerIndex === myPlayerId}
+          isHumanTurn={mpCurrentPlayerIndex === myPlayerId || mpPlayers[mpCurrentPlayerIndex]?.id === myPlayerId}
           isWaitingForBot={false}
           actionMessage={mpActionMessage}
           unoCalledPlayers={mpUnoCalledPlayers}
