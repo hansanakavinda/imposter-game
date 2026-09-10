@@ -7,6 +7,7 @@ import ColorPickerModal from './components/ColorPickerModal'
 import UnoGameOverModal from './components/UnoGameOverModal'
 import UnoRulesModal from './components/UnoRulesModal'
 import UnoFinishedRankModal from './components/UnoFinishedRankModal'
+import UnoGiveCardModal from './components/UnoGiveCardModal'
 import { CARD_COLORS, CARD_TYPES, getRankBadge } from './constants/unoConstants'
 import {
   createUnoDeck,
@@ -15,7 +16,7 @@ import {
   shuffleDeck,
   getNextActivePlayerIndex,
 } from './utils/deck'
-import { getAiMove, chooseAiColor } from './utils/unoAi'
+import { getAiMove, chooseAiColor, chooseAiCardToGive } from './utils/unoAi'
 import {
   initHostPeer,
   initClientPeer,
@@ -105,7 +106,40 @@ export default function UnoGame({
   const [aiPendingDrawCount, setAiPendingDrawCount] = useState(0)
   const [aiPendingStackType, setAiPendingStackType] = useState(null)
 
+  // Give card penalty selection modal (used in both AI and Multiplayer modes)
+  const [penaltyGiveCardModal, setPenaltyGiveCardModal] = useState({
+    isOpen: false,
+    mode: 'ai', // 'ai' or 'mp'
+    penaltyId: null,
+    targetPlayerId: null,
+    targetPlayerName: '',
+    challengerId: null,
+    botGifts: [],
+  })
+
   const botTimeoutRef = useRef(null)
+  const botUnoCallTimersRef = useRef({})
+  const botCatchTimersRef = useRef({})
+  const botCatchHumanTimerRef = useRef(null)
+  const aiPlayersRef = useRef(aiPlayers)
+  useEffect(() => {
+    aiPlayersRef.current = aiPlayers
+  }, [aiPlayers])
+  const aiUnoCalledPlayersRef = useRef(aiUnoCalledPlayers)
+  useEffect(() => {
+    aiUnoCalledPlayersRef.current = aiUnoCalledPlayers
+  }, [aiUnoCalledPlayers])
+
+  const clearAllAiUnoTimers = useCallback(() => {
+    if (botCatchHumanTimerRef.current) {
+      clearTimeout(botCatchHumanTimerRef.current)
+      botCatchHumanTimerRef.current = null
+    }
+    Object.values(botUnoCallTimersRef.current).forEach((timer) => clearTimeout(timer))
+    botUnoCallTimersRef.current = {}
+    Object.values(botCatchTimersRef.current).forEach((timer) => clearTimeout(timer))
+    botCatchTimersRef.current = {}
+  }, [])
 
   // ==========================================
   // 2. MULTIPLAYER STATE
@@ -214,19 +248,21 @@ export default function UnoGame({
     []
   )
 
-  // Clean up WebRTC on unmount
+  // Clean up WebRTC and timers on unmount
   useEffect(() => {
     return () => {
       if (hostNetworkRef.current) hostNetworkRef.current.destroy()
       if (clientNetworkRef.current) clientNetworkRef.current.destroy()
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current)
+      clearAllAiUnoTimers()
     }
-  }, [])
+  }, [clearAllAiUnoTimers])
 
   // ==========================================
   // SOLO VS AI HANDLERS
   // ==========================================
   const handleStartAiGame = ({ players: initialPlayers, enableStacking = true }) => {
+    clearAllAiUnoTimers()
     const freshDeck = createUnoDeck()
     const { hands, drawPile: dealtDraw, discardPile: dealtDiscard, initialColor } = dealHands(
       freshDeck,
@@ -258,13 +294,396 @@ export default function UnoGame({
     setAiPendingStackType(null)
     setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
     hasShownMyCelebrationRef.current = false
+    setPenaltyGiveCardModal({
+      isOpen: false,
+      mode: 'ai',
+      penaltyId: null,
+      targetPlayerId: null,
+      targetPlayerName: '',
+      challengerId: null,
+      botGifts: [],
+    })
     setScreen('ai_playing')
   }
 
   const handlePlayAgainAi = () => {
+    clearAllAiUnoTimers()
+    setPenaltyGiveCardModal({
+      isOpen: false,
+      mode: 'ai',
+      penaltyId: null,
+      targetPlayerId: null,
+      targetPlayerName: '',
+      challengerId: null,
+      botGifts: [],
+    })
     const resetPlayers = aiPlayers.map((p) => ({ ...p, hand: [], rank: null }))
     handleStartAiGame({ players: resetPlayers, enableStacking: aiStackingEnabled })
   }
+
+  // When human player confirms giving a selected card in AI mode
+  const handleConfirmGiveCardAi = useCallback(
+    (selectedCard) => {
+      const { targetPlayerId, targetPlayerName, challengerId, botGifts = [] } =
+        penaltyGiveCardModal
+
+      const cardsGiven = [
+        selectedCard,
+        ...botGifts.map((bg) => bg.card).filter(Boolean),
+      ]
+
+      let updatedRankings = [...aiRankings]
+      const finishedGivers = []
+
+      // 1. Deduct cards from givers and record placements for anyone who emptied hand
+      let updatedPlayers = aiPlayers.map((p) => {
+        if (p.isHuman) {
+          const nextHand = p.hand.filter((c) => c.id !== selectedCard.id)
+          if (nextHand.length === 0 && p.rank == null) {
+            const rank = updatedRankings.length + 1
+            const record = {
+              playerId: p.id,
+              name: p.name,
+              avatar: p.avatar,
+              isHuman: true,
+              rank,
+              remainingCards: 0,
+            }
+            updatedRankings.push(record)
+            finishedGivers.push({ ...p, rank })
+            return { ...p, hand: nextHand, rank }
+          }
+          return { ...p, hand: nextHand }
+        }
+
+        const botGift = botGifts.find((bg) => bg.giverId === p.id)
+        if (botGift && botGift.card) {
+          const nextHand = p.hand.filter((c) => c.id !== botGift.card.id)
+          if (nextHand.length === 0 && p.rank == null) {
+            const rank = updatedRankings.length + 1
+            const record = {
+              playerId: p.id,
+              name: p.name,
+              avatar: p.avatar,
+              isHuman: false,
+              rank,
+              remainingCards: 0,
+            }
+            updatedRankings.push(record)
+            finishedGivers.push({ ...p, rank })
+            return { ...p, hand: nextHand, rank }
+          }
+          return { ...p, hand: nextHand }
+        }
+
+        return p
+      })
+
+      // 2. Add all penalty cards to target player's hand
+      updatedPlayers = updatedPlayers.map((p) => {
+        if (p.id === targetPlayerId) {
+          return {
+            ...p,
+            hand: [...p.hand, ...cardsGiven],
+          }
+        }
+        return p
+      })
+
+      // 3. Clear target's UNO call status
+      setAiUnoCalledPlayers((prev) => {
+        const next = new Set(prev)
+        next.delete(targetPlayerId)
+        return next
+      })
+      if (targetPlayerId === 0) {
+        setAiHasCalledUnoThisRound(false)
+      }
+
+      // 4. Check remaining active players
+      const remainingActive = updatedPlayers.filter(
+        (p) => p.hand.length > 0 && p.rank == null
+      )
+
+      // 5. Check if match is over (1 or fewer active players left)
+      if (remainingActive.length <= 1) {
+        if (remainingActive.length === 1) {
+          const lastPlayer = remainingActive[0]
+          const lastRank = updatedRankings.length + 1
+          const lastRecord = {
+            playerId: lastPlayer.id,
+            name: lastPlayer.name,
+            avatar: lastPlayer.avatar,
+            isHuman: lastPlayer.isHuman,
+            rank: lastRank,
+            remainingCards: lastPlayer.hand.length,
+          }
+          updatedRankings.push(lastRecord)
+          updatedPlayers = updatedPlayers.map((p) =>
+            p.id === lastPlayer.id ? { ...p, rank: lastRank } : p
+          )
+        }
+        setAiPlayers(updatedPlayers)
+        setAiRankings(updatedRankings)
+        setAiWinner(updatedRankings[0])
+        setPenaltyGiveCardModal({
+          isOpen: false,
+          mode: 'ai',
+          penaltyId: null,
+          targetPlayerId: null,
+          targetPlayerName: '',
+          challengerId: null,
+          botGifts: [],
+        })
+        setScreen('ai_gameover')
+        return
+      }
+
+      const humanFinished = finishedGivers.find((fg) => fg.isHuman)
+      if (humanFinished) {
+        setFinishedCelebration({
+          isOpen: true,
+          rank: humanFinished.rank,
+          playerName: 'You',
+          activeRemaining: remainingActive.length,
+        })
+      }
+
+      // 6. Advance turn if current player finished
+      let nextTurnIdx = aiCurrentPlayerIndex
+      const activeCurrentP = updatedPlayers[aiCurrentPlayerIndex]
+      if (
+        activeCurrentP &&
+        (activeCurrentP.hand.length === 0 || activeCurrentP.rank != null)
+      ) {
+        nextTurnIdx = getNextActivePlayerIndex(
+          aiCurrentPlayerIndex,
+          1,
+          updatedPlayers,
+          aiDirection,
+          (p) => p.hand.length === 0 || p.rank != null
+        )
+      }
+
+      setAiCurrentPlayerIndex(nextTurnIdx)
+      setAiPlayers(updatedPlayers)
+      setAiRankings(updatedRankings)
+      playActionCardSound(true)
+
+      const challenger = updatedPlayers.find((p) => p.id === challengerId)
+      const challengerName = challengerId === 0 ? 'You' : challenger?.name || 'Player'
+      let msg = `🚨 ${challengerName} caught ${targetPlayerName}! Received 1 card from each active player (+${cardsGiven.length} cards)!`
+      if (finishedGivers.length > 0) {
+        const names = finishedGivers.map((fg) => (fg.isHuman ? 'You' : fg.name)).join(', ')
+        msg += ` 🏆 ${names} gave away their last card and finished the game!`
+      }
+      setAiActionMessage(msg)
+
+      setPenaltyGiveCardModal({
+        isOpen: false,
+        mode: 'ai',
+        penaltyId: null,
+        targetPlayerId: null,
+        targetPlayerName: '',
+        challengerId: null,
+        botGifts: [],
+      })
+    },
+    [
+      penaltyGiveCardModal,
+      aiPlayers,
+      aiRankings,
+      aiCurrentPlayerIndex,
+      aiDirection,
+    ]
+  )
+
+  const executeAiCatchUno = useCallback(
+    (challengerId, targetPlayerId) => {
+      const target = aiPlayers.find((p) => p.id === targetPlayerId)
+      if (!target) return
+
+      // Validate target: must have 1 card, not finished, not called UNO
+      if (target.rank != null) {
+        if (challengerId === 0) {
+          setAiActionMessage(`${target.name} has already finished the match!`)
+        }
+        return
+      }
+      if (target.hand.length !== 1) {
+        if (challengerId === 0) {
+          setAiActionMessage(
+            `${target.name} has ${target.hand.length} cards (must have exactly 1 card to be caught).`
+          )
+        }
+        return
+      }
+      if (aiUnoCalledPlayersRef.current.has(targetPlayerId)) {
+        if (challengerId === 0) {
+          setAiActionMessage(`${target.name} already called UNO!`)
+        }
+        return
+      }
+
+      // Clear any pending timers on target
+      if (botUnoCallTimersRef.current[targetPlayerId]) {
+        clearTimeout(botUnoCallTimersRef.current[targetPlayerId])
+        delete botUnoCallTimersRef.current[targetPlayerId]
+      }
+      if (botCatchTimersRef.current[targetPlayerId]) {
+        clearTimeout(botCatchTimersRef.current[targetPlayerId])
+        delete botCatchTimersRef.current[targetPlayerId]
+      }
+      if (targetPlayerId === 0 && botCatchHumanTimerRef.current) {
+        clearTimeout(botCatchHumanTimerRef.current)
+        botCatchHumanTimerRef.current = null
+      }
+
+      const otherActive = aiPlayers.filter(
+        (p) => p.id !== targetPlayerId && p.hand.length > 0 && p.rank == null
+      )
+      if (otherActive.length === 0) return
+
+      const isHumanActiveGiver = otherActive.some((p) => p.isHuman)
+
+      if (isHumanActiveGiver) {
+        // Human is one of the active givers: prompt human with UnoGiveCardModal!
+        const botGifts = otherActive
+          .filter((p) => !p.isHuman)
+          .map((bot) => ({
+            giverId: bot.id,
+            giverName: bot.name,
+            card: chooseAiCardToGive(bot.hand),
+          }))
+
+        setPenaltyGiveCardModal({
+          isOpen: true,
+          mode: 'ai',
+          penaltyId: null,
+          targetPlayerId,
+          targetPlayerName: target.name,
+          challengerId,
+          botGifts,
+        })
+      } else {
+        // Human is NOT an active giver (human is the caught target or already finished)
+        // All givers are bots: auto-transfer cards
+        const botGifts = otherActive.map((bot) => ({
+          giverId: bot.id,
+          giverName: bot.name,
+          card: chooseAiCardToGive(bot.hand),
+        }))
+        const cardsGiven = botGifts.map((bg) => bg.card).filter(Boolean)
+
+        let updatedRankings = [...aiRankings]
+        const finishedBots = []
+
+        let updatedPlayers = aiPlayers.map((p) => {
+          const bg = botGifts.find((g) => g.giverId === p.id)
+          if (bg && bg.card) {
+            const nextHand = p.hand.filter((c) => c.id !== bg.card.id)
+            if (nextHand.length === 0 && p.rank == null) {
+              const rank = updatedRankings.length + 1
+              const record = {
+                playerId: p.id,
+                name: p.name,
+                avatar: p.avatar,
+                isHuman: false,
+                rank,
+                remainingCards: 0,
+              }
+              updatedRankings.push(record)
+              finishedBots.push({ ...p, rank })
+              return { ...p, hand: nextHand, rank }
+            }
+            return { ...p, hand: nextHand }
+          }
+          return p
+        })
+
+        // Target receives all cards
+        updatedPlayers = updatedPlayers.map((p) => {
+          if (p.id === targetPlayerId) {
+            return { ...p, hand: [...p.hand, ...cardsGiven] }
+          }
+          return p
+        })
+
+        setAiUnoCalledPlayers((prev) => {
+          const next = new Set(prev)
+          next.delete(targetPlayerId)
+          return next
+        })
+        if (targetPlayerId === 0) {
+          setAiHasCalledUnoThisRound(false)
+        }
+
+        const remainingActive = updatedPlayers.filter(
+          (p) => p.hand.length > 0 && p.rank == null
+        )
+
+        if (remainingActive.length <= 1) {
+          if (remainingActive.length === 1) {
+            const lastPlayer = remainingActive[0]
+            const lastRank = updatedRankings.length + 1
+            const lastRecord = {
+              playerId: lastPlayer.id,
+              name: lastPlayer.name,
+              avatar: lastPlayer.avatar,
+              isHuman: lastPlayer.isHuman,
+              rank: lastRank,
+              remainingCards: lastPlayer.hand.length,
+            }
+            updatedRankings.push(lastRecord)
+            updatedPlayers = updatedPlayers.map((p) =>
+              p.id === lastPlayer.id ? { ...p, rank: lastRank } : p
+            )
+          }
+          setAiPlayers(updatedPlayers)
+          setAiRankings(updatedRankings)
+          setAiWinner(updatedRankings[0])
+          setScreen('ai_gameover')
+          return
+        }
+
+        let nextTurnIdx = aiCurrentPlayerIndex
+        const activeCurrentP = updatedPlayers[aiCurrentPlayerIndex]
+        if (
+          activeCurrentP &&
+          (activeCurrentP.hand.length === 0 || activeCurrentP.rank != null)
+        ) {
+          nextTurnIdx = getNextActivePlayerIndex(
+            aiCurrentPlayerIndex,
+            1,
+            updatedPlayers,
+            aiDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
+        }
+
+        setAiCurrentPlayerIndex(nextTurnIdx)
+        setAiPlayers(updatedPlayers)
+        setAiRankings(updatedRankings)
+        playActionCardSound(true)
+
+        const challenger = updatedPlayers.find((p) => p.id === challengerId)
+        const challengerName = challengerId === 0 ? 'You' : challenger?.name || 'Bot'
+        const targetName = targetPlayerId === 0 ? 'You' : target?.name || 'Bot'
+        let msg = `🚨 ${challengerName} caught ${targetName}! Received 1 card from each active player (+${cardsGiven.length} cards)!`
+        if (finishedBots.length > 0) {
+          const names = finishedBots.map((b) => b.name).join(', ')
+          msg += ` 🏆 ${names} gave away their last card and finished the game!`
+        }
+        setAiActionMessage(msg)
+      }
+    },
+    [
+      aiPlayers,
+      aiRankings,
+      aiCurrentPlayerIndex,
+      aiDirection,
+    ]
+  )
 
   const executeAiPlayCard = useCallback(
     (playerIndex, card, chosenColor = null) => {
@@ -473,13 +892,94 @@ export default function UnoGame({
           if (aiHasCalledUnoThisRound) {
             playUnoCallSound()
             setAiUnoCalledPlayers((prev) => new Set(prev).add(player.id))
+            setAiActionMessage('🔔 You shouted UNO! 1 card remaining!')
           } else {
-            setAiActionMessage('You forgot to call UNO! Penalty +2 cards!')
+            // Human has not called UNO yet: vulnerable to being caught!
+            if (botCatchHumanTimerRef.current) {
+              clearTimeout(botCatchHumanTimerRef.current)
+            }
+            botCatchHumanTimerRef.current = setTimeout(() => {
+              const latestPlayers = aiPlayersRef.current || []
+              const humanPlayer = latestPlayers[0]
+              if (
+                humanPlayer &&
+                humanPlayer.hand.length === 1 &&
+                !humanPlayer.rank &&
+                !aiUnoCalledPlayersRef.current.has(0)
+              ) {
+                const activeBots = latestPlayers.filter(
+                  (p) => !p.isHuman && p.hand.length > 0 && !p.rank
+                )
+                if (activeBots.length > 0) {
+                  const randomBot =
+                    activeBots[Math.floor(Math.random() * activeBots.length)]
+                  executeAiCatchUno(randomBot.id, 0)
+                }
+              }
+            }, 4000)
           }
         } else {
-          playUnoCallSound()
-          setAiUnoCalledPlayers((prev) => new Set(prev).add(player.id))
-          setAiActionMessage(`${player.name} calls UNO! 1 card left!`)
+          // Bot reached 1 card: 75% chance to call after delay, or forget
+          if (botUnoCallTimersRef.current[player.id]) {
+            clearTimeout(botUnoCallTimersRef.current[player.id])
+          }
+          if (botCatchTimersRef.current[player.id]) {
+            clearTimeout(botCatchTimersRef.current[player.id])
+            delete botCatchTimersRef.current[player.id]
+          }
+          const willCall = Math.random() < 0.75
+          if (willCall) {
+            const delay = 2200 + Math.random() * 1600
+            botUnoCallTimersRef.current[player.id] = setTimeout(() => {
+              setAiUnoCalledPlayers((prev) => {
+                const next = new Set(prev)
+                next.add(player.id)
+                return next
+              })
+              playUnoCallSound()
+              setAiActionMessage(`🔔 ${player.name} shouted UNO! 1 card left!`)
+            }, delay)
+          } else {
+            // Bot forgot to call UNO: another bot may catch them after 5.5s if player doesn't
+            botCatchTimersRef.current[player.id] = setTimeout(() => {
+              const latestPlayers = aiPlayersRef.current || []
+              const botTarget = latestPlayers.find((p) => p.id === player.id)
+              if (
+                botTarget &&
+                botTarget.hand.length === 1 &&
+                !botTarget.rank &&
+                !aiUnoCalledPlayersRef.current.has(player.id)
+              ) {
+                const otherActive = latestPlayers.filter(
+                  (p) => p.id !== player.id && p.hand.length > 0 && !p.rank
+                )
+                const botChallengers = otherActive.filter((p) => !p.isHuman)
+                if (botChallengers.length > 0) {
+                  const challenger =
+                    botChallengers[
+                      Math.floor(Math.random() * botChallengers.length)
+                    ]
+                  executeAiCatchUno(challenger.id, player.id)
+                }
+              }
+            }, 5500 + Math.random() * 2000)
+          }
+        }
+      } else {
+        if (botUnoCallTimersRef.current[player.id]) {
+          clearTimeout(botUnoCallTimersRef.current[player.id])
+          delete botUnoCallTimersRef.current[player.id]
+        }
+        if (botCatchTimersRef.current[player.id]) {
+          clearTimeout(botCatchTimersRef.current[player.id])
+          delete botCatchTimersRef.current[player.id]
+        }
+        if (player.isHuman) {
+          if (botCatchHumanTimerRef.current) {
+            clearTimeout(botCatchHumanTimerRef.current)
+            botCatchHumanTimerRef.current = null
+          }
+          setAiHasCalledUnoThisRound(false)
         }
       }
 
@@ -637,7 +1137,9 @@ export default function UnoGame({
       setAiActiveColor(effectiveColor)
       setAiCurrentPlayerIndex(nextPlayerIdx)
       setAiHasDrawnCardThisTurn(false)
-      setAiHasCalledUnoThisRound(false)
+      if (player.isHuman && nextHand.length !== 1) {
+        setAiHasCalledUnoThisRound(false)
+      }
       setAiActionMessage(message)
       setAiSkippedInfo(currentSkippedInfo)
       setAiPendingDrawCount(newPendingDrawCount)
@@ -653,6 +1155,7 @@ export default function UnoGame({
       drawCardsFromPile,
       aiStackingEnabled,
       aiPendingDrawCount,
+      executeAiCatchUno,
     ]
   )
 
@@ -696,6 +1199,11 @@ export default function UnoGame({
       setAiPendingStackType(null)
       setAiCurrentPlayerIndex(nextPlayerIdx)
       setAiHasDrawnCardThisTurn(false)
+      setAiUnoCalledPlayers((prev) => {
+        const next = new Set(prev)
+        next.delete(humanPlayer.id)
+        return next
+      })
       setAiHasCalledUnoThisRound(false)
       setAiSkippedInfo({
         playerId: humanPlayer.id,
@@ -727,6 +1235,12 @@ export default function UnoGame({
     setAiDrawPile(newDrawPile)
     setAiDiscardPile(newDiscardPile)
     setAiHasDrawnCardThisTurn(true)
+    setAiUnoCalledPlayers((prev) => {
+      const next = new Set(prev)
+      next.delete(0)
+      return next
+    })
+    setAiHasCalledUnoThisRound(false)
     const activeP = aiPlayers[aiCurrentPlayerIndex]
     setAiActionMessage(`${activeP.name} drew a card.`)
   }
@@ -742,7 +1256,9 @@ export default function UnoGame({
     )
     setAiCurrentPlayerIndex(nextPlayerIdx)
     setAiHasDrawnCardThisTurn(false)
-    setAiHasCalledUnoThisRound(false)
+    if (aiPlayers[0]?.hand?.length !== 1) {
+      setAiHasCalledUnoThisRound(false)
+    }
     setAiSkippedInfo(null)
     const currentP = aiPlayers[aiCurrentPlayerIndex]
     setAiActionMessage(`${currentP.name} passed turn.`)
@@ -752,25 +1268,40 @@ export default function UnoGame({
     playUnoCallSound()
     setAiHasCalledUnoThisRound(true)
     setAiUnoCalledPlayers((prev) => new Set(prev).add(0))
-    setAiActionMessage('You shouted UNO! 1 card remaining!')
+    if (botCatchHumanTimerRef.current) {
+      clearTimeout(botCatchHumanTimerRef.current)
+      botCatchHumanTimerRef.current = null
+    }
+    const humanHand = aiPlayers[0]?.hand || []
+    if (humanHand.length === 1) {
+      setAiActionMessage('🔔 You shouted UNO! 1 card remaining!')
+    } else {
+      setAiActionMessage('🔔 You shouted UNO!')
+    }
+  }
+
+  const handleCatchUnoAi = (targetPlayerId) => {
+    executeAiCatchUno(0, targetPlayerId)
   }
 
   // AI Bots automatic turn loop
   useEffect(() => {
-    if (screen !== 'ai_playing' || aiWinner) return
+    if (screen !== 'ai_playing' || aiWinner || penaltyGiveCardModal.isOpen) return
 
     const activePlayer = aiPlayers[aiCurrentPlayerIndex]
     if (!activePlayer || activePlayer.isHuman || activePlayer.hand.length === 0 || activePlayer.rank) {
       // If current player has finished, automatically advance turn to next active player
       if (activePlayer && (activePlayer.hand.length === 0 || activePlayer.rank)) {
-        const nextIdx = getNextActivePlayerIndex(
-          aiCurrentPlayerIndex,
-          1,
-          aiPlayers,
-          aiDirection,
-          (p) => p.hand.length === 0 || p.rank != null
-        )
-        setAiCurrentPlayerIndex(nextIdx)
+        botTimeoutRef.current = setTimeout(() => {
+          const nextIdx = getNextActivePlayerIndex(
+            aiCurrentPlayerIndex,
+            1,
+            aiPlayers,
+            aiDirection,
+            (p) => p.hand.length === 0 || p.rank != null
+          )
+          setAiCurrentPlayerIndex(nextIdx)
+        }, 100)
       }
       return
     }
@@ -813,6 +1344,11 @@ export default function UnoGame({
           setAiPendingStackType(null)
           setAiCurrentPlayerIndex(nextIdx)
           setAiHasDrawnCardThisTurn(false)
+          setAiUnoCalledPlayers((prev) => {
+            const next = new Set(prev)
+            next.delete(activePlayer.id)
+            return next
+          })
           setAiSkippedInfo({
             playerId: activePlayer.id,
             playerName: activePlayer.name,
@@ -895,6 +1431,11 @@ export default function UnoGame({
             )
             setAiCurrentPlayerIndex(nextIdx)
             setAiHasDrawnCardThisTurn(false)
+            setAiUnoCalledPlayers((prev) => {
+              const next = new Set(prev)
+              next.delete(activePlayer.id)
+              return next
+            })
             setAiSkippedInfo(null)
             setAiActionMessage(`${activePlayer.name} drew a card and passed.`)
           }
@@ -930,6 +1471,7 @@ export default function UnoGame({
     executeAiPlayCard,
     aiPendingDrawCount,
     aiPendingStackType,
+    penaltyGiveCardModal.isOpen,
   ])
 
   // ==========================================
@@ -969,8 +1511,13 @@ export default function UnoGame({
     setMpSkippedInfo(g.skippedInfo || null)
     setMpPendingDrawCount(g.pendingDrawCount || 0)
     setMpPendingStackType(g.pendingStackType || null)
-    setMpStackingEnabled(g.stackingEnabled !== false)
-    setMyHand([...(g.hands.get(0) || [])])
+    const hostHandNow = [...(g.hands.get(0) || [])]
+    setMyHand(hostHandNow)
+    if (hostHandNow.length > 1) {
+      setMpHasCalledUnoThisRound(false)
+    } else if (g.unoCalledPlayers.has(0)) {
+      setMpHasCalledUnoThisRound(true)
+    }
 
     if (g.winner) {
       setMpWinner(g.winner)
@@ -1234,9 +1781,14 @@ export default function UnoGame({
 
       // UNO reminder check
       if (nextHand.length === 1) {
-        if (g.unoCalledPlayers.has(playerId)) {
+        if (g.unoPreCalledPlayers?.has(playerId) || g.unoCalledPlayers.has(playerId)) {
+          g.unoCalledPlayers.add(playerId)
+          if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
           playUnoCallSound()
         }
+      } else {
+        g.unoCalledPlayers.delete(playerId)
+        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
       }
 
       // Action card effects
@@ -1420,6 +1972,8 @@ export default function UnoGame({
         g.pendingDrawCount = 0
         g.pendingStackType = null
         g.hasDrawnThisTurn = false
+        g.unoCalledPlayers.delete(player.id)
+        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(player.id)
 
         const nextIdx = getNextActivePlayerIndex(
           g.currentPlayerIndex,
@@ -1454,7 +2008,12 @@ export default function UnoGame({
       g.drawPile = newDrawPile
       g.discardPile = newDiscardPile
       const currentHand = g.hands.get(playerId) || []
-      g.hands.set(playerId, [drawnCards[0], ...currentHand])
+      const updatedHand = [drawnCards[0], ...currentHand]
+      g.hands.set(playerId, updatedHand)
+      if (updatedHand.length > 1) {
+        g.unoCalledPlayers.delete(playerId)
+        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
+      }
       g.hasDrawnThisTurn = true
       g.skippedInfo = null
       g.actionMessage = `${player.name} drew a card.`
@@ -1495,7 +2054,13 @@ export default function UnoGame({
       if (!g) return
 
       playUnoCallSound()
-      g.unoCalledPlayers.add(playerId)
+      const playerHand = g.hands.get(playerId) || []
+      if (playerHand.length === 1) {
+        g.unoCalledPlayers.add(playerId)
+      } else {
+        if (!g.unoPreCalledPlayers) g.unoPreCalledPlayers = new Set()
+        g.unoPreCalledPlayers.add(playerId)
+      }
       g.actionMessage = `🔔 ${playerName} shouted UNO!`
 
       if (hostNetworkRef.current) {
@@ -1509,6 +2074,240 @@ export default function UnoGame({
       hostBroadcastGameState()
     },
     [hostBroadcastGameState]
+  )
+
+  // Finalize host catch penalty
+  const hostFinalizeCatchPenalty = useCallback(() => {
+    const g = hostGameRef.current
+    if (!g || !g.pendingCatchPenalty) return
+
+    if (g.penaltySafetyTimer) {
+      clearTimeout(g.penaltySafetyTimer)
+      g.penaltySafetyTimer = null
+    }
+
+    const {
+      targetPlayerId,
+      targetPlayerName,
+      challengerName,
+      giverIds,
+      givenCards,
+    } = g.pendingCatchPenalty
+
+    const targetHand = g.hands.get(targetPlayerId) || []
+    const penaltyCards = []
+    const finishedGivers = []
+
+    giverIds.forEach((giverId) => {
+      let card = givenCards.get(giverId)
+      const gHand = g.hands.get(giverId) || []
+
+      // If giver didn't submit in time, pick card automatically
+      if (!card && gHand.length > 0) {
+        card = chooseAiCardToGive(gHand) || gHand[0]
+      }
+
+      if (card) {
+        penaltyCards.push(card)
+        const nextHand = gHand.filter((c) => c.id !== card.id)
+        g.hands.set(giverId, nextHand)
+
+        if (nextHand.length === 0) {
+          const giverPlayer = g.players.find((p) => p.id === giverId)
+          if (giverPlayer && giverPlayer.rank == null) {
+            const nextRank = (g.rankings || []).length + 1
+            giverPlayer.rank = nextRank
+            const rankRecord = {
+              playerId: giverPlayer.id,
+              name: giverPlayer.name,
+              avatar: giverPlayer.avatar,
+              isHost: giverPlayer.isHost,
+              rank: nextRank,
+              remainingCards: 0,
+            }
+            g.rankings = [...(g.rankings || []), rankRecord]
+            finishedGivers.push(giverPlayer)
+          }
+        }
+      }
+    })
+
+    // Give all cards to target
+    g.hands.set(targetPlayerId, [...targetHand, ...penaltyCards])
+    g.unoCalledPlayers.delete(targetPlayerId)
+    if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(targetPlayerId)
+
+    // Check tournament completion
+    const remainingActive = g.players.filter(
+      (p) => (g.hands.get(p.id) || []).length > 0 && p.rank == null
+    )
+    if (remainingActive.length <= 1) {
+      if (remainingActive.length === 1) {
+        const lastPlayer = remainingActive[0]
+        const lastRank = (g.rankings || []).length + 1
+        lastPlayer.rank = lastRank
+        g.rankings.push({
+          playerId: lastPlayer.id,
+          name: lastPlayer.name,
+          avatar: lastPlayer.avatar,
+          isHost: lastPlayer.isHost,
+          rank: lastRank,
+          remainingCards: (g.hands.get(lastPlayer.id) || []).length,
+        })
+      }
+      g.winner = g.rankings[0]
+      g.actionMessage = `🏆 Tournament complete! 1st Place: ${g.rankings[0].name}!`
+    }
+
+    // Advance turn if current player finished
+    const currentP = g.players.find((p) => p.id === g.currentPlayerIndex)
+    if (
+      currentP &&
+      ((g.hands.get(currentP.id) || []).length === 0 || currentP.rank != null)
+    ) {
+      g.currentPlayerIndex = getNextActivePlayerIndex(
+        g.currentPlayerIndex,
+        1,
+        g.players,
+        g.direction,
+        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
+      )
+    }
+
+    let message = `🚨 ${challengerName} caught ${targetPlayerName}! Received 1 card from each active player (+${penaltyCards.length} cards)!`
+    if (finishedGivers.length > 0) {
+      const names = finishedGivers.map((p) => p.name).join(', ')
+      message += ` 🏆 ${names} gave away their last card and finished the game!`
+    }
+    g.actionMessage = message
+    g.pendingCatchPenalty = null
+
+    playActionCardSound(true)
+    if (hostNetworkRef.current) {
+      hostNetworkRef.current.broadcast({
+        type: 'UNO_CAUGHT',
+        targetPlayerId,
+        message,
+      })
+    }
+
+    hostBroadcastGameState(message)
+  }, [hostBroadcastGameState])
+
+  // Host process penalty card submission from a giver
+  const hostProcessSubmitPenaltyCard = useCallback(
+    (giverId, card, penaltyId) => {
+      const g = hostGameRef.current
+      if (
+        !g ||
+        !g.pendingCatchPenalty ||
+        g.pendingCatchPenalty.penaltyId !== penaltyId
+      ) {
+        return
+      }
+
+      const giverHand = g.hands.get(giverId) || []
+      let validCard = giverHand.find((c) => c.id === card?.id)
+      if (!validCard && giverHand.length > 0) {
+        validCard = giverHand[0]
+      }
+      if (!validCard) return
+
+      g.pendingCatchPenalty.givenCards.set(giverId, validCard)
+
+      const allSubmitted = g.pendingCatchPenalty.giverIds.every((id) =>
+        g.pendingCatchPenalty.givenCards.has(id)
+      )
+
+      if (allSubmitted) {
+        hostFinalizeCatchPenalty()
+      }
+    },
+    [hostFinalizeCatchPenalty]
+  )
+
+  // Authoritative host UNO catch execution
+  const hostProcessCatchUno = useCallback(
+    (challengerId, targetPlayerId) => {
+      const g = hostGameRef.current
+      if (!g) return
+
+      // Do not allow new catch if a penalty is already being resolved
+      if (g.pendingCatchPenalty) return
+
+      const targetHand = g.hands.get(targetPlayerId) || []
+      const targetPlayer = g.players.find((p) => p.id === targetPlayerId)
+      const challenger = g.players.find((p) => p.id === challengerId)
+
+      if (
+        targetHand.length !== 1 ||
+        targetPlayer?.rank != null ||
+        g.unoCalledPlayers.has(targetPlayerId)
+      ) {
+        return
+      }
+
+      const activeGivers = g.players.filter(
+        (p) =>
+          p.id !== targetPlayerId &&
+          (g.hands.get(p.id) || []).length > 0 &&
+          p.rank == null
+      )
+      if (activeGivers.length === 0) return
+
+      const penaltyId = Date.now()
+      g.pendingCatchPenalty = {
+        penaltyId,
+        challengerId,
+        challengerName: challenger?.name || 'Player',
+        targetPlayerId,
+        targetPlayerName: targetPlayer?.name || 'Player',
+        giverIds: activeGivers.map((p) => p.id),
+        givenCards: new Map(),
+      }
+
+      // 15-second safety timer to prevent match stalling if a client doesn't submit
+      if (g.penaltySafetyTimer) {
+        clearTimeout(g.penaltySafetyTimer)
+      }
+      g.penaltySafetyTimer = setTimeout(() => {
+        const liveG = hostGameRef.current
+        if (liveG && liveG.pendingCatchPenalty) {
+          hostFinalizeCatchPenalty()
+        }
+      }, 15000)
+
+      // Broadcast penalty selection request to clients
+      if (hostNetworkRef.current) {
+        hostNetworkRef.current.broadcast({
+          type: 'PENALTY_CARD_REQUEST',
+          penaltyId,
+          targetPlayerId,
+          targetPlayerName: targetPlayer?.name || 'Player',
+          challengerId,
+          challengerName: challenger?.name || 'Player',
+          giverIds: activeGivers.map((p) => p.id),
+        })
+      }
+
+      // If host is an active giver, open modal for host
+      if (activeGivers.some((p) => p.id === 0)) {
+        setPenaltyGiveCardModal({
+          isOpen: true,
+          mode: 'mp',
+          penaltyId,
+          targetPlayerId,
+          targetPlayerName: targetPlayer?.name || 'Player',
+          challengerId,
+          botGifts: [],
+        })
+      }
+
+      const waitMessage = `🚨 ${challenger?.name || 'Player'} caught ${targetPlayer?.name || 'Player'}! Active players are choosing a card to give...`
+      g.actionMessage = waitMessage
+      hostBroadcastGameState(waitMessage)
+    },
+    [hostBroadcastGameState, hostFinalizeCatchPenalty]
   )
 
   // Host authoritative handler when a player leaves or disconnects
@@ -1532,6 +2331,26 @@ export default function UnoGame({
         // If match is active, mark disconnected so player can reconnect without losing hand
         player.peerId = null
         player.connected = false
+
+        if (g.pendingCatchPenalty) {
+          if (g.pendingCatchPenalty.targetPlayerId === player.id) {
+            if (g.penaltySafetyTimer) {
+              clearTimeout(g.penaltySafetyTimer)
+              g.penaltySafetyTimer = null
+            }
+            g.pendingCatchPenalty = null
+          } else if (g.pendingCatchPenalty.giverIds.includes(player.id)) {
+            g.pendingCatchPenalty.giverIds = g.pendingCatchPenalty.giverIds.filter((id) => id !== player.id)
+            g.pendingCatchPenalty.givenCards.delete(player.id)
+            if (
+              g.pendingCatchPenalty.giverIds.length === 0 ||
+              g.pendingCatchPenalty.giverIds.every((id) => g.pendingCatchPenalty.givenCards.has(id))
+            ) {
+              hostFinalizeCatchPenalty()
+            }
+          }
+        }
+
         hostBroadcastGameState(`${player.name} temporarily disconnected. Waiting for reconnect...`)
         return
       }
@@ -1556,7 +2375,7 @@ export default function UnoGame({
       }
       setMpRoomState((prev) => ({ ...prev, players: reIndexed }))
     },
-    [hostBroadcastGameState]
+    [hostBroadcastGameState, hostFinalizeCatchPenalty]
   )
 
   // Connect client data ref to latest authoritative processors
@@ -1578,6 +2397,10 @@ export default function UnoGame({
         hostProcessPassTurn(playerId)
       } else if (data.type === 'ACTION_CALL_UNO') {
         hostProcessCallUno(playerId, player?.name || data.playerName || 'Player')
+      } else if (data.type === 'ACTION_CATCH_UNO') {
+        hostProcessCatchUno(playerId, data.targetPlayerId)
+      } else if (data.type === 'ACTION_SUBMIT_PENALTY_CARD') {
+        hostProcessSubmitPenaltyCard(playerId, data.card, data.penaltyId)
       } else if (data.type === 'ACTION_REQUEST_SYNC') {
         hostBroadcastGameState('Host synchronized game state.')
       } else if (data.type === 'ACTION_LEAVE') {
@@ -1589,6 +2412,8 @@ export default function UnoGame({
     hostProcessDrawCard,
     hostProcessPassTurn,
     hostProcessCallUno,
+    hostProcessCatchUno,
+    hostProcessSubmitPenaltyCard,
     hostBroadcastGameState,
     hostProcessClientLeave,
   ])
@@ -1946,7 +2771,8 @@ export default function UnoGame({
             error: '',
             isConnecting: false,
           }))
-          setMyHand(data.hand || [])
+          const myHandNow = data.hand || []
+          setMyHand(myHandNow)
           setMpPlayers(data.players || [])
           setMpTopCard(data.topCard)
           setMpActiveColor(data.activeColor)
@@ -1954,9 +2780,14 @@ export default function UnoGame({
           setMpDirection(data.direction)
           setMpDrawPileCount(data.drawPileCount)
           setMpActionMessage(data.actionMessage)
-          setMpUnoCalledPlayers(new Set(data.unoCalledPlayers || []))
+          const unoSet = new Set(data.unoCalledPlayers || [])
+          setMpUnoCalledPlayers(unoSet)
           setMpHasDrawnCardThisTurn(data.hasDrawnThisTurn || false)
-          setMpHasCalledUnoThisRound(false)
+          if (myHandNow.length > 1) {
+            setMpHasCalledUnoThisRound(false)
+          } else if (unoSet.has(myPlayerIdRef.current)) {
+            setMpHasCalledUnoThisRound(true)
+          }
           setMpSkippedInfo(data.skippedInfo || null)
           setMpPendingDrawCount(data.pendingDrawCount || 0)
           setMpPendingStackType(data.pendingStackType || null)
@@ -1993,11 +2824,36 @@ export default function UnoGame({
           setMpRankings([])
           hasShownMyCelebrationRef.current = false
           setFinishedCelebration({ isOpen: false, rank: 1, playerName: 'You', activeRemaining: 2 })
+          setPenaltyGiveCardModal({
+            isOpen: false,
+            mode: 'mp',
+            penaltyId: null,
+            targetPlayerId: null,
+            targetPlayerName: '',
+            challengerId: null,
+            botGifts: [],
+          })
           setMpActionMessage('Host returned all players to room lobby.')
         } else if (data.type === 'UNO_SHOUTED') {
           playUnoCallSound()
           setMpUnoCalledPlayers((prev) => new Set(prev).add(data.playerId))
           setMpActionMessage(`🔔 ${data.playerName} shouted UNO!`)
+        } else if (data.type === 'PENALTY_CARD_REQUEST') {
+          if (data.giverIds && data.giverIds.includes(myPlayerIdRef.current)) {
+            setPenaltyGiveCardModal({
+              isOpen: true,
+              mode: 'mp',
+              penaltyId: data.penaltyId,
+              targetPlayerId: data.targetPlayerId,
+              targetPlayerName: data.targetPlayerName,
+              challengerId: data.challengerId,
+              botGifts: [],
+            })
+          }
+        } else if (data.type === 'UNO_CAUGHT') {
+          playActionCardSound(true)
+          setMpActionMessage(data.message)
+          setPenaltyGiveCardModal((prev) => ({ ...prev, isOpen: false }))
         }
       },
       onDisconnected: () => {
@@ -2135,6 +2991,65 @@ export default function UnoGame({
       })
     }
   }
+
+  const handleMpCatchUno = useCallback(
+    (targetPlayerId) => {
+      const targetPlayer = mpPlayers.find((p) => p.id === targetPlayerId)
+      if (!targetPlayer) return
+
+      if (targetPlayer.rank != null) {
+        setMpActionMessage(`${targetPlayer.name} has already finished the match!`)
+        return
+      }
+      if (targetPlayer.cardCount !== 1) {
+        setMpActionMessage(
+          `${targetPlayer.name} has ${targetPlayer.cardCount} cards (must have exactly 1 card to be caught).`
+        )
+        return
+      }
+      if (mpUnoCalledPlayers.has(targetPlayerId)) {
+        setMpActionMessage(`${targetPlayer.name} already called UNO!`)
+        return
+      }
+
+      if (mpRoomState.isHost) {
+        hostProcessCatchUno(myPlayerIdRef.current, targetPlayerId)
+      } else if (clientNetworkRef.current) {
+        clientNetworkRef.current.sendAction({
+          type: 'ACTION_CATCH_UNO',
+          challengerId: myPlayerIdRef.current,
+          targetPlayerId,
+        })
+      }
+    },
+    [mpPlayers, mpUnoCalledPlayers, mpRoomState.isHost, hostProcessCatchUno]
+  )
+
+  const handleConfirmGiveCardMp = useCallback(
+    (selectedCard) => {
+      const penaltyId = penaltyGiveCardModal.penaltyId
+      if (mpRoomState.isHost) {
+        hostProcessSubmitPenaltyCard(0, selectedCard, penaltyId)
+      } else if (clientNetworkRef.current) {
+        clientNetworkRef.current.sendAction({
+          type: 'ACTION_SUBMIT_PENALTY_CARD',
+          playerId: myPlayerIdRef.current,
+          penaltyId,
+          card: selectedCard,
+        })
+      }
+      setPenaltyGiveCardModal({
+        isOpen: false,
+        mode: 'mp',
+        penaltyId: null,
+        targetPlayerId: null,
+        targetPlayerName: '',
+        challengerId: null,
+        botGifts: [],
+      })
+    },
+    [penaltyGiveCardModal, mpRoomState.isHost, hostProcessSubmitPenaltyCard]
+  )
 
   const handleReconnectMp = useCallback(() => {
     if (!myProfileRef.current || !myProfileRef.current.roomCode) return
@@ -2348,6 +3263,7 @@ export default function UnoGame({
           actionMessage={aiActionMessage}
           unoCalledPlayers={aiUnoCalledPlayers}
           onCallUno={handleCallUnoAi}
+          onCatchUno={handleCatchUnoAi}
           hasCalledUnoThisRound={aiHasCalledUnoThisRound}
           myPlayerId={0}
           skippedInfo={aiSkippedInfo}
@@ -2405,6 +3321,7 @@ export default function UnoGame({
           actionMessage={mpActionMessage}
           unoCalledPlayers={mpUnoCalledPlayers}
           onCallUno={handleMpCallUno}
+          onCatchUno={handleMpCatchUno}
           hasCalledUnoThisRound={mpHasCalledUnoThisRound}
           myPlayerId={myPlayerId}
           myHand={myHand}
@@ -2439,6 +3356,24 @@ export default function UnoGame({
       <ColorPickerModal
         isOpen={colorPickerOpen}
         onSelectColor={handleColorSelected}
+      />
+
+      {/* Uno Give Card Penalty Modal (AI and Multiplayer) */}
+      <UnoGiveCardModal
+        isOpen={penaltyGiveCardModal.isOpen}
+        targetPlayerName={penaltyGiveCardModal.targetPlayerName}
+        hand={
+          penaltyGiveCardModal.mode === 'ai'
+            ? (aiPlayers[0]?.hand || [])
+            : myHand
+        }
+        onGiveCard={(card) => {
+          if (penaltyGiveCardModal.mode === 'ai') {
+            handleConfirmGiveCardAi(card)
+          } else {
+            handleConfirmGiveCardMp(card)
+          }
+        }}
       />
 
       {/* Rules Modal */}

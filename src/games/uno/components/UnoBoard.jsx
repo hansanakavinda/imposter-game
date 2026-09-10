@@ -39,6 +39,7 @@ export default function UnoBoard({
   actionMessage,
   unoCalledPlayers,
   onCallUno,
+  onCatchUno,
   hasCalledUnoThisRound,
   myPlayerId = 0,
   myHand = null,
@@ -115,12 +116,7 @@ export default function UnoBoard({
       canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
     )
 
-  const showUnoButton =
-    !isSpectating &&
-    handCards.length <= 2 &&
-    isCurrentTurnForMe &&
-    !hasCalledUnoThisRound &&
-    pendingDrawCount === 0
+  const showUnoButton = !isSpectating && handCards.length > 0
 
 
   const [handSortMode, setHandSortMode] = useState('none') // 'none' | 'color' | 'number'
@@ -469,10 +465,18 @@ export default function UnoBoard({
 
               return (
                 <React.Fragment key={p.id}>
-                  {/* Player Card Node */}
+                  {/* Player Card Node: Clickable on opponents without revealing hints */}
                   <div
                     ref={isActive ? activeNodeRef : null}
+                    onClick={() => {
+                      if (!isMe && !isPlayerFinished && onCatchUno) {
+                        playClickSound()
+                        onCatchUno(p.id)
+                      }
+                    }}
                     className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[68px] sm:min-w-[80px] ${
+                      !isMe && !isPlayerFinished ? 'cursor-pointer hover:opacity-95' : ''
+                    } ${
                       isPlayerFinished
                         ? 'bg-zinc-900/40 border border-amber-500/30 opacity-75'
                         : isSkipped
@@ -493,9 +497,9 @@ export default function UnoBoard({
                       <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
                         SKIPPED
                       </span>
-                    ) : hasUno ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
-                        {calledUno ? 'UNO!' : '1 Card!'}
+                    ) : hasUno && calledUno ? (
+                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow border border-red-400 flex items-center gap-0.5">
+                        UNO!
                       </span>
                     ) : isActive ? (
                       <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-amber-400 text-zinc-950 font-black text-[8px] uppercase tracking-wider shadow">
@@ -523,6 +527,13 @@ export default function UnoBoard({
                         {p.avatar || '👤'}
                       </div>
 
+                      {/* Small UNO badge on avatar when called */}
+                      {hasUno && calledUno && (
+                        <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-red-600 border border-white/40 text-white font-black text-[7px] uppercase tracking-wider shadow">
+                          UNO
+                        </span>
+                      )}
+
                       {/* Skipped Overlay Icon */}
                       {isSkipped && (
                         <span className="absolute inset-0 flex items-center justify-center text-base bg-red-950/60 rounded-full">
@@ -537,10 +548,15 @@ export default function UnoBoard({
                     </div>
 
                     {/* Name & Badge */}
-                    <div className="flex items-center gap-0.5 mt-1 max-w-[78px]">
+                    <div className="flex items-center gap-0.5 mt-1 max-w-[78px] justify-center">
                       <span className="text-[11px] font-bold text-white leading-tight truncate text-center">
                         {p.name}
                       </span>
+                      {hasUno && calledUno && (
+                        <span className="px-1 py-0.2 rounded bg-red-600 text-white text-[7px] font-black tracking-wider flex-shrink-0">
+                          UNO
+                        </span>
+                      )}
                       {isMe && (
                         <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 px-1 rounded flex-shrink-0">
                           YOU
@@ -794,12 +810,26 @@ export default function UnoBoard({
         {/* Turn Bar & Status */}
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
-            <span className="text-xl">{myPlayer.avatar || '😎'}</span>
+            <div className="relative">
+              <span className="text-xl">{myPlayer.avatar || '😎'}</span>
+              {handCards.length === 1 && (hasCalledUnoThisRound || unoCalledPlayers?.has(myPlayer?.id)) && (
+                <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-red-600 border border-white/40 text-white font-black text-[7px] uppercase tracking-wider shadow">
+                  UNO
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <div>
-                <span className="text-xs font-bold text-white block leading-tight">
-                  {myPlayer.name} (You)
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-white block leading-tight">
+                    {myPlayer.name} (You)
+                  </span>
+                  {handCards.length === 1 && (hasCalledUnoThisRound || unoCalledPlayers?.has(myPlayer?.id)) && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[8px] font-black tracking-wider shadow-sm">
+                      UNO!
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-zinc-400">
                   {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
                 </span>
@@ -817,17 +847,30 @@ export default function UnoBoard({
                   playClickSound()
                   onCallUno()
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-500 hover:brightness-110 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-950/50 animate-bounce active:scale-95 cursor-pointer flex items-center gap-1"
+                disabled={hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id))}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider border flex items-center gap-1.5 transition select-none ${
+                  (hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id)))
+                    ? 'bg-zinc-800/90 border-emerald-500/40 text-emerald-300 opacity-90 cursor-default'
+                    : 'bg-red-700 hover:bg-red-600 active:scale-95 text-white border-red-500/50 shadow-sm cursor-pointer'
+                }`}
+                title={
+                  (hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id)))
+                    ? 'UNO already called!'
+                    : 'Call UNO!'
+                }
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Call UNO!</span>
+                {(hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id))) ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>UNO Called</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Call UNO!</span>
+                  </>
+                )}
               </button>
-            )}
-
-            {hasCalledUnoThisRound && (
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1">
-                <Check className="w-3 h-3" /> UNO Called!
-              </span>
             )}
 
             {/* Pass Turn Button (after drawing a card) */}

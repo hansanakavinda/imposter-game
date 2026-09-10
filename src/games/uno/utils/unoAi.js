@@ -98,3 +98,25 @@ export function chooseAiColor(hand) {
 
   return bestColor
 }
+
+/**
+ * Pick the card for an AI bot to give when someone misses calling UNO
+ * Prioritizes high penalty/point value cards to discard them
+ */
+export function chooseAiCardToGive(hand) {
+  if (!hand || hand.length === 0) return null
+  if (hand.length === 1) return hand[0]
+
+  const getCardValue = (card) => {
+    if (card.type === CARD_TYPES.WILD_DRAW_FOUR) return 50
+    if (card.type === CARD_TYPES.WILD) return 40
+    if (card.type === CARD_TYPES.DRAW_TWO) return 30
+    if (card.type === CARD_TYPES.SKIP || card.type === CARD_TYPES.REVERSE) return 20
+    if (typeof card.value === 'number') return card.value
+    return 0
+  }
+
+  const sorted = [...hand].sort((a, b) => getCardValue(b) - getCardValue(a))
+  return sorted[0]
+}
+

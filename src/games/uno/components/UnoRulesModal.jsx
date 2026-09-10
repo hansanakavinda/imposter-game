@@ -68,13 +68,16 @@ export default function UnoRulesModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* Calling UNO */}
-          <div className="space-y-1 bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl">
+          {/* Calling UNO & Catching */}
+          <div className="space-y-1.5 bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl">
             <h3 className="font-bold text-amber-300 text-xs uppercase tracking-wider">
-              Calling &quot;UNO!&quot;
+              Calling &quot;UNO!&quot; &amp; Catching
             </h3>
             <p className="text-xs text-zinc-300 leading-relaxed">
-              When you play your second-to-last card leaving you with only <strong>1 card</strong>, press the <strong>UNO!</strong> button.
+              Press the <strong>Call UNO!</strong> button at any time when going down to 1 card. When successful, an <strong>UNO</strong> badge appears next to your profile.
+            </p>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              If a player reaches 1 card without calling UNO, other players can <strong>tap that player&apos;s profile</strong> to call them out! The caught player receives <strong>1 card from each active player</strong>. Each player chooses which card to give, and if a player has only <strong>1 card</strong>, giving it away lets them <strong>finish and win the game</strong>!
             </p>
           </div>
 
