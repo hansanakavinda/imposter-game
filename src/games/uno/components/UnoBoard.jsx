@@ -309,7 +309,7 @@ export default function UnoBoard({
       {/* 1. Top Section: Header Bar & Turn Order Track */}
       <div className="w-full pt-1 pb-3">
         {/* Disconnection Warning Banner (when connection lost during multiplayer match) */}
-        {isMultiplayer && connectionStatus === 'disconnected' && (
+        {isMultiplayer && !isHost && connectionStatus === 'disconnected' && (
           <div className="mb-2.5 p-2.5 rounded-2xl bg-red-950/90 border border-red-500/60 text-red-200 text-xs flex items-center justify-between shadow-lg shadow-red-950/60 max-w-lg mx-auto animate-pulse">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
@@ -353,7 +353,7 @@ export default function UnoBoard({
               <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1.5 shadow-sm">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    connectionStatus === 'connected'
+                    isHost || connectionStatus === 'connected'
                       ? 'bg-emerald-400 animate-pulse'
                       : connectionStatus === 'reconnecting'
                       ? 'bg-amber-400 animate-ping'

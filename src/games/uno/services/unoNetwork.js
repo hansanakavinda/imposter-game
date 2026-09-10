@@ -186,6 +186,17 @@ export function initHostPeer({
     if (onError) onError(err)
   })
 
+  peer.on('disconnected', () => {
+    console.warn('[Host] Peer disconnected from signaling server. Attempting automatic reconnect...')
+    try {
+      if (!peer.destroyed) {
+        peer.reconnect()
+      }
+    } catch (e) {
+      console.warn('[Host] Peer reconnect failed:', e)
+    }
+  })
+
   return {
     peer,
     connections,

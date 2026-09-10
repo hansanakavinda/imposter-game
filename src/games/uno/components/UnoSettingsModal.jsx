@@ -165,14 +165,19 @@ export default function UnoSettingsModal({
                 <div className="flex items-center gap-2">
                   <div
                     className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 ${
-                      connectionStatus === 'connected'
+                      isHost || connectionStatus === 'connected'
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                         : connectionStatus === 'reconnecting'
                         ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse'
                         : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                     }`}
                   >
-                    {connectionStatus === 'connected' ? (
+                    {isHost ? (
+                      <>
+                        <Wifi className="w-3 h-3 text-emerald-400" />
+                        <span>Hosting Room</span>
+                      </>
+                    ) : connectionStatus === 'connected' ? (
                       <>
                         <Wifi className="w-3 h-3 text-emerald-400" />
                         <span>Connected</span>
@@ -209,8 +214,8 @@ export default function UnoSettingsModal({
               </div>
             )}
 
-            {/* Reconnect Option if disconnected */}
-            {isMultiplayer && connectionStatus === 'disconnected' && onReconnect && (
+            {/* Reconnect Option if disconnected (Clients only) */}
+            {isMultiplayer && !isHost && connectionStatus === 'disconnected' && onReconnect && (
               <button
                 type="button"
                 onClick={() => {
