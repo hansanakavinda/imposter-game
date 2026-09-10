@@ -36,7 +36,7 @@ export default function UnoBoard({
   onPassTurn,
   hasDrawnCardThisTurn,
   isHumanTurn,
-  isWaitingForBot,
+  _isWaitingForBot,
   actionMessage,
   unoCalledPlayers,
   onCallUno,
@@ -346,7 +346,7 @@ export default function UnoBoard({
           </div>
         )}
 
-        {/* Board Top Utility Bar: Room Info & Settings Menu Button */}
+        {/* Unified Top Utility Bar: Room Info, Direction Indicator, and Actions */}
         <div className="flex items-center justify-between px-1 mb-2 max-w-lg mx-auto text-xs">
           {/* Room / Mode Info */}
           <div className="flex items-center gap-2">
@@ -368,6 +368,28 @@ export default function UnoBoard({
                 <span>🤖</span>
                 <span>Solo vs Bots</span>
               </span>
+            )}
+          </div>
+
+          {/* Central Turn Direction Pill (Single Source of Truth) */}
+          <div
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-sm transition-colors ${
+              direction === 1
+                ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+            }`}
+            title={`Direction: ${direction === 1 ? 'Clockwise' : 'Counter-Clockwise'}`}
+          >
+            {direction === 1 ? (
+              <>
+                <RotateCw className="w-3 h-3 text-blue-400 animate-spin-slow" />
+                <span>Clockwise</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-3 h-3 text-purple-400 animate-spin-slow" />
+                <span>Counter-Clockwise</span>
+              </>
             )}
           </div>
 
@@ -402,35 +424,6 @@ export default function UnoBoard({
               <Settings className="w-3.5 h-3.5 text-zinc-400" />
               <span>Menu</span>
             </button>
-          </div>
-        </div>
-
-        {/* Turn Order Header Bar */}
-        <div className="flex items-center justify-between px-1 mb-2.5 sm:mb-3 max-w-lg mx-auto text-xs">
-          <div className="flex items-center gap-1.5 font-bold text-zinc-400">
-            <span className="uppercase tracking-wider text-[10px]">Turn Order</span>
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                direction === 1
-                  ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-                  : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
-              }`}
-            >
-              {direction === 1 ? (
-                <>
-                  <RotateCw className="w-2.5 h-2.5 animate-spin-slow" /> Clockwise
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="w-2.5 h-2.5 animate-spin-slow" /> Counter-Clockwise
-                </>
-              )}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 text-[11px]">
-            <span className="text-zinc-400">Next:</span>
-            <span className="font-bold text-blue-400">{nextPlayer?.name || '...'}</span>
           </div>
         </div>
 
@@ -523,13 +516,6 @@ export default function UnoBoard({
                         {p.avatar || '👤'}
                       </div>
 
-                      {/* Small UNO badge on avatar when called */}
-                      {hasUno && calledUno && (
-                        <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-red-600 border border-white/40 text-white font-black text-[7px] uppercase tracking-wider shadow">
-                          UNO
-                        </span>
-                      )}
-
                       {/* Skipped Overlay Icon */}
                       {isSkipped && (
                         <span className="absolute inset-0 flex items-center justify-center text-base bg-red-950/60 rounded-full">
@@ -548,11 +534,6 @@ export default function UnoBoard({
                       <span className="text-[11px] font-bold text-white leading-tight truncate text-center">
                         {p.name}
                       </span>
-                      {hasUno && calledUno && (
-                        <span className="px-1 py-0.2 rounded bg-red-600 text-white text-[7px] font-black tracking-wider flex-shrink-0">
-                          UNO
-                        </span>
-                      )}
                       {isMe && (
                         <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 px-1 rounded flex-shrink-0">
                           YOU
@@ -572,30 +553,15 @@ export default function UnoBoard({
                         <span>{cardCount}</span>
                       </div>
                     )}
-
-                    {/* Turn Status Message */}
-                    {isPlayerFinished ? (
-                      <span className="text-[9px] text-zinc-400 font-medium mt-0.5">
-                        Spectating
-                      </span>
-                    ) : isActive ? (
-                      <span className="text-[9px] text-amber-300 font-semibold animate-pulse mt-0.5">
-                        {isMe ? 'Your Turn' : p.isHuman ? 'Thinking...' : isWaitingForBot ? 'Thinking...' : 'Moving...'}
-                      </span>
-                    ) : isNext ? (
-                      <span className="text-[9px] text-blue-300 font-medium mt-0.5">
-                        {isMe ? 'You Are Next' : 'Next Up'}
-                      </span>
-                    ) : null}
                   </div>
 
                   {/* Direction Arrow Between Players */}
                   {idx < players.length - 1 && (
                     <div className="flex items-center justify-center px-0.5 flex-shrink-0 text-zinc-600">
                       {direction === 1 ? (
-                        <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400/70 animate-pulse" />
+                        <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400/60" />
                       ) : (
-                        <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400/70 animate-pulse" />
+                        <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400/60" />
                       )}
                     </div>
                   )}
@@ -658,32 +624,6 @@ export default function UnoBoard({
 
       {/* 2. Middle Section: The Table Arena */}
       <div className="relative my-auto flex flex-col items-center justify-center py-4 mt-1 sm:mt-2">
-        {/* Active Direction & Color Status Bar */}
-        <div className="flex items-center gap-3 mb-4">
-          {/* Turn Direction */}
-          <div
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 text-xs text-zinc-400"
-            title={`Direction: ${direction === 1 ? 'Clockwise' : 'Counter-Clockwise'}`}
-          >
-            {direction === 1 ? (
-              <RotateCw className="w-3.5 h-3.5 text-blue-400 animate-spin-slow" />
-            ) : (
-              <RotateCcw className="w-3.5 h-3.5 text-purple-400 animate-spin-slow" />
-            )}
-            <span className="font-semibold text-[11px]">
-              {direction === 1 ? 'Clockwise' : 'Counter-Clockwise'}
-            </span>
-          </div>
-
-          {/* Active Color Indicator */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-bold text-white shadow-md ${activeColorConfig.bg} ${activeColorConfig.border}`}
-          >
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span>Active: {activeColorConfig.name}</span>
-          </div>
-        </div>
-
         {/* Active Card Stack Warning */}
         {pendingDrawCount > 0 && (
           <div className="mb-4 px-4 py-2 rounded-2xl bg-gradient-to-r from-red-600 via-amber-500 to-red-600 text-white shadow-xl shadow-red-950/70 border-2 border-amber-300 flex items-center gap-2.5 animate-bounce max-w-sm mx-auto">
@@ -763,7 +703,7 @@ export default function UnoBoard({
                   className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                  <span>Color: {activeColorConfig.name}</span>
+                  <span>Declared: {activeColorConfig.name}</span>
                 </div>
               )}
 
@@ -777,15 +717,18 @@ export default function UnoBoard({
               />
             </div>
 
-            {/* Clear Discard Pile label and active color tag */}
-            <div className="flex items-center gap-1.5 mt-2.5">
-              <span className="text-[11px] font-semibold text-zinc-300">
-                Discard Pile
-              </span>
+            {/* Discard Pile label with active color */}
+            <div className="flex items-center gap-1.5 mt-2 text-[11px] font-semibold text-zinc-400">
+              <span>Discard Pile</span>
+              <span className="text-zinc-600">•</span>
               <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-white shadow-sm flex items-center gap-1 ${activeColorConfig.bg}`}
+                className="font-bold flex items-center gap-1"
+                style={{ color: activeColorConfig.hex || '#ef4444' }}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span
+                  className="w-2 h-2 rounded-full inline-block shadow-sm"
+                  style={{ backgroundColor: activeColorConfig.hex || '#ef4444' }}
+                />
                 {activeColorConfig.name}
               </span>
             </div>
@@ -806,14 +749,7 @@ export default function UnoBoard({
         {/* Turn Bar & Status */}
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <span className="text-xl">{myPlayer.avatar || '😎'}</span>
-              {handCards.length === 1 && (hasCalledUnoThisRound || unoCalledPlayers?.has(myPlayer?.id)) && (
-                <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-red-600 border border-white/40 text-white font-black text-[7px] uppercase tracking-wider shadow">
-                  UNO
-                </span>
-              )}
-            </div>
+            <span className="text-xl">{myPlayer.avatar || '😎'}</span>
             <div className="flex items-center gap-2">
               <div>
                 <div className="flex items-center gap-1.5">
@@ -900,7 +836,7 @@ export default function UnoBoard({
             <>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
               <span>
-                Spectating: {activePlayer?.name}&apos;s turn (Next: {nextPlayer?.name || '...'}). {activePlayers.length} players battling!
+                Spectating: {activePlayer?.name}&apos;s turn • {activePlayers.length} players remaining
               </span>
             </>
           ) : isCurrentTurnForMe ? (
@@ -931,7 +867,7 @@ export default function UnoBoard({
             </span>
           ) : (
             <span>
-              Waiting for {activePlayer?.name}&apos;s move (Next: {nextPlayer?.name || '...'})...
+              Waiting for {activePlayer?.name}&apos;s move...
             </span>
           )}
         </div>
