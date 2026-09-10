@@ -18,7 +18,7 @@ export default function GameHub({ onSelectGame }) {
       </div>
 
       {/* Simplified Square Game Tiles (Game Name + Icon Only) */}
-      <div className="grid grid-cols-2 gap-4 sm:gap-6 md:gap-8 w-full max-w-xs sm:max-w-md md:max-w-lg mx-auto">
+      <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 w-full max-w-xs sm:max-w-2xl mx-auto">
         {GAMES.map((game) => (
           <button
             key={game.id}
@@ -27,7 +27,7 @@ export default function GameHub({ onSelectGame }) {
               playClickSound()
               onSelectGame(game.id)
             }}
-            className={`group relative aspect-square rounded-3xl bg-zinc-900/90 border border-zinc-800/90 hover:border-zinc-700/80 p-4 sm:p-6 md:p-8 flex flex-col items-center justify-center gap-3 sm:gap-4 md:gap-5 overflow-hidden transition-all duration-300 hover:-translate-y-1.5 active:scale-95 shadow-xl hover:shadow-2xl select-none cursor-pointer ${game.borderGlow}`}
+            className={`group relative w-[calc(50%-0.6rem)] sm:w-48 aspect-square rounded-3xl bg-zinc-900/90 border border-zinc-800/90 hover:border-zinc-700/80 p-4 sm:p-6 flex flex-col items-center justify-center gap-2.5 sm:gap-4 overflow-hidden transition-all duration-300 hover:-translate-y-1.5 active:scale-95 shadow-xl hover:shadow-2xl select-none cursor-pointer ${game.borderGlow}`}
             aria-label={game.title}
           >
             {/* Ambient background glow accent */}

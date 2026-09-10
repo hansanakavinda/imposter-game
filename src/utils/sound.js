@@ -280,3 +280,198 @@ export function playUnoCallSound() {
   })
 }
 
+// Tank Arena: Cannon fire blast
+export function playTankShootSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+
+  // Oscillator punch
+  const osc = ctx.createOscillator()
+  const oscGain = ctx.createGain()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(220, now)
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.12)
+  oscGain.gain.setValueAtTime(0.3, now)
+  oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.12)
+  osc.connect(oscGain)
+  oscGain.connect(ctx.destination)
+  osc.start(now)
+  osc.stop(now + 0.12)
+
+  // White noise burst
+  const bufferSize = Math.floor(ctx.sampleRate * 0.15)
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1
+  }
+
+  const noise = ctx.createBufferSource()
+  noise.buffer = buffer
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(800, now)
+  filter.frequency.linearRampToValueAtTime(100, now + 0.15)
+
+  const noiseGain = ctx.createGain()
+  noiseGain.gain.setValueAtTime(0.35, now)
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15)
+
+  noise.connect(filter)
+  filter.connect(noiseGain)
+  noiseGain.connect(ctx.destination)
+
+  noise.start(now)
+  noise.stop(now + 0.15)
+}
+
+// Tank Arena: Metallic ricochet clink
+export function playTankRicochetSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(1400, now)
+  osc.frequency.exponentialRampToValueAtTime(2800, now + 0.04)
+  osc.frequency.exponentialRampToValueAtTime(1800, now + 0.1)
+
+  gain.gain.setValueAtTime(0.25, now)
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12)
+
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+
+  osc.start(now)
+  osc.stop(now + 0.12)
+}
+
+// Tank Arena: Tank destruction / heavy explosion
+export function playTankExplosionSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+
+  // Sub bass boom
+  const osc = ctx.createOscillator()
+  const oscGain = ctx.createGain()
+  osc.type = 'triangle'
+  osc.frequency.setValueAtTime(120, now)
+  osc.frequency.exponentialRampToValueAtTime(25, now + 0.45)
+  oscGain.gain.setValueAtTime(0.4, now)
+  oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5)
+  osc.connect(oscGain)
+  oscGain.connect(ctx.destination)
+  osc.start(now)
+  osc.stop(now + 0.5)
+
+  // Long rumble noise
+  const bufferSize = Math.floor(ctx.sampleRate * 0.4)
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1
+  }
+
+  const noise = ctx.createBufferSource()
+  noise.buffer = buffer
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(600, now)
+  filter.frequency.linearRampToValueAtTime(40, now + 0.4)
+
+  const noiseGain = ctx.createGain()
+  noiseGain.gain.setValueAtTime(0.4, now)
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.4)
+
+  noise.connect(filter)
+  filter.connect(noiseGain)
+  noiseGain.connect(ctx.destination)
+
+  noise.start(now)
+  noise.stop(now + 0.4)
+}
+
+// Tank Arena: Fuel barrel explosion
+export function playBarrelExplosionSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(300, now)
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.25)
+
+  gain.gain.setValueAtTime(0.35, now)
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28)
+
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+
+  osc.start(now)
+  osc.stop(now + 0.28)
+}
+
+// Tank Arena: Crate pickup / Powerup chime
+export function playCratePickupSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+  const freqs = [392, 523.25, 659.25, 783.99] // G4, C5, E5, G5
+  freqs.forEach((freq, idx) => {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(freq, now + idx * 0.05)
+
+    gain.gain.setValueAtTime(0.18, now + idx * 0.05)
+    gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.05 + 0.15)
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.start(now + idx * 0.05)
+    osc.stop(now + idx * 0.05 + 0.15)
+  })
+}
+
+// Tank Arena: Tactical radar ping
+export function playRadarPingSound() {
+  if (!soundEnabled) return
+  const ctx = getAudioContext()
+  if (!ctx) return
+
+  const now = ctx.currentTime
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(880, now)
+  osc.frequency.exponentialRampToValueAtTime(1320, now + 0.08)
+
+  gain.gain.setValueAtTime(0.2, now)
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2)
+
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+
+  osc.start(now)
+  osc.stop(now + 0.2)
+}
+

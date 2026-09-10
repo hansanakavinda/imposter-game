@@ -3,12 +3,13 @@ import Navbar from './components/Navbar'
 import GameHub from './components/GameHub'
 import ImposterGame from './games/imposter/ImposterGame'
 import UnoGame from './games/uno/UnoGame'
+import TankGame from './games/tank/TankGame'
 import RulesModal from './components/RulesModal'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 
 export default function App() {
-  // Check if URL has ?room=... or ?game=uno or sessionStorage active room
+  // Check if URL has ?room=... or ?game=... or sessionStorage active room
   const [initialRoomCode, setInitialRoomCode] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -17,10 +18,13 @@ export default function App() {
     return ''
   })
 
-  // Navigation State: null = Game Hub Main Menu, 'imposter', 'uno'
+  // Navigation State: null = Game Hub Main Menu, 'imposter', 'uno', 'tank'
   const [selectedGame, setSelectedGame] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
+      if (params.get('game') === 'tank' || (params.get('room') && params.get('game') === 'tank')) {
+        return 'tank'
+      }
       if (params.get('room') || params.get('game') === 'uno' || sessionStorage.getItem('uno_active_room')) {
         return 'uno'
       }
@@ -89,6 +93,15 @@ export default function App() {
 
         {selectedGame === 'uno' && (
           <UnoGame
+            onBackToMenu={handleBackToMenu}
+            isRulesOpen={isRulesOpen}
+            onCloseRules={() => setIsRulesOpen(false)}
+            initialRoomCode={initialRoomCode}
+          />
+        )}
+
+        {selectedGame === 'tank' && (
+          <TankGame
             onBackToMenu={handleBackToMenu}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}

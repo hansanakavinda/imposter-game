@@ -18,6 +18,9 @@ export default function Navbar({
     if (activeGame === 'uno') {
       return { emoji: '🃏', title: 'UNO' }
     }
+    if (activeGame === 'tank') {
+      return { emoji: '🚜', title: 'Tank Arena' }
+    }
     return { emoji: '🎮', title: 'Arcade Hub' }
   }
 
