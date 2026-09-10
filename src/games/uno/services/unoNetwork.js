@@ -121,6 +121,23 @@ export function formatPeerId(roomCode) {
 }
 
 /**
+ * Persistent tab session ID for reconnects
+ */
+export function getClientSessionId() {
+  if (typeof window === 'undefined') return ''
+  try {
+    let sid = sessionStorage.getItem('uno_session_id')
+    if (!sid) {
+      sid = 'sid_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36)
+      sessionStorage.setItem('uno_session_id', sid)
+    }
+    return sid
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Generate a random 4-character uppercase alphanumeric room code
  */
 export function generateRoomCode() {
@@ -150,6 +167,7 @@ export function initHostPeer({
   })
 
   const connections = new Map() // clientPeerId -> DataConnection
+  const pendingPings = new Map() // pingId -> resolve function
 
   peer.on('open', (id) => {
     if (onOpen) onOpen(id, roomCode)
@@ -164,6 +182,14 @@ export function initHostPeer({
     })
 
     conn.on('data', (data) => {
+      if (data?.type === 'PONG') {
+        const resolver = pendingPings.get(data.pingId)
+        if (resolver) {
+          pendingPings.delete(data.pingId)
+          resolver(true)
+        }
+        return
+      }
       if (data?.type === 'JOIN') {
         if (onClientJoin) onClientJoin(conn.peer, data.player, conn)
       } else if (onClientData) {
@@ -221,6 +247,66 @@ export function initHostPeer({
         console.warn('[Host] sendTo: no active connection for peer:', clientPeerId)
       }
     },
+    isConnectionAlive: (clientPeerId) => {
+      const conn = connections.get(clientPeerId)
+      if (!conn || !conn.open) return false
+      const pc = conn.peerConnection
+      if (pc) {
+        const state = pc.connectionState
+        const iceState = pc.iceConnectionState
+        if (
+          state === 'disconnected' ||
+          state === 'failed' ||
+          state === 'closed' ||
+          iceState === 'disconnected' ||
+          iceState === 'failed' ||
+          iceState === 'closed'
+        ) {
+          return false
+        }
+      }
+      return true
+    },
+    checkPeerResponsive: (clientPeerId, timeoutMs = 1200) => {
+      const conn = connections.get(clientPeerId)
+      if (!conn || !conn.open) return Promise.resolve(false)
+      const pc = conn.peerConnection
+      if (pc) {
+        const state = pc.connectionState
+        const iceState = pc.iceConnectionState
+        if (
+          state === 'disconnected' ||
+          state === 'failed' ||
+          state === 'closed' ||
+          iceState === 'disconnected' ||
+          iceState === 'failed' ||
+          iceState === 'closed'
+        ) {
+          return Promise.resolve(false)
+        }
+      }
+
+      const pingId = 'ping_' + Math.random().toString(36).substring(2, 9)
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingPings.delete(pingId)
+          resolve(false)
+        }, timeoutMs)
+
+        pendingPings.set(pingId, (result) => {
+          clearTimeout(timer)
+          resolve(result)
+        })
+
+        try {
+          conn.send({ type: 'PING', pingId })
+        } catch {
+          clearTimeout(timer)
+          pendingPings.delete(pingId)
+          resolve(false)
+        }
+      })
+    },
     removeConnection: (clientPeerId) => {
       const conn = connections.get(clientPeerId)
       if (conn) {
@@ -233,6 +319,8 @@ export function initHostPeer({
       }
     },
     destroy: () => {
+      pendingPings.forEach((resolve) => resolve(false))
+      pendingPings.clear()
       connections.forEach((conn) => {
         try {
           conn.close()
@@ -297,7 +385,10 @@ export function initClientPeer({
       try {
         hostConn.send({
           type: 'JOIN',
-          player,
+          player: {
+            ...player,
+            sessionId: player?.sessionId || getClientSessionId(),
+          },
         })
       } catch (e) {
         console.error('[Client] Failed to send JOIN payload:', e)
@@ -309,6 +400,14 @@ export function initClientPeer({
     hostConn.on('open', handleOpen)
 
     hostConn.on('data', (data) => {
+      if (data?.type === 'PING') {
+        try {
+          hostConn.send({ type: 'PONG', pingId: data.pingId })
+        } catch {
+          // ignore
+        }
+        return
+      }
       if (onData) onData(data)
     })
 

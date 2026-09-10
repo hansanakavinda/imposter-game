@@ -21,6 +21,7 @@ import {
   initHostPeer,
   initClientPeer,
   generateRoomCode,
+  getClientSessionId,
   preloadIceConfig,
 } from './services/unoNetwork'
 import {
@@ -248,8 +249,18 @@ export default function UnoGame({
   // Clean up WebRTC and timers on unmount
   useEffect(() => {
     return () => {
+      if (clientNetworkRef.current) {
+        try {
+          clientNetworkRef.current.sendAction({
+            type: 'ACTION_LEAVE',
+            playerId: myPlayerIdRef.current,
+          })
+        } catch {
+          // ignore
+        }
+        clientNetworkRef.current.destroy()
+      }
       if (hostNetworkRef.current) hostNetworkRef.current.destroy()
-      if (clientNetworkRef.current) clientNetworkRef.current.destroy()
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current)
       clearAllAiUnoTimers()
     }
@@ -2362,9 +2373,9 @@ export default function UnoGame({
     hostProcessClientLeave,
   ])
 
-  // Inform host immediately if tab or window is closing
+  // Inform host immediately if tab or window is closing / navigating away
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const handleLeaveGracefully = () => {
       if (clientNetworkRef.current) {
         try {
           clientNetworkRef.current.sendAction({
@@ -2376,9 +2387,11 @@ export default function UnoGame({
         }
       }
     }
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', handleLeaveGracefully)
+    window.addEventListener('pagehide', handleLeaveGracefully)
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('beforeunload', handleLeaveGracefully)
+      window.removeEventListener('pagehide', handleLeaveGracefully)
     }
   }, [])
 
@@ -2408,7 +2421,7 @@ export default function UnoGame({
     } catch {
       // ignore
     }
-    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true, connected: true }
+    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true, connected: true, sessionId: getClientSessionId() }
     myProfileRef.current = { name, avatar, roomCode: code }
     setMpConnectionStatus('connected')
 
@@ -2460,7 +2473,7 @@ export default function UnoGame({
           isConnecting: false,
         }))
       },
-      onClientJoin: (clientPeerId, clientPlayer, conn) => {
+      onClientJoin: async (clientPeerId, clientPlayer, conn) => {
         const g = hostGameRef.current
         if (!g) return
         const currentPlayers = g.players
@@ -2468,6 +2481,7 @@ export default function UnoGame({
         const rawName = clientPlayer?.name || ''
         const incomingName = rawName.trim()
         const cleanIncomingName = incomingName.toLowerCase()
+        const incomingSessionId = clientPlayer?.sessionId || ''
 
         // 1. Validate that name is not empty
         if (!incomingName) {
@@ -2500,7 +2514,9 @@ export default function UnoGame({
           const existingPlayer = currentPlayers.find(
             (p) =>
               !p.isHost &&
-              (p.peerId === clientPeerId || p.name.trim().toLowerCase() === cleanIncomingName)
+              (p.peerId === clientPeerId ||
+                (incomingSessionId && p.sessionId && p.sessionId === incomingSessionId) ||
+                p.name.trim().toLowerCase() === cleanIncomingName)
           )
 
           // External player who was NOT in the lobby when created/started: reject immediately!
@@ -2523,28 +2539,45 @@ export default function UnoGame({
 
           // Check if this lobby player is ALREADY actively connected (prevent duplicate session / hijack)
           if (existingPlayer.connected && existingPlayer.peerId && existingPlayer.peerId !== clientPeerId) {
-            try {
-              conn.send({
-                type: 'ROOM_ERROR',
-                error: `A player named "${incomingName}" is already actively connected in this match.`,
-              })
-            } catch (e) {
-              console.error('[Host] Failed to send duplicate active player ROOM_ERROR:', e)
-            }
-            setTimeout(() => {
-              if (hostNetworkRef.current) {
-                hostNetworkRef.current.removeConnection(clientPeerId)
+            const isSameSession = Boolean(
+              incomingSessionId && existingPlayer.sessionId && existingPlayer.sessionId === incomingSessionId
+            )
+
+            // If not verified as the same browser session ID, test if old connection is still responsive
+            if (!isSameSession) {
+              const isOldConnAlive = hostNetworkRef.current
+                ? await hostNetworkRef.current.checkPeerResponsive(existingPlayer.peerId, 1200)
+                : false
+
+              // If the old connection is genuinely still alive and active, prevent duplicate session
+              if (isOldConnAlive) {
+                try {
+                  conn.send({
+                    type: 'ROOM_ERROR',
+                    error: `A player named "${incomingName}" is already actively connected in this match.`,
+                  })
+                } catch (e) {
+                  console.error('[Host] Failed to send duplicate active player ROOM_ERROR:', e)
+                }
+                setTimeout(() => {
+                  if (hostNetworkRef.current) {
+                    hostNetworkRef.current.removeConnection(clientPeerId)
+                  }
+                }, 300)
+                return
               }
-            }, 300)
-            return
+            }
           }
 
-          // Legitimate registered player reconnecting to their seat
+          // Legitimate registered player reconnecting to their seat (replaces old ghost connection)
           if (existingPlayer.peerId && existingPlayer.peerId !== clientPeerId && hostNetworkRef.current) {
             hostNetworkRef.current.removeConnection(existingPlayer.peerId)
           }
           existingPlayer.peerId = clientPeerId
           existingPlayer.connected = true
+          if (incomingSessionId) {
+            existingPlayer.sessionId = incomingSessionId
+          }
           if (clientPlayer?.avatar) {
             existingPlayer.avatar = clientPlayer.avatar
           }
@@ -2605,19 +2638,28 @@ export default function UnoGame({
         }
 
         // 3. Game has NOT started yet (In Lobby)
-        // Check if name is already taken by ANY player currently in the room (Host or other joined players)
-        const isNameTaken = currentPlayers.some(
-          (p) => p.peerId !== clientPeerId && p.name.trim().toLowerCase() === cleanIncomingName
+        // Check if there's an existing player with the same name or session ID in the room
+        const existingLobbyPlayer = currentPlayers.find(
+          (p) =>
+            !p.isHost &&
+            (p.peerId === clientPeerId ||
+              (incomingSessionId && p.sessionId && p.sessionId === incomingSessionId) ||
+              p.name.trim().toLowerCase() === cleanIncomingName)
         )
 
-        if (isNameTaken) {
+        // Check if the host itself has this name
+        const isHostName = currentPlayers.some(
+          (p) => p.isHost && p.name.trim().toLowerCase() === cleanIncomingName
+        )
+
+        if (isHostName) {
           try {
             conn.send({
               type: 'ROOM_ERROR',
-              error: `The name "${incomingName}" is already taken in this room. Please choose a different name.`,
+              error: `The name "${incomingName}" is already taken by the room host. Please choose a different name.`,
             })
           } catch (e) {
-            console.error('[Host] Failed to send duplicate name ROOM_ERROR:', e)
+            console.error('[Host] Failed to send host name duplicate ROOM_ERROR:', e)
           }
           setTimeout(() => {
             if (hostNetworkRef.current) {
@@ -2625,6 +2667,77 @@ export default function UnoGame({
             }
           }, 300)
           return
+        }
+
+        if (existingLobbyPlayer) {
+          const isSameSession = Boolean(
+            incomingSessionId && existingLobbyPlayer.sessionId && existingLobbyPlayer.sessionId === incomingSessionId
+          )
+
+          let canReclaimSeat = isSameSession || !existingLobbyPlayer.connected
+
+          if (!canReclaimSeat && existingLobbyPlayer.peerId && existingLobbyPlayer.peerId !== clientPeerId) {
+            const isOldConnAlive = hostNetworkRef.current
+              ? await hostNetworkRef.current.checkPeerResponsive(existingLobbyPlayer.peerId, 1200)
+              : false
+            canReclaimSeat = !isOldConnAlive
+          }
+
+          if (canReclaimSeat) {
+            // Reconnect / reclaim lobby seat
+            if (existingLobbyPlayer.peerId && existingLobbyPlayer.peerId !== clientPeerId && hostNetworkRef.current) {
+              hostNetworkRef.current.removeConnection(existingLobbyPlayer.peerId)
+            }
+            existingLobbyPlayer.peerId = clientPeerId
+            existingLobbyPlayer.connected = true
+            existingLobbyPlayer.name = incomingName
+            if (incomingSessionId) existingLobbyPlayer.sessionId = incomingSessionId
+            if (clientPlayer?.avatar) existingLobbyPlayer.avatar = clientPlayer.avatar
+
+            try {
+              conn.send({
+                type: 'WELCOME',
+                playerId: existingLobbyPlayer.id,
+                roomCode: code,
+                players: currentPlayers,
+                maxPlayers: roomCapacity,
+                stackingEnabled: g.stackingEnabled !== false,
+              })
+            } catch (e) {
+              console.error('[Host] Failed to send WELCOME to reconnected lobby player:', e)
+            }
+
+            setTimeout(() => {
+              if (hostNetworkRef.current) {
+                hostNetworkRef.current.broadcast({
+                  type: 'ROOM_UPDATE',
+                  roomCode: code,
+                  players: currentPlayers,
+                  maxPlayers: roomCapacity,
+                  stackingEnabled: g.stackingEnabled !== false,
+                })
+              }
+            }, 50)
+
+            setMpRoomState((prev) => ({ ...prev, players: currentPlayers }))
+            return
+          } else {
+            // Name genuinely in use by another active player
+            try {
+              conn.send({
+                type: 'ROOM_ERROR',
+                error: `The name "${incomingName}" is already taken in this room. Please choose a different name.`,
+              })
+            } catch (e) {
+              console.error('[Host] Failed to send duplicate name ROOM_ERROR:', e)
+            }
+            setTimeout(() => {
+              if (hostNetworkRef.current) {
+                hostNetworkRef.current.removeConnection(clientPeerId)
+              }
+            }, 300)
+            return
+          }
         }
 
         // 4. Check room capacity
@@ -2650,6 +2763,7 @@ export default function UnoGame({
         const newPlayer = {
           id: newId,
           peerId: clientPeerId,
+          sessionId: incomingSessionId,
           name: incomingName,
           avatar: clientPlayer?.avatar || '😎',
           isHost: false,
@@ -2727,7 +2841,7 @@ export default function UnoGame({
 
     const clientPeer = initClientPeer({
       roomCode,
-      player: { name, avatar },
+      player: { name, avatar, sessionId: getClientSessionId() },
       onConnected: () => {
         setMpConnectionStatus('connected')
         setMpRoomState((prev) => ({
