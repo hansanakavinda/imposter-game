@@ -222,6 +222,9 @@ export default function UnoGame({
     }
   }, [mpHasDrawnCardThisTurn, mpCurrentPlayerIndex])
 
+  const disconnectTurnTimerRef = useRef(null)
+  const penaltyTimeoutRef = useRef(null)
+
   const showRules = isRulesOpen !== undefined ? isRulesOpen : internalRulesOpen
   const handleCloseRules = onCloseRules || (() => setInternalRulesOpen(false))
 
@@ -276,6 +279,8 @@ export default function UnoGame({
       }
       if (hostNetworkRef.current) hostNetworkRef.current.destroy()
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current)
+      if (disconnectTurnTimerRef.current) clearTimeout(disconnectTurnTimerRef.current)
+      if (penaltyTimeoutRef.current) clearTimeout(penaltyTimeoutRef.current)
       clearAllAiUnoTimers()
     }
   }, [clearAllAiUnoTimers])
@@ -1212,7 +1217,11 @@ export default function UnoGame({
       aiDrawPile,
       aiDiscardPile
     )
-    if (drawnCards.length === 0) return
+    if (drawnCards.length === 0) {
+      setAiHasDrawnCardThisTurn(true)
+      setAiActionMessage('No cards left in the draw pile! Pass your turn or play a card.')
+      return
+    }
 
     const drawnCard = drawnCards[0]
     const updatedPlayers = aiPlayers.map((p, idx) =>
@@ -1999,7 +2008,12 @@ export default function UnoGame({
         g.drawPile,
         g.discardPile
       )
-      if (drawnCards.length === 0) return
+      if (drawnCards.length === 0) {
+        g.hasDrawnThisTurn = true
+        g.actionMessage = 'No cards left in the draw pile! Pass your turn or play a card.'
+        hostBroadcastGameState()
+        return
+      }
 
       g.drawPile = newDrawPile
       g.discardPile = newDiscardPile
@@ -2080,6 +2094,11 @@ export default function UnoGame({
 
   // Finalize host catch penalty (only called when all givers submitted their card)
   const hostFinalizeCatchPenalty = useCallback(() => {
+    if (penaltyTimeoutRef.current) {
+      clearTimeout(penaltyTimeoutRef.current)
+      penaltyTimeoutRef.current = null
+    }
+
     const g = hostGameRef.current
     if (!g || !g.pendingCatchPenalty) return
 
@@ -2286,9 +2305,26 @@ export default function UnoGame({
 
       const waitMessage = `🚨 ${challenger?.name || 'Player'} caught ${targetPlayer?.name || 'Player'}! Active players are choosing a card to give...`
       g.actionMessage = waitMessage
+
+      // Safety timeout: auto-resolve after 20s if a client giver is AFK
+      if (penaltyTimeoutRef.current) clearTimeout(penaltyTimeoutRef.current)
+      penaltyTimeoutRef.current = setTimeout(() => {
+        const curG = hostGameRef.current
+        if (!curG || !curG.pendingCatchPenalty) return
+        curG.pendingCatchPenalty.giverIds.forEach((giverId) => {
+          if (!curG.pendingCatchPenalty.givenCards.has(giverId)) {
+            const h = curG.hands.get(giverId) || []
+            if (h.length > 0) {
+              curG.pendingCatchPenalty.givenCards.set(giverId, h[0])
+            }
+          }
+        })
+        hostFinalizeCatchPenalty()
+      }, 20000)
+
       hostBroadcastGameState(waitMessage)
     },
-    [hostBroadcastGameState]
+    [hostBroadcastGameState, hostFinalizeCatchPenalty]
   )
 
   // Host authoritative handler when a player leaves or disconnects
@@ -2326,6 +2362,55 @@ export default function UnoGame({
               hostFinalizeCatchPenalty()
             }
           }
+        }
+
+        // 1. Check if only 1 connected active player remains in the game
+        const connectedActive = g.players.filter(
+          (p) => p.connected !== false && (g.hands.get(p.id) || []).length > 0 && p.rank == null
+        )
+        if (connectedActive.length <= 1) {
+          if (disconnectTurnTimerRef.current) clearTimeout(disconnectTurnTimerRef.current)
+          disconnectTurnTimerRef.current = setTimeout(() => {
+            const curG = hostGameRef.current
+            if (!curG || curG.winner) return
+            const curConnected = curG.players.filter(
+              (p) => p.connected !== false && (curG.hands.get(p.id) || []).length > 0 && p.rank == null
+            )
+            if (curConnected.length === 1) {
+              const soleWinner = curConnected[0]
+              curG.winner = {
+                playerId: soleWinner.id,
+                name: soleWinner.name,
+                avatar: soleWinner.avatar,
+                isHost: soleWinner.isHost,
+                rank: 1,
+                remainingCards: (curG.hands.get(soleWinner.id) || []).length,
+              }
+              curG.actionMessage = `🏆 ${soleWinner.name} wins! All other opponents disconnected.`
+              hostBroadcastGameState()
+            }
+          }, 15000)
+        } else if (g.players[g.currentPlayerIndex]?.id === player.id) {
+          // 2. Disconnected player's turn is active: give 12s to reconnect before auto-passing turn
+          if (disconnectTurnTimerRef.current) clearTimeout(disconnectTurnTimerRef.current)
+          disconnectTurnTimerRef.current = setTimeout(() => {
+            const curG = hostGameRef.current
+            if (!curG || curG.winner) return
+            const curActive = curG.players[curG.currentPlayerIndex]
+            if (curActive && curActive.connected === false) {
+              const nextIdx = getNextActivePlayerIndex(
+                curG.currentPlayerIndex,
+                1,
+                curG.players,
+                curG.direction,
+                (p) => (curG.hands.get(p.id) || []).length === 0 || p.rank != null
+              )
+              curG.currentPlayerIndex = nextIdx
+              curG.hasDrawnThisTurn = false
+              curG.actionMessage = `${curActive.name} disconnected. Turn passed to ${curG.players[nextIdx]?.name || 'next player'}.`
+              hostBroadcastGameState()
+            }
+          }, 12000)
         }
 
         hostBroadcastGameState(`${player.name} temporarily disconnected. Waiting for reconnect...`)
@@ -2652,6 +2737,11 @@ export default function UnoGame({
             })
           } catch (e) {
             console.error('[Host] Failed to send SYNC_GAME_STATE on reconnect:', e)
+          }
+
+          if (disconnectTurnTimerRef.current) {
+            clearTimeout(disconnectTurnTimerRef.current)
+            disconnectTurnTimerRef.current = null
           }
 
           hostBroadcastGameState(`${existingPlayer.name} reconnected!`)
@@ -3101,6 +3191,15 @@ export default function UnoGame({
 
   // Host starts the match (Host ALWAYS has the first move: currentPlayerIndex = 0)
   const handleHostStartGame = () => {
+    if (disconnectTurnTimerRef.current) {
+      clearTimeout(disconnectTurnTimerRef.current)
+      disconnectTurnTimerRef.current = null
+    }
+    if (penaltyTimeoutRef.current) {
+      clearTimeout(penaltyTimeoutRef.current)
+      penaltyTimeoutRef.current = null
+    }
+
     const g = hostGameRef.current
     const deckCount = g.players.length >= 6 ? 2 : 1
     const freshDeck = createUnoDeck(deckCount)
@@ -3350,6 +3449,15 @@ export default function UnoGame({
   }, [mpRoomState.isHost, hostBroadcastGameState, handleReconnectMp])
 
   const handleHostReturnAllToLobby = useCallback(() => {
+    if (disconnectTurnTimerRef.current) {
+      clearTimeout(disconnectTurnTimerRef.current)
+      disconnectTurnTimerRef.current = null
+    }
+    if (penaltyTimeoutRef.current) {
+      clearTimeout(penaltyTimeoutRef.current)
+      penaltyTimeoutRef.current = null
+    }
+
     const g = hostGameRef.current
     if (!g) return
     g.drawPile = []
@@ -3444,6 +3552,15 @@ export default function UnoGame({
   }, [mpRoomState.isHost, handleHostReturnAllToLobby, handleClientReturnToLobby])
 
   const handleLeaveMpRoom = useCallback(() => {
+    if (disconnectTurnTimerRef.current) {
+      clearTimeout(disconnectTurnTimerRef.current)
+      disconnectTurnTimerRef.current = null
+    }
+    if (penaltyTimeoutRef.current) {
+      clearTimeout(penaltyTimeoutRef.current)
+      penaltyTimeoutRef.current = null
+    }
+
     if (clientNetworkRef.current) {
       try {
         clientNetworkRef.current.sendAction({
