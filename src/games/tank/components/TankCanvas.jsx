@@ -150,7 +150,7 @@ export default function TankCanvas({
       // 4. Draw Solid Obstacles (Steel & Bricks)
       obstacles.forEach((obs) => {
         if (obs.type === TERRAIN_TYPES.STEEL) {
-          // Hard Steel Bunker (Ricochet surface)
+          // Hard Steel Bunker (Solid cover)
           const grad = ctx.createLinearGradient(obs.x, obs.y, obs.x + obs.width, obs.y + obs.height)
           grad.addColorStop(0, '#334155')
           grad.addColorStop(1, '#1e293b')

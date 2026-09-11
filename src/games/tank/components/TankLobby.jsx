@@ -74,7 +74,7 @@ export default function TankLobby({
             <span>🚜</span> Tank Arena
           </h1>
           <p className="text-xs text-zinc-400 max-w-xs mx-auto">
-            Top-down ricochet combat across separate devices. No bots, pure human tactics!
+            Top-down tactical tank combat across separate devices. No bots, pure human tactics!
           </p>
         </div>
 

@@ -13,6 +13,7 @@ import {
   TANK_TURN_SPEED,
   TANK_MUD_SPEED_MULT,
   BULLET_RADIUS,
+  BULLET_LIFETIME_MS,
   MODES,
   TERRAIN_TYPES,
   WEAPON_TYPES,
@@ -442,45 +443,39 @@ export default function TankGame({
       bulletsRef.current.forEach((bullet) => {
         let bx = bullet.x + bullet.vx
         let by = bullet.y + bullet.vy
-        let bounces = bullet.bounces
         let destroyed = false
 
-        // Boundary bounce
-        if (bx <= BULLET_RADIUS || bx >= ARENA_WIDTH - BULLET_RADIUS) {
-          bullet.vx = -bullet.vx
-          bx = Math.max(BULLET_RADIUS, Math.min(ARENA_WIDTH - BULLET_RADIUS, bx))
-          bounces++
-          playTankRicochetSound()
-        }
-        if (by <= BULLET_RADIUS || by >= ARENA_HEIGHT - BULLET_RADIUS) {
-          bullet.vy = -bullet.vy
-          by = Math.max(BULLET_RADIUS, Math.min(ARENA_HEIGHT - BULLET_RADIUS, by))
-          bounces++
+        // Boundary collision - vanishes on impact
+        if (
+          bx <= BULLET_RADIUS ||
+          bx >= ARENA_WIDTH - BULLET_RADIUS ||
+          by <= BULLET_RADIUS ||
+          by >= ARENA_HEIGHT - BULLET_RADIUS
+        ) {
+          destroyed = true
           playTankRicochetSound()
         }
 
-        // Obstacles
-        for (let i = 0; i < obstaclesRef.current.length; i++) {
-          const obs = obstaclesRef.current[i]
-          if (
-            obs.type === TERRAIN_TYPES.STEEL ||
-            (obs.type === TERRAIN_TYPES.BRICK && (obs.hp || 0) > 0)
-          ) {
-            const col = testCircleRect(bx, by, bullet.radius, obs.x, obs.y, obs.width, obs.height)
-            if (col.collided) {
-              if (obs.type === TERRAIN_TYPES.STEEL) {
-                const dot = bullet.vx * col.normal.x + bullet.vy * col.normal.y
-                bullet.vx = bullet.vx - 2 * dot * col.normal.x
-                bullet.vy = bullet.vy - 2 * dot * col.normal.y
-                bx += col.normal.x * (col.depth + 1)
-                by += col.normal.y * (col.depth + 1)
-                bounces++
-                playTankRicochetSound()
-              } else if (obs.type === TERRAIN_TYPES.BRICK) {
-                obs.hp -= 1
-                destroyed = true
-                playTankRicochetSound()
-                break
+        // Obstacles (Steel & Brick) - vanishes on impact
+        if (!destroyed && obstaclesRef.current) {
+          for (let i = 0; i < obstaclesRef.current.length; i++) {
+            const obs = obstaclesRef.current[i]
+            if (
+              obs.type === TERRAIN_TYPES.STEEL ||
+              (obs.type === TERRAIN_TYPES.BRICK && (obs.hp || 0) > 0)
+            ) {
+              const col = testCircleRect(bx, by, bullet.radius, obs.x, obs.y, obs.width, obs.height)
+              if (col.collided) {
+                if (obs.type === TERRAIN_TYPES.STEEL) {
+                  destroyed = true
+                  playTankRicochetSound()
+                  break
+                } else if (obs.type === TERRAIN_TYPES.BRICK) {
+                  obs.hp -= 1
+                  destroyed = true
+                  playTankRicochetSound()
+                  break
+                }
               }
             }
           }
@@ -539,12 +534,17 @@ export default function TankGame({
           }
         }
 
-        if (!destroyed && bounces <= bullet.maxBounces) {
+        // Lifetime expiration check
+        if (bullet.createdAt && Date.now() - bullet.createdAt > BULLET_LIFETIME_MS) {
+          destroyed = true
+        }
+
+        if (!destroyed) {
           remainingBullets.push({
             ...bullet,
             x: bx,
             y: by,
-            bounces,
+            bounces: 0,
           })
         }
       })
@@ -638,9 +638,10 @@ export default function TankGame({
         radius: BULLET_RADIUS,
         color: weaponCfg.color,
         bounces: 0,
-        maxBounces: weaponCfg.maxBounces,
+        maxBounces: 0,
         team: myTank.team,
         ownerSlotId: mySlotIdRef.current,
+        createdAt: Date.now(),
       }))
 
       if (isHostRef.current) {
@@ -660,9 +661,10 @@ export default function TankGame({
         radius: myTank.weapon === 'ROCKET' ? 5.5 : BULLET_RADIUS,
         color: weaponCfg.color,
         bounces: 0,
-        maxBounces: weaponCfg.maxBounces,
+        maxBounces: 0,
         team: myTank.team,
         ownerSlotId: mySlotIdRef.current,
+        createdAt: Date.now(),
       }
 
       if (isHostRef.current) {

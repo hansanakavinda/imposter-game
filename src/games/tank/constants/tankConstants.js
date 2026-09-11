@@ -14,7 +14,7 @@ export const TANK_MUD_SPEED_MULT = 0.52
 
 export const BULLET_RADIUS = 3.5
 export const BULLET_SPEED = 5.2
-export const BULLET_MAX_BOUNCES = 3
+export const BULLET_MAX_BOUNCES = 0
 export const BULLET_LIFETIME_MS = 6500
 
 export const TARGET_SCORE_DEFAULT = 3
@@ -70,7 +70,7 @@ export const TEAMS = {
 }
 
 export const TERRAIN_TYPES = {
-  STEEL: 'steel',     // Indestructible, bullets bounce off
+  STEEL: 'steel',     // Indestructible solid bunker, stops bullets
   BRICK: 'brick',     // Destructible (HP: 2), shatters when shot
   BUSH: 'bush',       // Stealth tall grass (tanks inside are hidden to enemy)
   WATER: 'water',     // Impassable for tanks, bullets pass over
@@ -84,7 +84,7 @@ export const WEAPON_TYPES = {
     name: 'Standard Shell',
     cooldownMs: 500,
     speed: BULLET_SPEED,
-    maxBounces: BULLET_MAX_BOUNCES,
+    maxBounces: 0,
     damage: 1,
     color: '#fbbf24', // Amber
   },
@@ -93,7 +93,7 @@ export const WEAPON_TYPES = {
     name: 'Laser Railgun',
     cooldownMs: 1100,
     speed: 12.0,
-    maxBounces: 1,
+    maxBounces: 0,
     damage: 1,
     color: '#a855f7', // Purple
   },
@@ -112,7 +112,7 @@ export const WEAPON_TYPES = {
     name: 'Triple Spread',
     cooldownMs: 800,
     speed: 4.8,
-    maxBounces: 2,
+    maxBounces: 0,
     pellets: 3,
     damage: 1,
     color: '#38bdf8', // Sky

@@ -40,7 +40,7 @@ export default function TankRulesModal({ isOpen, onClose }) {
               2. Open Battlefield Terrain
             </span>
             <ul className="space-y-1 text-zinc-400 pl-2">
-              <li>• <strong className="text-zinc-200">Steel Bunkers:</strong> Indestructible. Bullets <strong>ricochet</strong> off them up to 3 times!</li>
+              <li>• <strong className="text-zinc-200">Steel Bunkers:</strong> Indestructible solid cover. Absorbs incoming shells on impact.</li>
               <li>• <strong className="text-zinc-200">Brick Barricades:</strong> Destructible cover. Crumbles after 2 hits.</li>
               <li>• <strong className="text-zinc-200">Tall Grass Bushes:</strong> Complete <strong>stealth</strong>! Hides your tank from enemies unless you fire or they enter the same bush.</li>
               <li>• <strong className="text-zinc-200">Water Ponds:</strong> Impassable for tanks, but shells fly straight across.</li>
