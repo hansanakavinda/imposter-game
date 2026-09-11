@@ -104,6 +104,9 @@ export default function UnoBoard({
       : (activePlayer?.id === myPlayer?.id || currentPlayerIndex === myPlayer?.id))
   const isMyTurnSkipped = !isSpectating && skippedInfo?.playerId === myPlayer?.id
 
+  const canDrawCard =
+    isCurrentTurnForMe && (pendingDrawCount > 0 || !hasDrawnCardThisTurn)
+
   const activeColorConfig =
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
 
@@ -658,13 +661,13 @@ export default function UnoBoard({
               <UnoCard
                 isBack
                 size="md"
-                onClick={isCurrentTurnForMe ? onDrawCard : undefined}
+                onClick={canDrawCard ? onDrawCard : undefined}
                 className={
-                  isCurrentTurnForMe
+                  canDrawCard
                     ? pendingDrawCount > 0
                       ? 'cursor-pointer ring-4 ring-red-500 hover:scale-105 active:scale-95 shadow-2xl shadow-red-600/50 animate-pulse'
                       : 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
-                    : 'cursor-not-allowed opacity-80'
+                    : 'cursor-not-allowed opacity-75'
                 }
               />
             </div>
@@ -672,11 +675,15 @@ export default function UnoBoard({
               className={`text-[11px] font-semibold mt-2 ${
                 pendingDrawCount > 0 && isCurrentTurnForMe
                   ? 'text-red-400 font-black animate-pulse'
+                  : hasDrawnCardThisTurn && isCurrentTurnForMe
+                  ? 'text-amber-400 font-medium'
                   : 'text-zinc-400'
               }`}
             >
               {pendingDrawCount > 0
                 ? `Draw +${pendingDrawCount} Penalty`
+                : hasDrawnCardThisTurn && isCurrentTurnForMe
+                ? 'Card Drawn (Play or Pass)'
                 : `Draw Pile (${drawPileCount})`}
             </span>
           </div>

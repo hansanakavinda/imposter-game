@@ -130,6 +130,13 @@ export default function UnoGame({
     aiUnoCalledPlayersRef.current = aiUnoCalledPlayers
   }, [aiUnoCalledPlayers])
 
+  const isDrawingAiRef = useRef(false)
+  useEffect(() => {
+    if (!aiHasDrawnCardThisTurn) {
+      isDrawingAiRef.current = false
+    }
+  }, [aiHasDrawnCardThisTurn, aiCurrentPlayerIndex])
+
   const clearAllAiUnoTimers = useCallback(() => {
     if (botCatchHumanTimerRef.current) {
       clearTimeout(botCatchHumanTimerRef.current)
@@ -207,6 +214,13 @@ export default function UnoGame({
   const hostNetworkRef = useRef(null)
   const clientNetworkRef = useRef(null)
   const onClientDataRef = useRef(null)
+
+  const isDrawingMpRef = useRef(false)
+  useEffect(() => {
+    if (!mpHasDrawnCardThisTurn) {
+      isDrawingMpRef.current = false
+    }
+  }, [mpHasDrawnCardThisTurn, mpCurrentPlayerIndex])
 
   const showRules = isRulesOpen !== undefined ? isRulesOpen : internalRulesOpen
   const handleCloseRules = onCloseRules || (() => setInternalRulesOpen(false))
@@ -1141,7 +1155,9 @@ export default function UnoGame({
   }
 
   const handleDrawCardAi = () => {
+    if (isDrawingAiRef.current) return
     if (aiHasDrawnCardThisTurn && aiPendingDrawCount === 0) return
+    isDrawingAiRef.current = true
     playCardDrawSound()
 
     // Taking Stack Penalty
@@ -1931,6 +1947,9 @@ export default function UnoGame({
       const player = g.players.find((p) => p.id === playerId)
       if (!player) return
 
+      // Guard: already drawn this turn (and no pending stack penalty)
+      if (g.hasDrawnThisTurn && (g.pendingDrawCount || 0) === 0) return
+
       playCardDrawSound()
 
       // Taking Stack Penalty
@@ -2008,6 +2027,9 @@ export default function UnoGame({
       const activePlayer = g.players[g.currentPlayerIndex]
       const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
       if (!isActiveTurn) return
+
+      // Cannot pass turn without drawing first (unless resolving a stack penalty which auto-passes)
+      if (!g.hasDrawnThisTurn && (g.pendingDrawCount || 0) === 0) return
 
       const player = g.players.find((p) => p.id === playerId)
       const nextIdx = getNextActivePlayerIndex(
@@ -3169,7 +3191,15 @@ export default function UnoGame({
   }
 
   const handleMpDrawCard = () => {
+    if (isDrawingMpRef.current) return
     if (mpHasDrawnCardThisTurn && mpPendingDrawCount === 0) return
+    isDrawingMpRef.current = true
+
+    // Safety fallback: release drawing lock after 2000ms if network response is delayed
+    setTimeout(() => {
+      isDrawingMpRef.current = false
+    }, 2000)
+
     if (mpRoomState.isHost) {
       hostProcessDrawCard(0)
     } else if (clientNetworkRef.current) {
