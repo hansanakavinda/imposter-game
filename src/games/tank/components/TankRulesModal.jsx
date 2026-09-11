@@ -55,6 +55,7 @@ export default function TankRulesModal({ isOpen, onClose }) {
               3. Team Tactics & Drops
             </span>
             <ul className="space-y-1 text-zinc-400 pl-2">
+              <li>• <strong className="text-zinc-200">Health Bars (3 HP):</strong> Tanks withstand multiple hits! Standard Shells deal 1 damage, Heavy Rockets deal 2 damage, and Shields absorb an entire incoming hit.</li>
               <li>• <strong className="text-zinc-200">Friendly Fire:</strong> Safe! Shells pass through teammates harmlessly.</li>
               <li>• <strong className="text-zinc-200">Tactical Ping:</strong> Tap Ping (or Right-Click) to send a radar alert to your partner.</li>
               <li>• <strong className="text-zinc-200">Ghost Drone:</strong> Eliminated teammates scout the map and drop radar pings for their partner.</li>

@@ -11,6 +11,7 @@ export const TANK_SPEED = 2.4
 export const TANK_REVERSE_SPEED = 1.4
 export const TANK_TURN_SPEED = 0.052
 export const TANK_MUD_SPEED_MULT = 0.52
+export const TANK_MAX_HP = 3
 
 export const BULLET_RADIUS = 3.5
 export const BULLET_SPEED = 5.2
@@ -104,7 +105,7 @@ export const WEAPON_TYPES = {
     speed: 4.2,
     maxBounces: 0,
     blastRadius: 55,
-    damage: 1,
+    damage: 2,
     color: '#f97316', // Orange
   },
   SHOTGUN: {

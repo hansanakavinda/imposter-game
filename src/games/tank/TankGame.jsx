@@ -18,6 +18,7 @@ import {
   TERRAIN_TYPES,
   WEAPON_TYPES,
   TARGET_SCORE_DEFAULT,
+  TANK_MAX_HP,
   CRATE_DROP_INTERVAL_MS,
   CRATE_SIZE,
 } from './constants/tankConstants'
@@ -235,6 +236,8 @@ export default function TankGame({
           y: spawn.y,
           angle: spawn.angle,
           turretAngle: spawn.angle,
+          hp: TANK_MAX_HP,
+          maxHp: TANK_MAX_HP,
           isAlive: true,
           shield: false,
           weapon: 'STANDARD',
@@ -493,6 +496,7 @@ export default function TankGame({
                 destroyed = true
                 playBarrelExplosionSound()
 
+                let anyTankDied = false
                 updatedTanks = updatedTanks.map((t) => {
                   if (!t.isAlive) return t
                   const bdx = t.x - barrel.x
@@ -501,10 +505,19 @@ export default function TankGame({
                     if (t.shield) {
                       return { ...t, shield: false }
                     }
-                    return { ...t, isAlive: false }
+                    const currentHp = t.hp !== undefined ? t.hp : TANK_MAX_HP
+                    const nextHp = Math.max(0, currentHp - 2)
+                    if (nextHp <= 0) {
+                      anyTankDied = true
+                      return { ...t, hp: 0, isAlive: false }
+                    }
+                    return { ...t, hp: nextHp }
                   }
                   return t
                 })
+                if (anyTankDied) {
+                  playTankExplosionSound()
+                }
                 break
               }
             }
@@ -514,6 +527,7 @@ export default function TankGame({
         // Tank hit
         if (!destroyed) {
           let hitTank = null
+          let tankDied = false
           updatedTanks = updatedTanks.map((t) => {
             if (!t.isAlive || t.team === bullet.team) return t
             const dx = bx - t.x
@@ -523,14 +537,25 @@ export default function TankGame({
               if (t.shield) {
                 return { ...t, shield: false }
               }
-              return { ...t, isAlive: false }
+              const bulletDmg = bullet.damage || 1
+              const currentHp = t.hp !== undefined ? t.hp : TANK_MAX_HP
+              const nextHp = Math.max(0, currentHp - bulletDmg)
+              if (nextHp <= 0) {
+                tankDied = true
+                return { ...t, hp: 0, isAlive: false }
+              }
+              return { ...t, hp: nextHp }
             }
             return t
           })
 
           if (hitTank) {
             destroyed = true
-            playTankExplosionSound()
+            if (tankDied) {
+              playTankExplosionSound()
+            } else {
+              playTankRicochetSound()
+            }
           }
         }
 
@@ -636,6 +661,7 @@ export default function TankGame({
         vx: Math.cos(ang) * weaponCfg.speed,
         vy: Math.sin(ang) * weaponCfg.speed,
         radius: BULLET_RADIUS,
+        damage: weaponCfg.damage || 1,
         color: weaponCfg.color,
         bounces: 0,
         maxBounces: 0,
@@ -659,6 +685,7 @@ export default function TankGame({
         vx: Math.cos(myTank.turretAngle) * weaponCfg.speed,
         vy: Math.sin(myTank.turretAngle) * weaponCfg.speed,
         radius: myTank.weapon === 'ROCKET' ? 5.5 : BULLET_RADIUS,
+        damage: weaponCfg.damage || (myTank.weapon === 'ROCKET' ? 2 : 1),
         color: weaponCfg.color,
         bounces: 0,
         maxBounces: 0,
@@ -1451,6 +1478,8 @@ export default function TankGame({
               activeWeapon={myTank?.weapon || 'STANDARD'}
               hasShield={!!myTank?.shield}
               isAlive={myTank?.isAlive ?? true}
+              hp={myTank?.hp ?? TANK_MAX_HP}
+              maxHp={myTank?.maxHp ?? TANK_MAX_HP}
               is2v2={mode === '2v2'}
               isPortrait={isPortrait}
               onToggleOrientation={() => setIsPortrait((prev) => !prev)}

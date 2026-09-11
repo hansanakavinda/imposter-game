@@ -5,6 +5,7 @@ import {
   TANK_RADIUS,
   TERRAIN_TYPES,
   TEAMS,
+  TANK_MAX_HP,
 } from '../constants/tankConstants'
 import { isTankHiddenFrom } from '../utils/tankPhysics'
 
@@ -396,25 +397,115 @@ export default function TankCanvas({
           ctx.restore()
         }
 
-        // Nameplate & Local Indicator (kept upright in portrait)
+        // Nameplate & Health Bar (letters read vertically top-to-bottom)
         ctx.save()
-        if (isPortrait) {
-          ctx.rotate(Math.PI / 2)
+        // In horizontal landscape view, rotate 90° clockwise so letters and health bar read top-to-bottom
+        // In portrait view, world was rotated -90°, so rotating Math.PI makes letters read top-to-bottom on screen
+        const rotAngle = isPortrait ? Math.PI : Math.PI / 2
+        ctx.rotate(rotAngle)
+
+        // Prevent clipping near arena boundaries by dynamically flipping side if close to edge
+        const flipSide = isPortrait
+          ? tank.y > ARENA_HEIGHT - 55
+          : tank.x > ARENA_WIDTH - 55
+        const sideSign = flipSide ? 1 : -1
+
+        let clampOffsetX = 0
+        if (!isPortrait) {
+          if (tank.y < 36) clampOffsetX = 36 - tank.y
+          else if (tank.y > ARENA_HEIGHT - 36) clampOffsetX = (ARENA_HEIGHT - 36) - tank.y
+        } else {
+          if (tank.x < 36) clampOffsetX = -(36 - tank.x)
+          else if (tank.x > ARENA_WIDTH - 36) clampOffsetX = (tank.x - (ARENA_WIDTH - 36))
         }
+
+        const maxHp = tank.maxHp || TANK_MAX_HP || 3
+        const currentHp = Math.max(0, tank.hp !== undefined ? tank.hp : maxHp)
+
+        // Health Bar & Nameplate Distances
+        const barDistY = sideSign * (TANK_RADIUS + 7)
+        const nameDistY = sideSign * (TANK_RADIUS + 16)
+
+        const totalBarHeight = 25
+        const segmentCount = maxHp
+        const gap = 2
+        const segHeight = (totalBarHeight - (segmentCount - 1) * gap) / segmentCount
+        const segWidth = 4.5
+        const startX = -totalBarHeight / 2 + clampOffsetX
+
+        // Active Shield outline highlight if shield is active
+        if (tank.shield) {
+          ctx.save()
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)'
+          ctx.lineWidth = 1.5
+          ctx.shadowColor = '#10b981'
+          ctx.shadowBlur = 4
+          ctx.beginPath()
+          ctx.roundRect(startX - 2.5, barDistY - segWidth / 2 - 2, totalBarHeight + 5, segWidth + 4, 3)
+          ctx.stroke()
+          ctx.restore()
+        }
+
+        // Draw Health Bar Segments (top to bottom along local X)
+        for (let i = 0; i < segmentCount; i++) {
+          const segX = startX + i * (segHeight + gap)
+          const isFilled = i < currentHp
+
+          ctx.beginPath()
+          ctx.roundRect(segX, barDistY - segWidth / 2, segHeight, segWidth, 1.5)
+
+          if (isFilled) {
+            let segColor = '#22c55e' // Green (3 HP)
+            if (currentHp === 2) segColor = '#eab308' // Yellow (2 HP)
+            if (currentHp === 1) segColor = '#ef4444' // Red (1 HP)
+
+            ctx.fillStyle = segColor
+            ctx.shadowColor = segColor
+            ctx.shadowBlur = currentHp === 1 ? 6 : 2
+            ctx.fill()
+            ctx.shadowBlur = 0
+          } else {
+            // Empty segment
+            ctx.fillStyle = 'rgba(39, 39, 42, 0.8)'
+            ctx.fill()
+            ctx.strokeStyle = '#52525b'
+            ctx.lineWidth = 0.8
+            ctx.stroke()
+          }
+        }
+
+        // Draw Player Name (written vertically top-to-bottom)
         ctx.font = 'bold 10px sans-serif'
         ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
-        ctx.fillStyle = tank.slotId === mySlotId ? '#ffffff' : '#a1a1aa'
-        ctx.fillText(tank.name || 'Tank', 0, -TANK_RADIUS - 8)
-
+        ctx.textBaseline = 'middle'
         if (tank.slotId === mySlotId) {
+          ctx.fillStyle = '#ffffff'
+          ctx.shadowColor = '#38bdf8'
+          ctx.shadowBlur = 5
+        } else if (tank.team === 'blue') {
+          ctx.fillStyle = TEAMS.blue.color
+          ctx.shadowBlur = 0
+        } else {
+          ctx.fillStyle = TEAMS.red.color
+          ctx.shadowBlur = 0
+        }
+        const tankDisplayName = tank.name || 'Tank'
+        ctx.fillText(tankDisplayName, clampOffsetX, nameDistY)
+        ctx.shadowBlur = 0
+
+        // Local Tank Indicator Arrow (points down at the top of the name)
+        if (tank.slotId === mySlotId) {
+          const nameMetrics = ctx.measureText(tankDisplayName)
+          const arrowTipX = clampOffsetX - Math.max(16, nameMetrics.width / 2 + 5)
           ctx.fillStyle = '#38bdf8'
           ctx.beginPath()
-          ctx.moveTo(0, -TANK_RADIUS - 5)
-          ctx.lineTo(-4, -TANK_RADIUS - 2)
-          ctx.lineTo(4, -TANK_RADIUS - 2)
+          ctx.moveTo(arrowTipX, nameDistY)
+          ctx.lineTo(arrowTipX - 5, nameDistY - 3)
+          ctx.lineTo(arrowTipX - 5, nameDistY + 3)
+          ctx.closePath()
           ctx.fill()
         }
+
         ctx.restore()
 
         ctx.restore()

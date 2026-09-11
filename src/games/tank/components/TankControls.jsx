@@ -9,6 +9,7 @@ import {
   Volume2,
   VolumeX,
   Compass,
+  Heart,
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
 import { WEAPON_TYPES } from '../constants/tankConstants'
@@ -21,6 +22,8 @@ export default function TankControls({
   activeWeapon = 'STANDARD',
   hasShield = false,
   isAlive = true,
+  hp = 3,
+  maxHp = 3,
   is2v2 = false,
   isPortrait = false,
   onToggleOrientation,
@@ -306,6 +309,30 @@ export default function TankControls({
       {/* ------------------------------------------------------------- */}
       <div className="pointer-events-auto z-30 flex items-center justify-between gap-2 px-3 py-2 m-2 rounded-2xl bg-zinc-950/70 backdrop-blur-md border border-zinc-800/60 text-xs shadow-xl">
         <div className="flex items-center gap-2">
+          {/* Active Health Indicator */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
+            <Heart className={`w-3.5 h-3.5 ${hp === 1 ? 'text-rose-500 fill-rose-500 animate-pulse' : 'text-rose-400 fill-rose-400'}`} />
+            <div className="flex items-center gap-1">
+              {Array.from({ length: maxHp }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`w-3 h-2 rounded-xs transition-all duration-300 ${
+                    idx < hp
+                      ? hp === 1
+                        ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
+                        : hp === 2
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-400'
+                      : 'bg-zinc-800 border border-zinc-700/50'
+                  }`}
+                />
+              ))}
+            </div>
+            <span className="text-[10px] font-black text-zinc-300">
+              {hp}/{maxHp}
+            </span>
+          </div>
+
           {/* Active Weapon Indicator */}
           <div className="flex items-center gap-1.5 font-bold">
             <span className="text-zinc-400 text-[11px] hidden sm:inline">Weapon:</span>
