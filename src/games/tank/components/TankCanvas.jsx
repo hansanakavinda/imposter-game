@@ -22,6 +22,7 @@ export default function TankCanvas({
   roundStatus, // 'playing', 'round_win', 'match_over'
   roundWinner,
   is2v2,
+  isPortrait = false,
   onCanvasPointerMove,
   onCanvasPointerDown,
   onCanvasContextMenu,
@@ -36,13 +37,24 @@ export default function TankCanvas({
 
     let animationFrameId
     const startTime = performance.now()
+    const canvasWidth = isPortrait ? 650 : ARENA_WIDTH
+    const canvasHeight = isPortrait ? 1000 : ARENA_HEIGHT
 
     const render = (currentTime) => {
       const elapsed = currentTime - startTime
 
-      // 1. Clear background & draw tactical arena floor
+      // 1. Clear background
       ctx.fillStyle = '#09090b' // Zinc 950
-      ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT)
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+      // Apply 90° portrait transform for arena world objects
+      ctx.save()
+      if (isPortrait) {
+        // Transform from world space (1000x650) to portrait canvas (650x1000)
+        // Xs = y, Ys = 1000 - x
+        ctx.translate(0, 1000)
+        ctx.rotate(-Math.PI / 2)
+      }
 
       // Subtle tactical grid
       ctx.strokeStyle = '#18181b'
@@ -369,7 +381,26 @@ export default function TankCanvas({
           ctx.stroke()
         }
 
-        // Nameplate & Local Indicator
+        // Aiming laser guide line for local tank
+        if (tank.slotId === mySlotId) {
+          ctx.save()
+          ctx.strokeStyle = tank.team === 'blue' ? 'rgba(56, 189, 248, 0.45)' : 'rgba(251, 113, 133, 0.45)'
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([5, 5])
+          ctx.beginPath()
+          ctx.moveTo(0, 0)
+          const aimDist = 180
+          const tAngle = tank.turretAngle ?? tank.angle ?? 0
+          ctx.lineTo(Math.cos(tAngle) * aimDist, Math.sin(tAngle) * aimDist)
+          ctx.stroke()
+          ctx.restore()
+        }
+
+        // Nameplate & Local Indicator (kept upright in portrait)
+        ctx.save()
+        if (isPortrait) {
+          ctx.rotate(Math.PI / 2)
+        }
         ctx.font = 'bold 10px sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'bottom'
@@ -384,6 +415,7 @@ export default function TankCanvas({
           ctx.lineTo(4, -TANK_RADIUS - 2)
           ctx.fill()
         }
+        ctx.restore()
 
         ctx.restore()
       })
@@ -424,15 +456,20 @@ export default function TankCanvas({
           ctx.restore()
         })
       }
+      // End World Transform (so HUD is drawn in screen space)
+      ctx.restore()
 
-      // 11. Draw Scoreboard & Round Banner HUD
+      // 11. Draw Scoreboard & Round Banner HUD (in Screen Space)
       ctx.save()
+      const hudCenterX = canvasWidth / 2
+      const hudTopY = isPortrait ? 16 : 8
+
       // Center Top Score Badge
-      ctx.fillStyle = 'rgba(9, 9, 11, 0.85)'
+      ctx.fillStyle = 'rgba(9, 9, 11, 0.88)'
       ctx.strokeStyle = '#27272a'
       ctx.lineWidth = 1.5
       ctx.beginPath()
-      ctx.roundRect(ARENA_WIDTH / 2 - 110, 8, 220, 36, 12)
+      ctx.roundRect(hudCenterX - 105, hudTopY, 210, 36, 12)
       ctx.fill()
       ctx.stroke()
 
@@ -440,43 +477,43 @@ export default function TankCanvas({
       ctx.font = 'bold 13px sans-serif'
       ctx.textAlign = 'right'
       ctx.fillStyle = TEAMS.blue.color
-      ctx.fillText(`${score.blue}`, ARENA_WIDTH / 2 - 24, 31)
+      ctx.fillText(`${score.blue}`, hudCenterX - 22, hudTopY + 23)
 
       // Divider
       ctx.textAlign = 'center'
       ctx.fillStyle = '#71717a'
       ctx.font = 'bold 11px sans-serif'
-      ctx.fillText('VS', ARENA_WIDTH / 2, 31)
+      ctx.fillText('VS', hudCenterX, hudTopY + 23)
 
       // Red Team Score
       ctx.textAlign = 'left'
       ctx.fillStyle = TEAMS.red.color
       ctx.font = 'bold 13px sans-serif'
-      ctx.fillText(`${score.red}`, ARENA_WIDTH / 2 + 24, 31)
+      ctx.fillText(`${score.red}`, hudCenterX + 22, hudTopY + 23)
 
       // Target score indicator
       ctx.textAlign = 'center'
       ctx.fillStyle = '#a1a1aa'
       ctx.font = '9px sans-serif'
-      ctx.fillText(`FIRST TO ${targetScore}`, ARENA_WIDTH / 2, 20)
+      ctx.fillText(`FIRST TO ${targetScore}`, hudCenterX, hudTopY + 12)
 
       // Round Over / Win Overlay
       if (roundStatus === 'round_win' && roundWinner) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
-        ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
-        ctx.font = 'black 32px sans-serif'
+        ctx.font = 'black 28px sans-serif'
         ctx.textAlign = 'center'
         ctx.fillStyle = roundWinner === 'blue' ? TEAMS.blue.color : TEAMS.red.color
         ctx.fillText(
           `${roundWinner === 'blue' ? 'TEAM BLUE' : 'TEAM RED'} SCORES!`,
-          ARENA_WIDTH / 2,
-          ARENA_HEIGHT / 2 - 10
+          hudCenterX,
+          canvasHeight / 2 - 10
         )
 
         ctx.font = 'bold 14px sans-serif'
         ctx.fillStyle = '#ffffff'
-        ctx.fillText('Next round in 2 seconds...', ARENA_WIDTH / 2, ARENA_HEIGHT / 2 + 25)
+        ctx.fillText('Next round in 2 seconds...', hudCenterX, canvasHeight / 2 + 24)
       }
 
       ctx.restore()
@@ -489,7 +526,22 @@ export default function TankCanvas({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [tanks, bullets, obstacles, barrels, crates, particles, pings, mySlotId, score, targetScore, roundStatus, roundWinner, is2v2])
+  }, [
+    tanks,
+    bullets,
+    obstacles,
+    barrels,
+    crates,
+    particles,
+    pings,
+    mySlotId,
+    score,
+    targetScore,
+    roundStatus,
+    roundWinner,
+    is2v2,
+    isPortrait,
+  ])
 
   // Mouse / Touch event coordinates translated into virtual (1000x650) space
   const getArenaCoords = (e) => {
@@ -499,12 +551,27 @@ export default function TankCanvas({
     const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0
     const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0
 
-    const scaleX = ARENA_WIDTH / rect.width
-    const scaleY = ARENA_HEIGHT / rect.height
+    const canvasW = isPortrait ? 650 : ARENA_WIDTH
+    const canvasH = isPortrait ? 1000 : ARENA_HEIGHT
+
+    const scaleX = canvasW / rect.width
+    const scaleY = canvasH / rect.height
+
+    const screenX = (clientX - rect.left) * scaleX
+    const screenY = (clientY - rect.top) * scaleY
+
+    if (isPortrait) {
+      // Inverse of: Xs = y, Ys = 1000 - x
+      // => y = Xs, x = 1000 - Ys
+      return {
+        x: Math.max(0, Math.min(ARENA_WIDTH, 1000 - screenY)),
+        y: Math.max(0, Math.min(ARENA_HEIGHT, screenX)),
+      }
+    }
 
     return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
+      x: Math.max(0, Math.min(ARENA_WIDTH, screenX)),
+      y: Math.max(0, Math.min(ARENA_HEIGHT, screenY)),
     }
   }
 
@@ -527,11 +594,17 @@ export default function TankCanvas({
   }
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto select-none overflow-hidden rounded-2xl border border-zinc-800 shadow-2xl bg-zinc-950 touch-none">
+    <div
+      className={`relative flex items-center justify-center select-none overflow-hidden touch-none ${
+        isPortrait
+          ? 'w-full h-full max-h-[100dvh] mx-auto'
+          : 'w-full max-w-5xl mx-auto rounded-2xl'
+      }`}
+    >
       <canvas
         ref={canvasRef}
-        width={ARENA_WIDTH}
-        height={ARENA_HEIGHT}
+        width={isPortrait ? 650 : ARENA_WIDTH}
+        height={isPortrait ? 1000 : ARENA_HEIGHT}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onContextMenu={(e) => {
@@ -540,7 +613,11 @@ export default function TankCanvas({
             onCanvasContextMenu(getArenaCoords(e))
           }
         }}
-        className="w-full h-auto block aspect-[1000/650] cursor-crosshair"
+        className={`block object-contain cursor-crosshair rounded-2xl border border-zinc-800/80 shadow-2xl bg-zinc-950 ${
+          isPortrait
+            ? 'h-full w-auto max-w-full max-h-[100dvh] aspect-[650/1000]'
+            : 'w-full h-auto aspect-[1000/650]'
+        }`}
       />
     </div>
   )

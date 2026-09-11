@@ -37,6 +37,8 @@ import {
   playBarrelExplosionSound,
   playCratePickupSound,
   playRadarPingSound,
+  isSoundEnabled,
+  setSoundEnabled,
 } from '../../utils/sound'
 
 export default function TankGame({
@@ -80,12 +82,46 @@ export default function TankGame({
   const [particles, setParticles] = useState([])
   const [pings, setPings] = useState([])
 
+  // Device Orientation State (default to auto-detect portrait on mobile)
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerHeight > window.innerWidth
+    }
+    return false
+  })
+  const [localRulesOpen, setLocalRulesOpen] = useState(false)
+  const [soundOn, setSoundOn] = useState(() => isSoundEnabled())
+
+  const handleToggleSound = useCallback(() => {
+    setSoundOn((prev) => {
+      const nextVal = !prev
+      setSoundEnabled(nextVal)
+      return nextVal
+    })
+  }, [])
+
+  // Auto-update orientation when window is rotated / resized
+  useEffect(() => {
+    const handleResize = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth)
+    }
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('orientationchange', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('orientationchange', handleResize)
+    }
+  }, [])
+
   // Local Input tracking
   const localInputRef = useRef({
     forward: false,
     reverse: false,
     steerLeft: false,
     steerRight: false,
+    isMoving: false,
+    moveAngle: 0,
+    moveMagnitude: 0,
     turretAngle: 0,
     aimCoord: { x: 500, y: 325 },
   })
@@ -302,20 +338,35 @@ export default function TankGame({
       }
 
       let newAngle = tank.angle
-      if (input.steerLeft) newAngle -= TANK_TURN_SPEED
-      if (input.steerRight) newAngle += TANK_TURN_SPEED
-
       const inMud = isTankInMud(tank, obstaclesRef.current)
       const speedMult = inMud ? TANK_MUD_SPEED_MULT : 1.0
 
       let targetX = tank.x
       let targetY = tank.y
-      if (input.forward) {
-        targetX += Math.cos(newAngle) * TANK_SPEED * speedMult
-        targetY += Math.sin(newAngle) * TANK_SPEED * speedMult
-      } else if (input.reverse) {
-        targetX -= Math.cos(newAngle) * TANK_REVERSE_SPEED * speedMult
-        targetY -= Math.sin(newAngle) * TANK_REVERSE_SPEED * speedMult
+
+      if (input.isMoving && input.moveAngle !== undefined && input.moveAngle !== null) {
+        // Virtual Joystick steering & driving
+        const diff = Math.atan2(Math.sin(input.moveAngle - newAngle), Math.cos(input.moveAngle - newAngle))
+        const maxTurn = TANK_TURN_SPEED * 1.5
+        if (Math.abs(diff) > 0.05) {
+          newAngle += Math.sign(diff) * Math.min(Math.abs(diff), maxTurn)
+        }
+
+        const alignment = Math.max(0, Math.cos(diff))
+        const currentSpeed = TANK_SPEED * speedMult * (input.moveMagnitude || 1.0) * (0.35 + 0.65 * alignment)
+        targetX += Math.cos(newAngle) * currentSpeed
+        targetY += Math.sin(newAngle) * currentSpeed
+      } else {
+        // Desktop keyboard controls (WASD / Arrows)
+        if (input.steerLeft) newAngle -= TANK_TURN_SPEED
+        if (input.steerRight) newAngle += TANK_TURN_SPEED
+        if (input.forward) {
+          targetX += Math.cos(newAngle) * TANK_SPEED * speedMult
+          targetY += Math.sin(newAngle) * TANK_SPEED * speedMult
+        } else if (input.reverse) {
+          targetX -= Math.cos(newAngle) * TANK_REVERSE_SPEED * speedMult
+          targetY -= Math.sin(newAngle) * TANK_REVERSE_SPEED * speedMult
+        }
       }
 
       const resolved = moveTankWithCollision(
@@ -766,6 +817,18 @@ export default function TankGame({
       })
     }
   }
+
+  // Virtual Joystick Aim Change Handler
+  const handleAimChange = useCallback((worldAngle) => {
+    localInputRef.current.turretAngle = worldAngle
+    if (!isHostRef.current && networkRef.current) {
+      networkRef.current.sendToHost({
+        type: 'PLAYER_INPUT',
+        slotId: mySlotIdRef.current,
+        input: localInputRef.current,
+      })
+    }
+  }, [])
 
   // -------------------------------------------------------------
   // Host Handlers for Client Join / Leave
@@ -1335,44 +1398,66 @@ export default function TankGame({
 
       {/* 2. Battle Phase */}
       {gamePhase === 'battle' && (
-        <div className="w-full flex flex-col items-center justify-center animate-fadeIn px-2">
-          <TankCanvas
-            tanks={tanks}
-            bullets={bullets}
-            obstacles={obstacles}
-            barrels={barrels}
-            crates={crates}
-            particles={particles}
-            pings={pings}
-            mySlotId={mySlotId}
-            score={score}
-            targetScore={TARGET_SCORE_DEFAULT}
-            roundStatus={roundStatus}
-            roundWinner={roundWinner}
-            is2v2={mode === '2v2'}
-            onCanvasPointerMove={handleCanvasPointerMove}
-            onCanvasPointerDown={() => handleFireCannon()}
-            onCanvasContextMenu={handleTriggerRadarPing}
-          />
+        <div
+          className={
+            isPortrait
+              ? 'fixed inset-0 z-40 bg-zinc-950 flex flex-col items-center justify-center select-none overflow-hidden touch-none'
+              : 'relative w-full max-w-5xl mx-auto flex items-center justify-center select-none animate-fadeIn px-2'
+          }
+        >
+          <div
+            className={
+              isPortrait
+                ? 'relative w-full h-full max-h-[100dvh] flex items-center justify-center'
+                : 'relative w-full h-auto flex items-center justify-center'
+            }
+          >
+            <TankCanvas
+              tanks={tanks}
+              bullets={bullets}
+              obstacles={obstacles}
+              barrels={barrels}
+              crates={crates}
+              particles={particles}
+              pings={pings}
+              mySlotId={mySlotId}
+              score={score}
+              targetScore={TARGET_SCORE_DEFAULT}
+              roundStatus={roundStatus}
+              roundWinner={roundWinner}
+              is2v2={mode === '2v2'}
+              isPortrait={isPortrait}
+              onCanvasPointerMove={handleCanvasPointerMove}
+              onCanvasPointerDown={() => handleFireCannon()}
+              onCanvasContextMenu={handleTriggerRadarPing}
+            />
 
-          <TankControls
-            onInputChange={(delta) => {
-              localInputRef.current = { ...localInputRef.current, ...delta }
-              if (!isHost && networkRef.current) {
-                networkRef.current.sendToHost({
-                  type: 'PLAYER_INPUT',
-                  slotId: mySlotId,
-                  input: localInputRef.current,
-                })
-              }
-            }}
-            onFire={handleFireCannon}
-            onPing={handleTriggerRadarPing}
-            activeWeapon={myTank?.weapon || 'STANDARD'}
-            hasShield={!!myTank?.shield}
-            isAlive={myTank?.isAlive ?? true}
-            is2v2={mode === '2v2'}
-          />
+            <TankControls
+              onInputChange={(delta) => {
+                localInputRef.current = { ...localInputRef.current, ...delta }
+                if (!isHostRef.current && networkRef.current) {
+                  networkRef.current.sendToHost({
+                    type: 'PLAYER_INPUT',
+                    slotId: mySlotIdRef.current,
+                    input: localInputRef.current,
+                  })
+                }
+              }}
+              onAimChange={handleAimChange}
+              onFire={handleFireCannon}
+              onPing={handleTriggerRadarPing}
+              activeWeapon={myTank?.weapon || 'STANDARD'}
+              hasShield={!!myTank?.shield}
+              isAlive={myTank?.isAlive ?? true}
+              is2v2={mode === '2v2'}
+              isPortrait={isPortrait}
+              onToggleOrientation={() => setIsPortrait((prev) => !prev)}
+              onLeaveGame={handleLeaveRoom}
+              onOpenRules={() => setLocalRulesOpen(true)}
+              soundOn={soundOn}
+              onToggleSound={handleToggleSound}
+            />
+          </div>
         </div>
       )}
 
@@ -1391,7 +1476,13 @@ export default function TankGame({
       )}
 
       {/* Rules Modal */}
-      <TankRulesModal isOpen={isRulesOpen} onClose={onCloseRules} />
+      <TankRulesModal
+        isOpen={isRulesOpen || localRulesOpen}
+        onClose={() => {
+          onCloseRules?.()
+          setLocalRulesOpen(false)
+        }}
+      />
     </div>
   )
 }
