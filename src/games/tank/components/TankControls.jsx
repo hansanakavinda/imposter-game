@@ -8,237 +8,10 @@ import {
   HelpCircle,
   Volume2,
   VolumeX,
+  Compass,
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
 import { WEAPON_TYPES } from '../constants/tankConstants'
-
-/**
- * Virtual Joystick Component
- * Provides smooth pointer-based 360-degree dragging with automatic deadzone,
- * pointer capture, and visual feedback.
- */
-function VirtualJoystick({
-  label,
-  size = 130,
-  maxDistance = 44,
-  deadzone = 8,
-  accentColor = 'cyan', // 'cyan' | 'amber'
-  isAim = false,
-  isPortrait = false,
-  onMove,
-  onRelease,
-  onTap,
-  disabled = false,
-}) {
-  const baseRef = useRef(null)
-  const activePointerIdRef = useRef(null)
-  const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 })
-  const [isActive, setIsActive] = useState(false)
-  const [currentAngle, setCurrentAngle] = useState(null)
-  const pointerStartRef = useRef({ x: 0, y: 0, time: 0 })
-  const lastDispatchedAngleRef = useRef(null)
-
-  // Clean up pointer capture on unmount
-  useEffect(() => {
-    return () => {
-      activePointerIdRef.current = null
-    }
-  }, [])
-
-  const handlePointerDown = (e) => {
-    if (disabled || activePointerIdRef.current !== null) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const target = e.currentTarget
-    target.setPointerCapture(e.pointerId)
-    activePointerIdRef.current = e.pointerId
-
-    const rect = target.getBoundingClientRect()
-    const centerX = rect.left + rect.width / 2
-    const centerY = rect.top + rect.height / 2
-
-    pointerStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      time: e.timeStamp || 0,
-      centerX,
-      centerY,
-    }
-
-    setIsActive(true)
-
-    // Calculate initial displacement
-    const dx = e.clientX - centerX
-    const dy = e.clientY - centerY
-    const dist = Math.hypot(dx, dy)
-
-    if (dist >= deadzone) {
-      updateJoystick(dx, dy, dist)
-    }
-  }
-
-  const updateJoystick = useCallback(
-    (dx, dy, dist) => {
-      const clampedDist = Math.min(maxDistance, dist)
-      const angle = Math.atan2(dy, dx)
-      const knobX = Math.cos(angle) * clampedDist
-      const knobY = Math.sin(angle) * clampedDist
-
-      setKnobOffset({ x: knobX, y: knobY })
-      setCurrentAngle(angle)
-
-      // Transform angle to world coordinates:
-      // In portrait mode, top of screen is -PI/2 in screen space, which maps to 0 (pointing +x) in world space
-      const worldAngle = isPortrait ? angle + Math.PI / 2 : angle
-      lastDispatchedAngleRef.current = worldAngle
-
-      if (onMove) {
-        const magnitude = Math.min(1, dist / maxDistance)
-        onMove({
-          screenAngle: angle,
-          worldAngle,
-          magnitude,
-          isDeadzone: dist < deadzone,
-        })
-      }
-    },
-    [maxDistance, deadzone, isPortrait, onMove]
-  )
-
-  const handlePointerMove = (e) => {
-    if (activePointerIdRef.current !== e.pointerId) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const { centerX, centerY } = pointerStartRef.current
-    const dx = e.clientX - centerX
-    const dy = e.clientY - centerY
-    const dist = Math.hypot(dx, dy)
-
-    if (dist < deadzone) {
-      setKnobOffset({ x: 0, y: 0 })
-      setCurrentAngle(null)
-      if (onMove) {
-        onMove({
-          screenAngle: 0,
-          worldAngle: 0,
-          magnitude: 0,
-          isDeadzone: true,
-        })
-      }
-    } else {
-      updateJoystick(dx, dy, dist)
-    }
-  }
-
-  const handlePointerUp = (e) => {
-    if (activePointerIdRef.current !== e.pointerId) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    } catch {
-      // ignore
-    }
-
-    const elapsed = (e.timeStamp || 0) - pointerStartRef.current.time
-    const { centerX, centerY } = pointerStartRef.current
-    const totalDist = Math.hypot(e.clientX - centerX, e.clientY - centerY)
-
-    // Tap detection: short press and small movement
-    if (elapsed < 300 && totalDist < deadzone * 2) {
-      if (onTap) onTap()
-    }
-
-    activePointerIdRef.current = null
-    setIsActive(false)
-    setKnobOffset({ x: 0, y: 0 })
-    setCurrentAngle(null)
-
-    if (onRelease) {
-      onRelease({
-        lastWorldAngle: lastDispatchedAngleRef.current,
-        wasFlick: elapsed < 350 && totalDist >= deadzone * 2,
-      })
-    }
-  }
-
-  const borderClass =
-    accentColor === 'amber'
-      ? isActive
-        ? 'border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.35)]'
-        : 'border-amber-500/40'
-      : isActive
-      ? 'border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-      : 'border-cyan-500/40'
-
-  const knobGrad =
-    accentColor === 'amber'
-      ? 'from-amber-400 to-rose-600 border-amber-300'
-      : 'from-cyan-400 to-blue-600 border-cyan-300'
-
-  return (
-    <div className="flex flex-col items-center gap-1 select-none pointer-events-auto">
-      <div
-        ref={baseRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        style={{ width: size, height: size }}
-        className={`relative rounded-full bg-zinc-950/75 backdrop-blur-md border-2 ${borderClass} touch-none flex items-center justify-center transition-shadow cursor-grab active:cursor-grabbing ${
-          disabled ? 'opacity-40 pointer-events-none' : ''
-        }`}
-      >
-        {/* Subtle Cardinal Guides */}
-        <div className="absolute inset-2 rounded-full border border-dashed border-zinc-700/40 pointer-events-none" />
-        <div className="absolute top-1 w-1 h-2 bg-zinc-700/60 rounded-full" />
-        <div className="absolute bottom-1 w-1 h-2 bg-zinc-700/60 rounded-full" />
-        <div className="absolute left-1 w-2 h-1 bg-zinc-700/60 rounded-full" />
-        <div className="absolute right-1 w-2 h-1 bg-zinc-700/60 rounded-full" />
-
-        {/* Direction Indicator on Outer Rim for Aiming */}
-        {isAim && currentAngle !== null && (
-          <div
-            className="absolute w-3.5 h-3.5 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b] pointer-events-none"
-            style={{
-              transform: `translate(${Math.cos(currentAngle) * (size / 2 - 4)}px, ${
-                Math.sin(currentAngle) * (size / 2 - 4)
-              }px)`,
-            }}
-          />
-        )}
-
-        {/* Joystick Thumb Knob */}
-        <div
-          style={{
-            transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)`,
-            transition: isActive ? 'none' : 'transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-          className={`w-14 h-14 rounded-full bg-gradient-to-br ${knobGrad} border-2 shadow-lg flex items-center justify-center text-white font-bold pointer-events-none`}
-        >
-          {isAim ? (
-            <Crosshair className="w-6 h-6 text-white drop-shadow-md animate-pulse" />
-          ) : (
-            <div className="w-4 h-4 rounded-full bg-white/80 shadow-inner" />
-          )}
-        </div>
-      </div>
-
-      <span
-        className={`text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-md ${
-          accentColor === 'amber'
-            ? 'text-amber-300 bg-amber-950/50 border border-amber-800/40'
-            : 'text-cyan-300 bg-cyan-950/50 border border-cyan-800/40'
-        }`}
-      >
-        {label}
-      </span>
-    </div>
-  )
-}
 
 export default function TankControls({
   onInputChange,
@@ -257,72 +30,124 @@ export default function TankControls({
   onToggleSound,
 }) {
   const currentWeapon = WEAPON_TYPES[activeWeapon] || WEAPON_TYPES.STANDARD
-  const fireIntervalRef = useRef(null)
-  const isAimActiveRef = useRef(false)
+
+  // Ref callbacks to avoid stale closures
   const onFireRef = useRef(onFire)
+  const onAimChangeRef = useRef(onAimChange)
+  const onInputChangeRef = useRef(onInputChange)
   const weaponCooldownRef = useRef(currentWeapon.cooldownMs)
 
   useEffect(() => {
     onFireRef.current = onFire
+    onAimChangeRef.current = onAimChange
+    onInputChangeRef.current = onInputChange
     weaponCooldownRef.current = currentWeapon.cooldownMs
-  }, [onFire, currentWeapon.cooldownMs])
+  }, [onFire, onAimChange, onInputChange, currentWeapon.cooldownMs])
 
-  // Clear firing interval on unmount
-  useEffect(() => {
-    return () => {
-      if (fireIntervalRef.current) {
-        clearInterval(fireIntervalRef.current)
-        fireIntervalRef.current = null
-      }
+  // -------------------------------------------------------------
+  // Top Zone: Floating Movement Joystick State & Handlers
+  // -------------------------------------------------------------
+  const topZoneRef = useRef(null)
+  const movePointerIdRef = useRef(null)
+  const moveOriginRef = useRef({ x: 0, y: 0 })
+  const [moveVisual, setMoveVisual] = useState({
+    active: false,
+    x: 0,
+    y: 0,
+    knobX: 0,
+    knobY: 0,
+    angle: 0,
+  })
+
+  const handleMovePointerDown = (e) => {
+    if (!isAlive || movePointerIdRef.current !== null) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const target = e.currentTarget
+    target.setPointerCapture(e.pointerId)
+    movePointerIdRef.current = e.pointerId
+
+    const rect = target.getBoundingClientRect()
+    const touchX = e.clientX - rect.left
+    const touchY = e.clientY - rect.top
+
+    moveOriginRef.current = { x: e.clientX, y: e.clientY }
+
+    setMoveVisual({
+      active: true,
+      x: touchX,
+      y: touchY,
+      knobX: 0,
+      knobY: 0,
+      angle: 0,
+    })
+  }
+
+  const handleMovePointerMove = (e) => {
+    if (e.pointerId !== movePointerIdRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const dx = e.clientX - moveOriginRef.current.x
+    const dy = e.clientY - moveOriginRef.current.y
+    const dist = Math.hypot(dx, dy)
+    const maxRadius = 45
+    const deadzone = 8
+
+    if (dist < deadzone) {
+      setMoveVisual((prev) => ({ ...prev, knobX: 0, knobY: 0 }))
+      onInputChangeRef.current?.({
+        isMoving: false,
+        moveMagnitude: 0,
+        forward: false,
+        reverse: false,
+        steerLeft: false,
+        steerRight: false,
+      })
+      return
     }
-  }, [])
 
-  // Continuous auto-fire while aiming
-  const startAimFireLoop = useCallback(() => {
-    if (fireIntervalRef.current) return
-    // Fire immediately once
-    onFireRef.current?.()
+    const angle = Math.atan2(dy, dx)
+    const clampedDist = Math.min(maxRadius, dist)
+    const knobX = Math.cos(angle) * clampedDist
+    const knobY = Math.sin(angle) * clampedDist
 
-    fireIntervalRef.current = setInterval(() => {
-      if (isAimActiveRef.current) {
-        onFireRef.current?.()
-      }
-    }, Math.max(120, weaponCooldownRef.current))
-  }, [])
+    setMoveVisual((prev) => ({ ...prev, knobX, knobY, angle }))
 
-  const stopAimFireLoop = useCallback(() => {
-    if (fireIntervalRef.current) {
-      clearInterval(fireIntervalRef.current)
-      fireIntervalRef.current = null
+    // Calculate world movement angle
+    // In portrait mode, UP on screen (-PI/2) maps to 0 (heading towards +x in world)
+    const worldAngle = isPortrait ? angle + Math.PI / 2 : angle
+    const magnitude = Math.min(1, dist / maxRadius)
+
+    onInputChangeRef.current?.({
+      isMoving: true,
+      moveAngle: worldAngle,
+      moveMagnitude: magnitude,
+      forward: true,
+    })
+  }
+
+  const handleMovePointerUp = (e) => {
+    if (e.pointerId !== movePointerIdRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      // ignore
     }
-  }, [])
 
-  // Left Joystick (Movement) Handler
-  const handleMoveJoystick = useCallback(
-    ({ worldAngle, magnitude, isDeadzone }) => {
-      if (isDeadzone || magnitude <= 0.05) {
-        onInputChange({
-          isMoving: false,
-          moveMagnitude: 0,
-          forward: false,
-          reverse: false,
-          steerLeft: false,
-          steerRight: false,
-        })
-      } else {
-        onInputChange({
-          isMoving: true,
-          moveAngle: worldAngle,
-          moveMagnitude: magnitude,
-          forward: true,
-        })
-      }
-    },
-    [onInputChange]
-  )
+    movePointerIdRef.current = null
+    setMoveVisual((prev) => ({
+      ...prev,
+      active: false,
+      knobX: 0,
+      knobY: 0,
+    }))
 
-  const handleMoveRelease = useCallback(() => {
-    onInputChange({
+    onInputChangeRef.current?.({
       isMoving: false,
       moveMagnitude: 0,
       forward: false,
@@ -330,48 +155,156 @@ export default function TankControls({
       steerLeft: false,
       steerRight: false,
     })
-  }, [onInputChange])
+  }
 
-  // Right Joystick (Aim & Shoot) Handlers
-  const handleAimMove = useCallback(
-    ({ worldAngle, isDeadzone }) => {
-      if (isDeadzone) {
-        isAimActiveRef.current = false
-        stopAimFireLoop()
-      } else {
-        isAimActiveRef.current = true
-        if (onAimChange) {
-          onAimChange(worldAngle)
-        }
-        onInputChange({ turretAngle: worldAngle })
-        startAimFireLoop()
+  // -------------------------------------------------------------
+  // Bottom Zone: Floating Aim & Shoot Joystick State & Handlers
+  // -------------------------------------------------------------
+  const bottomZoneRef = useRef(null)
+  const aimPointerIdRef = useRef(null)
+  const aimOriginRef = useRef({ x: 0, y: 0, time: 0 })
+  const aimFireTimerRef = useRef(null)
+  const lastAimAngleRef = useRef(null)
+
+  const [aimVisual, setAimVisual] = useState({
+    active: false,
+    x: 0,
+    y: 0,
+    knobX: 0,
+    knobY: 0,
+    angle: 0,
+  })
+
+  // Clear aim firing interval on unmount
+  useEffect(() => {
+    return () => {
+      if (aimFireTimerRef.current) {
+        clearInterval(aimFireTimerRef.current)
+        aimFireTimerRef.current = null
       }
-    },
-    [onAimChange, onInputChange, startAimFireLoop, stopAimFireLoop]
-  )
-
-  const handleAimRelease = useCallback(
-    ({ lastWorldAngle, wasFlick }) => {
-      isAimActiveRef.current = false
-      stopAimFireLoop()
-
-      if (wasFlick && lastWorldAngle !== null) {
-        if (onAimChange) onAimChange(lastWorldAngle)
-        onInputChange({ turretAngle: lastWorldAngle })
-        onFireRef.current?.()
-      }
-    },
-    [onAimChange, onInputChange, stopAimFireLoop]
-  )
-
-  const handleAimTap = useCallback(() => {
-    onFireRef.current?.()
+    }
   }, [])
 
+  const startAimFireLoop = useCallback(() => {
+    if (aimFireTimerRef.current) return
+    // Immediate first fire shot
+    onFireRef.current?.()
+
+    aimFireTimerRef.current = setInterval(() => {
+      onFireRef.current?.()
+    }, Math.max(120, weaponCooldownRef.current))
+  }, [])
+
+  const stopAimFireLoop = useCallback(() => {
+    if (aimFireTimerRef.current) {
+      clearInterval(aimFireTimerRef.current)
+      aimFireTimerRef.current = null
+    }
+  }, [])
+
+  const handleAimPointerDown = (e) => {
+    if (!isAlive || aimPointerIdRef.current !== null) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const target = e.currentTarget
+    target.setPointerCapture(e.pointerId)
+    aimPointerIdRef.current = e.pointerId
+
+    const rect = target.getBoundingClientRect()
+    const touchX = e.clientX - rect.left
+    const touchY = e.clientY - rect.top
+
+    aimOriginRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      time: e.timeStamp || 0,
+    }
+
+    setAimVisual({
+      active: true,
+      x: touchX,
+      y: touchY,
+      knobX: 0,
+      knobY: 0,
+      angle: 0,
+    })
+
+    // Start firing immediately
+    startAimFireLoop()
+  }
+
+  const handleAimPointerMove = (e) => {
+    if (e.pointerId !== aimPointerIdRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const dx = e.clientX - aimOriginRef.current.x
+    const dy = e.clientY - aimOriginRef.current.y
+    const dist = Math.hypot(dx, dy)
+    const maxRadius = 45
+    const deadzone = 10
+
+    if (dist < deadzone) {
+      setAimVisual((prev) => ({ ...prev, knobX: 0, knobY: 0 }))
+      return
+    }
+
+    const angle = Math.atan2(dy, dx)
+    const clampedDist = Math.min(maxRadius, dist)
+    const knobX = Math.cos(angle) * clampedDist
+    const knobY = Math.sin(angle) * clampedDist
+
+    setAimVisual((prev) => ({ ...prev, knobX, knobY, angle }))
+
+    const worldAngle = isPortrait ? angle + Math.PI / 2 : angle
+    lastAimAngleRef.current = worldAngle
+
+    onAimChangeRef.current?.(worldAngle)
+    onInputChangeRef.current?.({ turretAngle: worldAngle })
+  }
+
+  const handleAimPointerUp = (e) => {
+    if (e.pointerId !== aimPointerIdRef.current) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+
+    stopAimFireLoop()
+
+    const elapsed = (e.timeStamp || 0) - aimOriginRef.current.time
+    const totalDist = Math.hypot(
+      e.clientX - aimOriginRef.current.x,
+      e.clientY - aimOriginRef.current.y
+    )
+
+    // Quick tap or flick fire
+    if (elapsed < 320 && totalDist > 16 && lastAimAngleRef.current !== null) {
+      onAimChangeRef.current?.(lastAimAngleRef.current)
+      onInputChangeRef.current?.({ turretAngle: lastAimAngleRef.current })
+      onFireRef.current?.()
+    }
+
+    aimPointerIdRef.current = null
+    setAimVisual((prev) => ({
+      ...prev,
+      active: false,
+      knobX: 0,
+      knobY: 0,
+    }))
+  }
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-2 sm:p-4 select-none">
+    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between select-none overflow-hidden touch-none">
+      {/* ------------------------------------------------------------- */}
       {/* Top Tactical HUD Bar */}
-      <div className="pointer-events-auto flex items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-zinc-950/85 backdrop-blur-md border border-zinc-800/80 text-xs shadow-xl">
+      {/* ------------------------------------------------------------- */}
+      <div className="pointer-events-auto z-30 flex items-center justify-between gap-2 px-3 py-2 m-2 rounded-2xl bg-zinc-950/70 backdrop-blur-md border border-zinc-800/60 text-xs shadow-xl">
         <div className="flex items-center gap-2">
           {/* Active Weapon Indicator */}
           <div className="flex items-center gap-1.5 font-bold">
@@ -395,9 +328,26 @@ export default function TankControls({
               <span className="hidden xs:inline">Shield</span>
             </div>
           )}
+
+          {/* 2v2 Radar Ping Action Button (Compact in HUD) */}
+          {is2v2 && (
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound()
+                onPing?.()
+              }}
+              className="px-2 py-1 rounded-xl bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 flex items-center gap-1 shadow transition active:scale-95 cursor-pointer"
+              title="Team Radar Ping"
+              aria-label="Radar Ping"
+            >
+              <Radio className="w-3.5 h-3.5 animate-pulse" />
+              <span className="text-[10px] font-black">PING</span>
+            </button>
+          )}
         </div>
 
-        {/* Quick Utility Actions (Orientation, Rules, Sound, Leave) */}
+        {/* Quick Utility Actions */}
         <div className="flex items-center gap-1">
           {onToggleOrientation && (
             <button
@@ -458,63 +408,116 @@ export default function TankControls({
         </div>
       </div>
 
-      {/* Desktop Key Controls Reminder (Hidden on small touch screens) */}
-      <div className="hidden lg:flex items-center justify-center gap-5 py-1 text-zinc-400 text-[11px] bg-zinc-950/40 backdrop-blur-sm mx-auto px-4 rounded-xl border border-zinc-800/50">
-        <span><strong className="text-zinc-200">WASD / Stick:</strong> Move</span>
-        <span><strong className="text-zinc-200">Mouse / Stick:</strong> 360° Aim</span>
-        <span><strong className="text-zinc-200">Click / Space:</strong> Fire</span>
-        {is2v2 && <span><strong className="text-zinc-200">Right-Click / E:</strong> Team Ping</span>}
-      </div>
+      {/* ------------------------------------------------------------- */}
+      {/* Top Half: Dynamic Movement Touch Zone (Draggable Anywhere in Top Half) */}
+      {/* ------------------------------------------------------------- */}
+      <div
+        ref={topZoneRef}
+        onPointerDown={handleMovePointerDown}
+        onPointerMove={handleMovePointerMove}
+        onPointerUp={handleMovePointerUp}
+        onPointerCancel={handleMovePointerUp}
+        className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
+      >
+        {/* Subtle Idle Guide Label */}
+        <div className="absolute top-2 left-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-cyan-400/25 pointer-events-none select-none">
+          <Compass className="w-3.5 h-3.5" />
+          <span>Top Half: Touch & Drag to Move</span>
+        </div>
 
-      {/* Bottom Dual Joysticks & Ping Action Bar */}
-      <div className="w-full flex items-end justify-between px-2 sm:px-6 pb-2 sm:pb-6">
-        {/* Left: Movement Virtual Joystick */}
-        <VirtualJoystick
-          label="Drive"
-          size={124}
-          maxDistance={42}
-          deadzone={8}
-          accentColor="cyan"
-          isPortrait={isPortrait}
-          onMove={handleMoveJoystick}
-          onRelease={handleMoveRelease}
-          disabled={!isAlive}
-        />
+        {/* Floating Low-Opacity Movement Joystick */}
+        {moveVisual.active && (
+          <div
+            className="absolute pointer-events-none transition-opacity duration-100"
+            style={{
+              left: moveVisual.x,
+              top: moveVisual.y,
+              transform: 'translate(-50%, -50%)',
+              opacity: 0.45,
+            }}
+          >
+            {/* Outer Base Ring */}
+            <div className="relative w-28 h-28 rounded-full border border-cyan-400/40 bg-zinc-950/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+              {/* Center Rest Guide */}
+              <div className="w-2 h-2 rounded-full bg-cyan-400/30" />
 
-        {/* Center: 2v2 Radar Ping Action Button (if 2v2) */}
-        {is2v2 && (
-          <div className="pointer-events-auto mb-1 flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => {
-                playClickSound()
-                onPing()
-              }}
-              className="w-12 h-12 rounded-2xl bg-cyan-950/75 active:bg-cyan-900 border-2 border-cyan-500/50 text-cyan-300 flex flex-col items-center justify-center shadow-lg active:scale-95 transition"
-              aria-label="Radar Ping"
-            >
-              <Radio className="w-5 h-5 animate-pulse" />
-              <span className="text-[8px] font-black tracking-wider">PING</span>
-            </button>
+              {/* Draggable Knob */}
+              <div
+                className="absolute w-12 h-12 rounded-full border border-cyan-300/50 bg-cyan-500/30 shadow-md flex items-center justify-center"
+                style={{
+                  transform: `translate(${moveVisual.knobX}px, ${moveVisual.knobY}px)`,
+                }}
+              >
+                <div className="w-3 h-3 rounded-full bg-white/70 shadow-inner" />
+              </div>
+            </div>
           </div>
         )}
+      </div>
 
-        {/* Right: Aiming & Shooting Virtual Joystick */}
-        <VirtualJoystick
-          label="Aim & Fire"
-          size={124}
-          maxDistance={42}
-          deadzone={10}
-          accentColor="amber"
-          isAim
-          isPortrait={isPortrait}
-          onMove={handleAimMove}
-          onRelease={handleAimRelease}
-          onTap={handleAimTap}
-          disabled={!isAlive}
-        />
+      {/* Subtle Halfway Divider Indicator */}
+      <div className="w-full h-px border-b border-dashed border-zinc-800/30 pointer-events-none" />
+
+      {/* ------------------------------------------------------------- */}
+      {/* Bottom Half: Dynamic Aim & Shoot Touch Zone (Draggable Anywhere in Bottom Half) */}
+      {/* ------------------------------------------------------------- */}
+      <div
+        ref={bottomZoneRef}
+        onPointerDown={handleAimPointerDown}
+        onPointerMove={handleAimPointerMove}
+        onPointerUp={handleAimPointerUp}
+        onPointerCancel={handleAimPointerUp}
+        className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
+      >
+        {/* Subtle Idle Guide Label */}
+        <div className="absolute bottom-3 right-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400/25 pointer-events-none select-none">
+          <Crosshair className="w-3.5 h-3.5" />
+          <span>Bottom Half: Touch & Aim to Fire</span>
+        </div>
+
+        {/* Floating Low-Opacity Aim & Shoot Joystick */}
+        {aimVisual.active && (
+          <div
+            className="absolute pointer-events-none transition-opacity duration-100"
+            style={{
+              left: aimVisual.x,
+              top: aimVisual.y,
+              transform: 'translate(-50%, -50%)',
+              opacity: 0.45,
+            }}
+          >
+            {/* Outer Base Ring */}
+            <div className="relative w-28 h-28 rounded-full border border-amber-400/40 bg-zinc-950/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+              {/* Direction Indicator on Outer Rim */}
+              {aimVisual.knobX !== 0 || aimVisual.knobY !== 0 ? (
+                <div
+                  className="absolute w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]"
+                  style={{
+                    transform: `translate(${Math.cos(aimVisual.angle) * 52}px, ${
+                      Math.sin(aimVisual.angle) * 52
+                    }px)`,
+                  }}
+                />
+              ) : null}
+
+              {/* Center Crosshair Rest */}
+              <div className="w-2 h-2 rounded-full bg-amber-400/30" />
+
+              {/* Draggable Knob */}
+              <div
+                className="absolute w-12 h-12 rounded-full border border-amber-300/50 bg-amber-500/30 shadow-md flex items-center justify-center"
+                style={{
+                  transform: `translate(${aimVisual.knobX}px, ${aimVisual.knobY}px)`,
+                }}
+              >
+                <Crosshair className="w-5 h-5 text-amber-200/80 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
 
