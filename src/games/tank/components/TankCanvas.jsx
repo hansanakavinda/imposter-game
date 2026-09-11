@@ -317,37 +317,127 @@ export default function TankCanvas({
           ctx.globalAlpha = 0.4
         }
 
+        const tr = tank.radius || TANK_RADIUS
+        const tankType = tank.tankType || 'striker'
+
         // Tank Hull Rotation
         ctx.save()
         ctx.rotate(tank.angle || 0)
 
         const teamColor = tank.team === 'blue' ? TEAMS.blue.color : TEAMS.red.color
 
-        // Tank Tracks (Left and Right)
-        ctx.fillStyle = '#27272a' // Zinc 800
-        ctx.fillRect(-TANK_RADIUS - 1, -TANK_RADIUS, (TANK_RADIUS + 1) * 2, 7)
-        ctx.fillRect(-TANK_RADIUS - 1, TANK_RADIUS - 7, (TANK_RADIUS + 1) * 2, 7)
+        if (tankType === 'titan') {
+          // --- TITAN: Heavy armored tracks & reinforced hull ---
+          ctx.fillStyle = '#18181b'
+          ctx.fillRect(-tr - 2, -tr, (tr + 2) * 2, 8)
+          ctx.fillRect(-tr - 2, tr - 8, (tr + 2) * 2, 8)
 
-        // Track tread lines
-        ctx.strokeStyle = '#52525b'
-        ctx.lineWidth = 1
-        for (let tx = -TANK_RADIUS; tx <= TANK_RADIUS; tx += 6) {
+          ctx.strokeStyle = '#3f3f46'
+          ctx.lineWidth = 1.5
+          for (let tx = -tr; tx <= tr; tx += 6) {
+            ctx.beginPath()
+            ctx.moveTo(tx, -tr)
+            ctx.lineTo(tx, -tr + 8)
+            ctx.moveTo(tx, tr - 8)
+            ctx.lineTo(tx, tr)
+            ctx.stroke()
+          }
+
+          ctx.fillStyle = teamColor
+          ctx.shadowColor = teamColor
+          ctx.shadowBlur = 7
           ctx.beginPath()
-          ctx.moveTo(tx, -TANK_RADIUS)
-          ctx.lineTo(tx, -TANK_RADIUS + 7)
-          ctx.moveTo(tx, TANK_RADIUS - 7)
-          ctx.lineTo(tx, TANK_RADIUS)
-          ctx.stroke()
-        }
+          ctx.roundRect(-tr + 1, -tr + 5.5, (tr - 1) * 2, (tr - 5.5) * 2, 5)
+          ctx.fill()
+          ctx.shadowBlur = 0
 
-        // Tank Chassis / Armor Body
-        ctx.fillStyle = teamColor
-        ctx.shadowColor = teamColor
-        ctx.shadowBlur = 6
-        ctx.beginPath()
-        ctx.roundRect(-TANK_RADIUS + 2, -TANK_RADIUS + 5, (TANK_RADIUS - 2) * 2, (TANK_RADIUS - 5) * 2, 4)
-        ctx.fill()
-        ctx.shadowBlur = 0
+          ctx.fillStyle = 'rgba(24, 24, 27, 0.65)'
+          ctx.fillRect(-tr + 3, -tr + 7, 5, (tr - 7) * 2)
+          ctx.fillRect(tr - 8, -tr + 7, 5, (tr - 7) * 2)
+        } else if (tankType === 'specter') {
+          // --- SPECTER: Aerodynamic, sleek compact scout hull ---
+          ctx.fillStyle = '#27272a'
+          ctx.fillRect(-tr - 1, -tr, (tr + 1) * 2, 5.5)
+          ctx.fillRect(-tr - 1, tr - 5.5, (tr + 1) * 2, 5.5)
+
+          ctx.strokeStyle = '#52525b'
+          ctx.lineWidth = 1
+          for (let tx = -tr; tx <= tr; tx += 5) {
+            ctx.beginPath()
+            ctx.moveTo(tx, -tr)
+            ctx.lineTo(tx, -tr + 5.5)
+            ctx.moveTo(tx, tr - 5.5)
+            ctx.lineTo(tx, tr)
+            ctx.stroke()
+          }
+
+          ctx.fillStyle = teamColor
+          ctx.shadowColor = teamColor
+          ctx.shadowBlur = 8
+          ctx.beginPath()
+          ctx.moveTo(-tr + 1, -tr + 4.5)
+          ctx.lineTo(tr + 2, -tr + 7)
+          ctx.lineTo(tr + 2, tr - 7)
+          ctx.lineTo(-tr + 1, tr - 4.5)
+          ctx.closePath()
+          ctx.fill()
+          ctx.shadowBlur = 0
+
+          ctx.fillStyle = '#38bdf8'
+          ctx.fillRect(-tr - 2, -3, 2.5, 6)
+        } else if (tankType === 'ballista') {
+          // --- BALLISTA: Precision sniper chassis with stabilization pads ---
+          ctx.fillStyle = '#27272a'
+          ctx.fillRect(-tr - 1, -tr, (tr + 1) * 2, 6.5)
+          ctx.fillRect(-tr - 1, tr - 6.5, (tr + 1) * 2, 6.5)
+
+          ctx.strokeStyle = '#52525b'
+          ctx.lineWidth = 1
+          for (let tx = -tr; tx <= tr; tx += 6) {
+            ctx.beginPath()
+            ctx.moveTo(tx, -tr)
+            ctx.lineTo(tx, -tr + 6.5)
+            ctx.moveTo(tx, tr - 6.5)
+            ctx.lineTo(tx, tr)
+            ctx.stroke()
+          }
+
+          ctx.fillStyle = teamColor
+          ctx.shadowColor = teamColor
+          ctx.shadowBlur = 6
+          ctx.beginPath()
+          ctx.roundRect(-tr + 2, -tr + 5, (tr - 2) * 2, (tr - 5) * 2, 3)
+          ctx.fill()
+          ctx.shadowBlur = 0
+
+          ctx.fillStyle = 'rgba(24, 24, 27, 0.7)'
+          ctx.fillRect(-6, -tr - 2, 12, 2.5)
+          ctx.fillRect(-6, tr - 0.5, 12, 2.5)
+        } else {
+          // --- STRIKER: Classic balanced assault tank ---
+          ctx.fillStyle = '#27272a'
+          ctx.fillRect(-tr - 1, -tr, (tr + 1) * 2, 7)
+          ctx.fillRect(-tr - 1, tr - 7, (tr + 1) * 2, 7)
+
+          ctx.strokeStyle = '#52525b'
+          ctx.lineWidth = 1
+          for (let tx = -tr; tx <= tr; tx += 6) {
+            ctx.beginPath()
+            ctx.moveTo(tx, -tr)
+            ctx.lineTo(tx, -tr + 7)
+            ctx.moveTo(tx, tr - 7)
+            ctx.lineTo(tx, tr)
+            ctx.stroke()
+          }
+
+          ctx.fillStyle = teamColor
+          ctx.shadowColor = teamColor
+          ctx.shadowBlur = 6
+          ctx.beginPath()
+          ctx.roundRect(-tr + 2, -tr + 5, (tr - 2) * 2, (tr - 5) * 2, 4)
+          ctx.fill()
+          ctx.shadowBlur = 0
+        }
 
         ctx.restore() // End Hull Rotation
 
@@ -355,21 +445,79 @@ export default function TankCanvas({
         ctx.save()
         ctx.rotate(tank.turretAngle || tank.angle || 0)
 
-        // Cannon Barrel
-        ctx.fillStyle = '#d4d4d8'
-        ctx.fillRect(0, -3, TANK_RADIUS + 8, 6)
-        ctx.strokeStyle = '#71717a'
-        ctx.lineWidth = 1
-        ctx.strokeRect(0, -3, TANK_RADIUS + 8, 6)
+        if (tankType === 'titan') {
+          // Heavy Cannon Barrel (Thick + muzzle brake)
+          ctx.fillStyle = '#a1a1aa'
+          ctx.fillRect(0, -4, tr + 8, 8)
+          ctx.strokeStyle = '#52525b'
+          ctx.lineWidth = 1.2
+          ctx.strokeRect(0, -4, tr + 8, 8)
 
-        // Turret Center Hatch
-        ctx.fillStyle = '#18181b'
-        ctx.beginPath()
-        ctx.arc(0, 0, 7, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.strokeStyle = teamColor
-        ctx.lineWidth = 2
-        ctx.stroke()
+          ctx.fillStyle = '#27272a'
+          ctx.fillRect(tr + 6, -5.5, 5, 11)
+          ctx.strokeRect(tr + 6, -5.5, 5, 11)
+
+          ctx.fillStyle = '#18181b'
+          ctx.beginPath()
+          ctx.arc(0, 0, 8.5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = teamColor
+          ctx.lineWidth = 2.5
+          ctx.stroke()
+        } else if (tankType === 'specter') {
+          // Rapid Autocannon Barrel (Slim, fast profile)
+          ctx.fillStyle = '#e4e4e7'
+          ctx.fillRect(0, -2, tr + 8, 4)
+          ctx.strokeStyle = '#71717a'
+          ctx.lineWidth = 1
+          ctx.strokeRect(0, -2, tr + 8, 4)
+
+          ctx.fillStyle = '#18181b'
+          ctx.beginPath()
+          ctx.arc(0, 0, 5.5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = teamColor
+          ctx.lineWidth = 1.8
+          ctx.stroke()
+        } else if (tankType === 'ballista') {
+          // Long-Range Precision Railgun Barrel (Elongated with rail rings)
+          ctx.fillStyle = '#d4d4d8'
+          ctx.fillRect(0, -2.5, tr + 19, 5)
+          ctx.strokeStyle = '#71717a'
+          ctx.lineWidth = 1
+          ctx.strokeRect(0, -2.5, tr + 19, 5)
+
+          ctx.fillStyle = '#c084fc'
+          ctx.fillRect(tr + 4, -3.5, 2.5, 7)
+          ctx.fillRect(tr + 11, -3.5, 2.5, 7)
+
+          ctx.fillStyle = '#18181b'
+          ctx.beginPath()
+          ctx.arc(0, 0, 6.5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = teamColor
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.fillStyle = '#c084fc'
+          ctx.beginPath()
+          ctx.arc(2, 0, 1.8, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          // Standard Assault Cannon Barrel
+          ctx.fillStyle = '#d4d4d8'
+          ctx.fillRect(0, -3, tr + 8, 6)
+          ctx.strokeStyle = '#71717a'
+          ctx.lineWidth = 1
+          ctx.strokeRect(0, -3, tr + 8, 6)
+
+          ctx.fillStyle = '#18181b'
+          ctx.beginPath()
+          ctx.arc(0, 0, 7, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = teamColor
+          ctx.lineWidth = 2
+          ctx.stroke()
+        }
 
         ctx.restore() // End Turret Rotation
 
@@ -378,7 +526,7 @@ export default function TankCanvas({
           ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)' // Emerald
           ctx.lineWidth = 2.5
           ctx.beginPath()
-          ctx.arc(0, 0, TANK_RADIUS + 6, 0, Math.PI * 2)
+          ctx.arc(0, 0, tr + 6, 0, Math.PI * 2)
           ctx.stroke()
         }
 
@@ -423,8 +571,8 @@ export default function TankCanvas({
         const currentHp = Math.max(0, tank.hp !== undefined ? tank.hp : maxHp)
 
         // Health Bar & Nameplate Distances
-        const barDistY = sideSign * (TANK_RADIUS + 7)
-        const nameDistY = sideSign * (TANK_RADIUS + 16)
+        const barDistY = sideSign * (tr + 7)
+        const nameDistY = sideSign * (tr + 16)
 
         const totalBarHeight = 25
         const segmentCount = maxHp

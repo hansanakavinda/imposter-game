@@ -12,7 +12,7 @@ import {
   Heart,
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
-import { WEAPON_TYPES } from '../constants/tankConstants'
+import { WEAPON_TYPES, TANK_TYPES, DEFAULT_TANK_TYPE } from '../constants/tankConstants'
 
 export default function TankControls({
   onInputChange,
@@ -21,6 +21,7 @@ export default function TankControls({
   onPing,
   activeWeapon = 'STANDARD',
   hasShield = false,
+  tankType = DEFAULT_TANK_TYPE,
   isAlive = true,
   hp = 3,
   maxHp = 3,
@@ -33,6 +34,7 @@ export default function TankControls({
   onToggleSound,
 }) {
   const currentWeapon = WEAPON_TYPES[activeWeapon] || WEAPON_TYPES.STANDARD
+  const currentTankCfg = TANK_TYPES[tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
 
   // Ref callbacks to avoid stale closures
   const onFireRef = useRef(onFire)
@@ -332,6 +334,17 @@ export default function TankControls({
               {hp}/{maxHp}
             </span>
           </div>
+
+          {/* Active Tank Class Badge */}
+          {currentTankCfg && (
+            <div
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] font-black ${currentTankCfg.badgeColor}`}
+              title={currentTankCfg.tagline}
+            >
+              <span>{currentTankCfg.icon}</span>
+              <span className="hidden sm:inline uppercase">{currentTankCfg.name}</span>
+            </div>
+          )}
 
           {/* Active Weapon Indicator */}
           <div className="flex items-center gap-1.5 font-bold">

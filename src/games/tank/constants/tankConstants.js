@@ -127,3 +127,113 @@ export const WEAPON_TYPES = {
 
 export const CRATE_DROP_INTERVAL_MS = 22000
 export const CRATE_SIZE = 24
+
+export const TANK_TYPES = {
+  striker: {
+    id: 'striker',
+    name: 'Striker',
+    role: 'Assault',
+    icon: '⚔️',
+    tagline: 'Balanced All-Rounder',
+    description: 'Versatile combatant with balanced mobility, 3 HP armor, and standard cannon fire rate.',
+    maxHp: 3,
+    speed: 2.4,
+    reverseSpeed: 1.4,
+    turnSpeed: 0.052,
+    radius: 16,
+    cooldownMs: 480,
+    bulletSpeed: 5.4,
+    bulletRadius: 3.5,
+    bulletColor: '#fbbf24', // Amber
+    stats: {
+      hp: 3,
+      speed: 3,
+      fireRate: 3,
+      range: 3,
+    },
+    accentColor: 'text-amber-400',
+    borderColor: 'border-amber-500/50',
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  },
+  titan: {
+    id: 'titan',
+    name: 'Titan',
+    role: 'Juggernaut',
+    icon: '🛡️',
+    tagline: 'Fortified 4 HP Armor',
+    description: 'Heavily armored juggernaut boasting 4 HP and heavy cannon shells. Slower hull movement.',
+    maxHp: 4,
+    speed: 1.85,
+    reverseSpeed: 1.1,
+    turnSpeed: 0.040,
+    radius: 18,
+    cooldownMs: 640,
+    bulletSpeed: 4.8,
+    bulletRadius: 4.4,
+    bulletColor: '#f97316', // Orange
+    stats: {
+      hp: 4,
+      speed: 1,
+      fireRate: 2,
+      range: 2,
+    },
+    accentColor: 'text-orange-400',
+    borderColor: 'border-orange-500/50',
+    badgeColor: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+  },
+  specter: {
+    id: 'specter',
+    name: 'Specter',
+    role: 'Scout',
+    icon: '⚡',
+    tagline: 'High-Speed Autocannon',
+    description: 'Extremely agile speedster with rapid-fire autocannon. High skill ceiling with fragile 2 HP.',
+    maxHp: 2,
+    speed: 3.1,
+    reverseSpeed: 1.8,
+    turnSpeed: 0.066,
+    radius: 14.5,
+    cooldownMs: 330,
+    bulletSpeed: 6.0,
+    bulletRadius: 3.0,
+    bulletColor: '#38bdf8', // Sky Cyan
+    stats: {
+      hp: 2,
+      speed: 4,
+      fireRate: 4,
+      range: 3,
+    },
+    accentColor: 'text-sky-400',
+    borderColor: 'border-sky-500/50',
+    badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  },
+  ballista: {
+    id: 'ballista',
+    name: 'Ballista',
+    role: 'Sniper',
+    icon: '🎯',
+    tagline: 'High-Velocity Railgun',
+    description: 'Long-barrel precision sniper firing high-velocity shells across the arena. Longer reload.',
+    maxHp: 3,
+    speed: 2.1,
+    reverseSpeed: 1.25,
+    turnSpeed: 0.046,
+    radius: 16,
+    cooldownMs: 740,
+    bulletSpeed: 7.6,
+    bulletRadius: 3.5,
+    bulletColor: '#c084fc', // Violet
+    stats: {
+      hp: 3,
+      speed: 2,
+      fireRate: 1,
+      range: 4,
+    },
+    accentColor: 'text-purple-400',
+    borderColor: 'border-purple-500/50',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+  },
+}
+
+export const DEFAULT_TANK_TYPE = 'striker'
+

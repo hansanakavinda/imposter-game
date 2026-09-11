@@ -9,7 +9,7 @@ import {
   Share2,
   Sparkles,
 } from 'lucide-react'
-import { MODES, TEAMS } from '../constants/tankConstants'
+import { MODES, TEAMS, TANK_TYPES, DEFAULT_TANK_TYPE } from '../constants/tankConstants'
 import { playClickSound } from '../../../utils/sound'
 
 export default function TankLobby({
@@ -22,9 +22,11 @@ export default function TankLobby({
   onChangePlayerName,
   isHost,
   connectionStatus,
-  players, // array of { id, name, peerId, slotId, team, isReady, isHost }
+  players, // array of { id, name, peerId, slotId, team, isReady, isHost, tankType }
   mySlotId,
   myPeerId,
+  selectedTank = DEFAULT_TANK_TYPE,
+  onSelectTank,
   onSelectSlot,
   onToggleReady,
   onStartGame,
@@ -60,10 +62,139 @@ export default function TankLobby({
     }
   }
 
+  const renderTankSelector = () => (
+    <div className="w-full bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 mb-4 shadow-xl space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block flex items-center gap-1.5">
+            <span className="text-base">🚜</span>
+            <span>Choose Your Battle Tank</span>
+          </label>
+          <span className="text-[11px] text-zinc-400">
+            All commanders can select any tank class. Same-tank squads are allowed!
+          </span>
+        </div>
+        {selectedTank && TANK_TYPES[selectedTank] && (
+          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border ${TANK_TYPES[selectedTank].badgeColor}`}>
+            {TANK_TYPES[selectedTank].icon} {TANK_TYPES[selectedTank].name}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {Object.values(TANK_TYPES).map((tank) => {
+          const isSelected = selectedTank === tank.id
+          return (
+            <button
+              key={tank.id}
+              type="button"
+              onClick={() => {
+                playClickSound()
+                onSelectTank?.(tank.id)
+              }}
+              className={`p-3 rounded-xl border flex flex-col text-left transition relative cursor-pointer ${
+                isSelected
+                  ? `bg-zinc-800/90 ${tank.borderColor} ring-2 ring-cyan-500/70 shadow-lg shadow-cyan-500/10`
+                  : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700 text-zinc-400 hover:text-white'
+              }`}
+            >
+              {isSelected && (
+                <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center shadow-xs">
+                  <Check className="w-2.5 h-2.5 text-zinc-950 stroke-[3]" />
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-xl">{tank.icon}</span>
+                <div>
+                  <span className={`font-black text-sm block leading-tight ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
+                    {tank.name}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 uppercase font-semibold">
+                    {tank.role}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-zinc-400 leading-tight mb-2.5 line-clamp-2">
+                {tank.description}
+              </p>
+
+              {/* Quick Stat Bars */}
+              <div className="space-y-1 mt-auto pt-2 border-t border-zinc-800/60 text-[9px] font-bold">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Armor ({tank.maxHp} HP):</span>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2 h-1.5 rounded-xs ${
+                          i < tank.stats.hp
+                            ? tank.stats.hp === 4
+                              ? 'bg-orange-400'
+                              : tank.stats.hp === 2
+                              ? 'bg-rose-400'
+                              : 'bg-amber-400'
+                            : 'bg-zinc-800'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Speed:</span>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2 h-1.5 rounded-xs ${
+                          i < tank.stats.speed ? 'bg-cyan-400' : 'bg-zinc-800'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Fire Rate:</span>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2 h-1.5 rounded-xs ${
+                          i < tank.stats.fireRate ? 'bg-emerald-400' : 'bg-zinc-800'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Velocity:</span>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2 h-1.5 rounded-xs ${
+                          i < tank.stats.range ? 'bg-purple-400' : 'bg-zinc-800'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   // Not yet in a room (Landing / Setup screen)
   if (!roomCode || connectionStatus === 'disconnected' || connectionStatus === 'idle') {
     return (
-      <div className="w-full max-w-md mx-auto px-4 py-4 flex flex-col items-center justify-center my-auto select-none animate-fadeIn">
+      <div className="w-full max-w-xl mx-auto px-4 py-4 flex flex-col items-center justify-center my-auto select-none animate-fadeIn">
         {/* Header */}
         <div className="text-center mb-6 space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-400">
@@ -92,6 +223,9 @@ export default function TankLobby({
             className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-white font-semibold text-sm focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
           />
         </div>
+
+        {/* Tank Selector on Landing */}
+        {renderTankSelector(true)}
 
         {/* Mode Selector */}
         <div className="w-full bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 mb-4 shadow-xl space-y-3">
@@ -264,6 +398,9 @@ export default function TankLobby({
         </div>
       </div>
 
+      {/* Tank Selector Inside Room */}
+      {renderTankSelector(false)}
+
       {/* Team Roster Layout */}
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         {/* Team Blue Column */}
@@ -281,6 +418,7 @@ export default function TankLobby({
           <div className="space-y-2">
             {blueSlots.map((slot) => {
               const occupant = players.find((p) => p.slotId === slot.id)
+              const tankCfg = occupant ? (TANK_TYPES[occupant.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]) : null
               const isMe =
                 occupant &&
                 ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
@@ -304,13 +442,13 @@ export default function TankLobby({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm ${
                         occupant
                           ? 'bg-cyan-500 text-zinc-950 shadow-md shadow-cyan-500/20'
                           : 'bg-zinc-800 text-zinc-500'
                       }`}
                     >
-                      🚜
+                      {occupant && tankCfg ? tankCfg.icon : '🚜'}
                     </div>
                     <div className="truncate">
                       <div className="font-bold text-xs text-white truncate flex items-center gap-1.5">
@@ -326,7 +464,14 @@ export default function TankLobby({
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-zinc-500 block">{slot.label}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-zinc-500">{slot.label}</span>
+                        {occupant && tankCfg && (
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-black border uppercase ${tankCfg.badgeColor}`}>
+                            {tankCfg.icon} {tankCfg.name}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -373,6 +518,7 @@ export default function TankLobby({
           <div className="space-y-2">
             {redSlots.map((slot) => {
               const occupant = players.find((p) => p.slotId === slot.id)
+              const tankCfg = occupant ? (TANK_TYPES[occupant.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]) : null
               const isMe =
                 occupant &&
                 ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
@@ -396,13 +542,13 @@ export default function TankLobby({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm ${
                         occupant
                           ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
                           : 'bg-zinc-800 text-zinc-500'
                       }`}
                     >
-                      🚜
+                      {occupant && tankCfg ? tankCfg.icon : '🚜'}
                     </div>
                     <div className="truncate">
                       <div className="font-bold text-xs text-white truncate flex items-center gap-1.5">
@@ -418,7 +564,14 @@ export default function TankLobby({
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-zinc-500 block">{slot.label}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-zinc-500 block">{slot.label}</span>
+                        {occupant && tankCfg && (
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-black border uppercase ${tankCfg.badgeColor}`}>
+                            {tankCfg.icon} {tankCfg.name}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

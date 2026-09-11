@@ -102,10 +102,11 @@ export function isTankHiddenFrom(targetTank, observerTank, obstacles) {
 export function moveTankWithCollision(tank, targetX, targetY, obstacles, barrels, allTanks = []) {
   let newX = targetX
   let newY = targetY
+  const tr = tank.radius || TANK_RADIUS
 
   // 1. Clamp to Arena Boundaries
-  newX = Math.max(TANK_RADIUS + 4, Math.min(ARENA_WIDTH - TANK_RADIUS - 4, newX))
-  newY = Math.max(TANK_RADIUS + 4, Math.min(ARENA_HEIGHT - TANK_RADIUS - 4, newY))
+  newX = Math.max(tr + 4, Math.min(ARENA_WIDTH - tr - 4, newX))
+  newY = Math.max(tr + 4, Math.min(ARENA_HEIGHT - tr - 4, newY))
 
   // 2. Resolve collisions against solid obstacles (STEEL, BRICK, WATER)
   for (const obs of obstacles) {
@@ -114,7 +115,7 @@ export function moveTankWithCollision(tank, targetX, targetY, obstacles, barrels
       (obs.type === TERRAIN_TYPES.BRICK && (obs.hp || 0) > 0) ||
       obs.type === TERRAIN_TYPES.WATER
     ) {
-      const col = testCircleRect(newX, newY, TANK_RADIUS, obs.x, obs.y, obs.width, obs.height)
+      const col = testCircleRect(newX, newY, tr, obs.x, obs.y, obs.width, obs.height)
       if (col.collided) {
         newX += col.normal.x * col.depth
         newY += col.normal.y * col.depth
@@ -128,7 +129,7 @@ export function moveTankWithCollision(tank, targetX, targetY, obstacles, barrels
       if (barrel.hp > 0) {
         const dx = newX - barrel.x
         const dy = newY - barrel.y
-        const minDist = TANK_RADIUS + barrel.radius
+        const minDist = tr + barrel.radius
         const distSq = dx * dx + dy * dy
         if (distSq < minDist * minDist) {
           const dist = Math.sqrt(distSq) || 0.001
@@ -144,9 +145,10 @@ export function moveTankWithCollision(tank, targetX, targetY, obstacles, barrels
   if (allTanks) {
     for (const other of allTanks) {
       if (other.id !== tank.id && other.isAlive) {
+        const otherR = other.radius || TANK_RADIUS
         const dx = newX - other.x
         const dy = newY - other.y
-        const minDist = TANK_RADIUS * 2
+        const minDist = tr + otherR
         const distSq = dx * dx + dy * dy
         if (distSq < minDist * minDist) {
           const dist = Math.sqrt(distSq) || 0.001

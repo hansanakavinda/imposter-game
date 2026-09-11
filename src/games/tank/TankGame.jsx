@@ -19,6 +19,8 @@ import {
   WEAPON_TYPES,
   TARGET_SCORE_DEFAULT,
   TANK_MAX_HP,
+  TANK_TYPES,
+  DEFAULT_TANK_TYPE,
   CRATE_DROP_INTERVAL_MS,
   CRATE_SIZE,
 } from './constants/tankConstants'
@@ -65,6 +67,13 @@ export default function TankGame({
   const [players, setPlayers] = useState([]) // array of { id, name, peerId, slotId, team, isReady, isHost }
   const [mySlotId, setMySlotId] = useState('p1')
   const [myPeerId, setMyPeerId] = useState('')
+  const [selectedTank, setSelectedTank] = useState(() => {
+    try {
+      return localStorage.getItem('tank_selected_type') || DEFAULT_TANK_TYPE
+    } catch {
+      return DEFAULT_TANK_TYPE
+    }
+  })
   const [error, setError] = useState(null)
 
   // Game Flow State
@@ -227,17 +236,27 @@ export default function TankGame({
       const spawn = spawns[slot.id] || { x: 100, y: 300, angle: 0 }
 
       if (p) {
+        const tankConfig = TANK_TYPES[p.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
         initialTanks.push({
           id: slot.id,
           slotId: slot.id,
           name: p.name,
           team: slot.team,
+          tankType: p.tankType || DEFAULT_TANK_TYPE,
           x: spawn.x,
           y: spawn.y,
           angle: spawn.angle,
           turretAngle: spawn.angle,
-          hp: TANK_MAX_HP,
-          maxHp: TANK_MAX_HP,
+          hp: tankConfig.maxHp,
+          maxHp: tankConfig.maxHp,
+          speed: tankConfig.speed,
+          reverseSpeed: tankConfig.reverseSpeed,
+          turnSpeed: tankConfig.turnSpeed,
+          radius: tankConfig.radius,
+          cooldownMs: tankConfig.cooldownMs,
+          bulletSpeed: tankConfig.bulletSpeed,
+          bulletRadius: tankConfig.bulletRadius,
+          bulletColor: tankConfig.bulletColor,
           isAlive: true,
           shield: false,
           weapon: 'STANDARD',
@@ -348,28 +367,32 @@ export default function TankGame({
       let targetX = tank.x
       let targetY = tank.y
 
+      const turnSpeed = tank.turnSpeed || TANK_TURN_SPEED
+      const moveSpeed = tank.speed || TANK_SPEED
+      const revSpeed = tank.reverseSpeed || TANK_REVERSE_SPEED
+
       if (input.isMoving && input.moveAngle !== undefined && input.moveAngle !== null) {
         // Virtual Joystick steering & driving
         const diff = Math.atan2(Math.sin(input.moveAngle - newAngle), Math.cos(input.moveAngle - newAngle))
-        const maxTurn = TANK_TURN_SPEED * 1.5
+        const maxTurn = turnSpeed * 1.5
         if (Math.abs(diff) > 0.05) {
           newAngle += Math.sign(diff) * Math.min(Math.abs(diff), maxTurn)
         }
 
         const alignment = Math.max(0, Math.cos(diff))
-        const currentSpeed = TANK_SPEED * speedMult * (input.moveMagnitude || 1.0) * (0.35 + 0.65 * alignment)
+        const currentSpeed = moveSpeed * speedMult * (input.moveMagnitude || 1.0) * (0.35 + 0.65 * alignment)
         targetX += Math.cos(newAngle) * currentSpeed
         targetY += Math.sin(newAngle) * currentSpeed
       } else {
         // Desktop keyboard controls (WASD / Arrows)
-        if (input.steerLeft) newAngle -= TANK_TURN_SPEED
-        if (input.steerRight) newAngle += TANK_TURN_SPEED
+        if (input.steerLeft) newAngle -= turnSpeed
+        if (input.steerRight) newAngle += turnSpeed
         if (input.forward) {
-          targetX += Math.cos(newAngle) * TANK_SPEED * speedMult
-          targetY += Math.sin(newAngle) * TANK_SPEED * speedMult
+          targetX += Math.cos(newAngle) * moveSpeed * speedMult
+          targetY += Math.sin(newAngle) * moveSpeed * speedMult
         } else if (input.reverse) {
-          targetX -= Math.cos(newAngle) * TANK_REVERSE_SPEED * speedMult
-          targetY -= Math.sin(newAngle) * TANK_REVERSE_SPEED * speedMult
+          targetX -= Math.cos(newAngle) * revSpeed * speedMult
+          targetY -= Math.sin(newAngle) * revSpeed * speedMult
         }
       }
 
@@ -399,9 +422,10 @@ export default function TankGame({
         for (let i = 0; i < updatedTanks.length; i++) {
           const t = updatedTanks[i]
           if (t.isAlive) {
+            const tr = t.radius || TANK_RADIUS
             const dx = t.x - crate.x
             const dy = t.y - crate.y
-            if (dx * dx + dy * dy < (TANK_RADIUS + CRATE_SIZE / 2) * (TANK_RADIUS + CRATE_SIZE / 2)) {
+            if (dx * dx + dy * dy < (tr + CRATE_SIZE / 2) * (tr + CRATE_SIZE / 2)) {
               pickedBy = t
               break
             }
@@ -530,15 +554,16 @@ export default function TankGame({
           let tankDied = false
           updatedTanks = updatedTanks.map((t) => {
             if (!t.isAlive || t.team === bullet.team) return t
+            const tr = t.radius || TANK_RADIUS
             const dx = bx - t.x
             const dy = by - t.y
-            if (dx * dx + dy * dy < (bullet.radius + TANK_RADIUS) * (bullet.radius + TANK_RADIUS)) {
+            if (dx * dx + dy * dy < (bullet.radius + tr) * (bullet.radius + tr)) {
               hitTank = t
               if (t.shield) {
                 return { ...t, shield: false }
               }
               const bulletDmg = bullet.damage || 1
-              const currentHp = t.hp !== undefined ? t.hp : TANK_MAX_HP
+              const currentHp = t.hp !== undefined ? t.hp : (t.maxHp || TANK_MAX_HP)
               const nextHp = Math.max(0, currentHp - bulletDmg)
               if (nextHp <= 0) {
                 tankDied = true
@@ -639,17 +664,29 @@ export default function TankGame({
     const myTank = currentTanks.find((t) => t.slotId === mySlotIdRef.current)
     if (!myTank || !myTank.isAlive) return
 
-    const weaponCfg = WEAPON_TYPES[myTank.weapon] || WEAPON_TYPES.STANDARD
-    if (Date.now() - lastFiredTimeRef.current < weaponCfg.cooldownMs) {
+    const tankTypeCfg = TANK_TYPES[myTank.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
+    const isCrateWeapon = myTank.weapon && myTank.weapon !== 'STANDARD'
+    const crateCfg = isCrateWeapon ? WEAPON_TYPES[myTank.weapon] : null
+
+    const cooldownMs = crateCfg ? crateCfg.cooldownMs : (myTank.cooldownMs || tankTypeCfg.cooldownMs)
+    if (Date.now() - lastFiredTimeRef.current < cooldownMs) {
       return // Still in cooldown
     }
     lastFiredTimeRef.current = Date.now()
 
     playTankShootSound()
 
-    const spawnDist = TANK_RADIUS + 12
+    const tankRadius = myTank.radius || tankTypeCfg.radius || TANK_RADIUS
+    const spawnDist = tankRadius + 12
     const muzzleX = myTank.x + Math.cos(myTank.turretAngle) * spawnDist
     const muzzleY = myTank.y + Math.sin(myTank.turretAngle) * spawnDist
+
+    const shellSpeed = crateCfg ? crateCfg.speed : (myTank.bulletSpeed || tankTypeCfg.bulletSpeed)
+    const shellRadius = crateCfg
+      ? (myTank.weapon === 'ROCKET' ? 5.5 : BULLET_RADIUS)
+      : (myTank.bulletRadius || tankTypeCfg.bulletRadius)
+    const shellDamage = crateCfg?.damage || (myTank.weapon === 'ROCKET' ? 2 : 1)
+    const shellColor = crateCfg ? crateCfg.color : (myTank.bulletColor || tankTypeCfg.bulletColor)
 
     if (myTank.weapon === 'SHOTGUN') {
       // 3 spreading pellets
@@ -658,11 +695,11 @@ export default function TankGame({
         id: `bullet_${Date.now()}_${Math.random()}`,
         x: muzzleX,
         y: muzzleY,
-        vx: Math.cos(ang) * weaponCfg.speed,
-        vy: Math.sin(ang) * weaponCfg.speed,
-        radius: BULLET_RADIUS,
-        damage: weaponCfg.damage || 1,
-        color: weaponCfg.color,
+        vx: Math.cos(ang) * shellSpeed,
+        vy: Math.sin(ang) * shellSpeed,
+        radius: shellRadius,
+        damage: shellDamage,
+        color: shellColor,
         bounces: 0,
         maxBounces: 0,
         team: myTank.team,
@@ -682,11 +719,11 @@ export default function TankGame({
         id: `bullet_${Date.now()}`,
         x: muzzleX,
         y: muzzleY,
-        vx: Math.cos(myTank.turretAngle) * weaponCfg.speed,
-        vy: Math.sin(myTank.turretAngle) * weaponCfg.speed,
-        radius: myTank.weapon === 'ROCKET' ? 5.5 : BULLET_RADIUS,
-        damage: weaponCfg.damage || (myTank.weapon === 'ROCKET' ? 2 : 1),
-        color: weaponCfg.color,
+        vx: Math.cos(myTank.turretAngle) * shellSpeed,
+        vy: Math.sin(myTank.turretAngle) * shellSpeed,
+        radius: shellRadius,
+        damage: shellDamage,
+        color: shellColor,
         bounces: 0,
         maxBounces: 0,
         team: myTank.team,
@@ -879,6 +916,7 @@ export default function TankGame({
       peerId: clientPeerId,
       slotId: assignedSlotId,
       team: assignedTeam,
+      tankType: clientPlayer?.tankType || DEFAULT_TANK_TYPE,
       isReady: false,
       isHost: false,
     }
@@ -959,6 +997,26 @@ export default function TankGame({
             if (!isMatch) return p
             const newReady = typeof data.isReady === 'boolean' ? data.isReady : !p.isReady
             return { ...p, isReady: newReady }
+          })
+          playersRef.current = updated
+          setPlayers(updated)
+          networkRef.current?.broadcast({
+            type: 'LOBBY_STATE',
+            players: updated,
+            mode: modeRef.current,
+          })
+        }
+        break
+      }
+
+      case 'SELECT_TANK': {
+        if (isHostRef.current && data.tankType && TANK_TYPES[data.tankType]) {
+          const senderPeerId = _senderPeerId || data.peerId
+          const updated = playersRef.current.map((p) => {
+            const isMatch =
+              (senderPeerId && p.peerId === senderPeerId) ||
+              (data.slotId && p.slotId === data.slotId)
+            return isMatch ? { ...p, tankType: data.tankType } : p
           })
           playersRef.current = updated
           setPlayers(updated)
@@ -1187,6 +1245,7 @@ export default function TankGame({
       name: playerName || 'Host_Commander',
       slotId: 'p1',
       team: 'blue',
+      tankType: selectedTank || DEFAULT_TANK_TYPE,
       isReady: false,
       isHost: true,
     }
@@ -1228,6 +1287,7 @@ export default function TankGame({
     const myPlayer = {
       id: `player_${Date.now()}`,
       name: playerName || 'Commander',
+      tankType: selectedTank || DEFAULT_TANK_TYPE,
       isReady: false,
       isHost: false,
     }
@@ -1329,6 +1389,43 @@ export default function TankGame({
     }
   }
 
+  // Select Tank in Lobby
+  const handleSelectTank = (tankType) => {
+    if (!TANK_TYPES[tankType]) return
+    setSelectedTank(tankType)
+    try {
+      localStorage.setItem('tank_selected_type', tankType)
+    } catch {}
+
+    const mySlot = mySlotIdRef.current
+    const myPeer = networkRef.current?.myPeerId
+
+    if (isHostRef.current) {
+      const updated = playersRef.current.map((p) =>
+        p.slotId === mySlot || (myPeer && p.peerId === myPeer) ? { ...p, tankType } : p
+      )
+      playersRef.current = updated
+      setPlayers(updated)
+      networkRef.current?.broadcast({
+        type: 'LOBBY_STATE',
+        players: updated,
+        mode: modeRef.current,
+      })
+    } else {
+      const updated = playersRef.current.map((p) =>
+        p.slotId === mySlot || (myPeer && p.peerId === myPeer) ? { ...p, tankType } : p
+      )
+      playersRef.current = updated
+      setPlayers(updated)
+      networkRef.current?.sendToHost({
+        type: 'SELECT_TANK',
+        tankType,
+        slotId: mySlot,
+        peerId: myPeer,
+      })
+    }
+  }
+
   const handleSelectMode = (newMode) => {
     setMode(newMode)
     modeRef.current = newMode
@@ -1360,18 +1457,21 @@ export default function TankGame({
   // Rematch
   const handleRematch = () => {
     if (!isHostRef.current) return
-    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, currentMapIndexRef.current + 1)
+    scoreRef.current = { blue: 0, red: 0 }
+    setScore({ blue: 0, red: 0 })
+    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, 0)
     setGamePhase('battle')
-    setMatchWinner(null)
 
     networkRef.current?.broadcast({
-      type: 'REMATCH_START',
+      type: 'START_MATCH',
+      score: { blue: 0, red: 0 },
       tanks: initialWorld.tanks,
       obstacles: initialWorld.obstacles,
       barrels: initialWorld.barrels,
     })
   }
 
+  // Leave Room
   const handleLeaveRoom = () => {
     if (simulationTimerRef.current) {
       clearInterval(simulationTimerRef.current)
@@ -1381,14 +1481,17 @@ export default function TankGame({
       networkRef.current.destroy()
       networkRef.current = null
     }
-    setRoomCode('')
-    setInputCode('')
-    setIsHost(false)
-    isHostRef.current = false
     setGamePhase('lobby')
     setConnectionStatus('idle')
+    setRoomCode('')
     setPlayers([])
     playersRef.current = []
+    setTanks([])
+    tanksRef.current = []
+    setBullets([])
+    bulletsRef.current = []
+    setIsHost(false)
+    isHostRef.current = false
     setMySlotId('p1')
     mySlotIdRef.current = 'p1'
     setMyPeerId('')
@@ -1414,6 +1517,8 @@ export default function TankGame({
           players={players}
           mySlotId={mySlotId}
           myPeerId={myPeerId}
+          selectedTank={selectedTank}
+          onSelectTank={handleSelectTank}
           onSelectSlot={handleSelectSlot}
           onToggleReady={handleToggleReady}
           onStartGame={handleStartGame}
@@ -1477,6 +1582,7 @@ export default function TankGame({
               onPing={handleTriggerRadarPing}
               activeWeapon={myTank?.weapon || 'STANDARD'}
               hasShield={!!myTank?.shield}
+              tankType={myTank?.tankType || DEFAULT_TANK_TYPE}
               isAlive={myTank?.isAlive ?? true}
               hp={myTank?.hp ?? TANK_MAX_HP}
               maxHp={myTank?.maxHp ?? TANK_MAX_HP}

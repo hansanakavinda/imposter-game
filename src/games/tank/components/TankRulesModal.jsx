@@ -51,11 +51,24 @@ export default function TankRulesModal({ isOpen, onClose }) {
 
           <div>
             <span className="font-bold text-white block mb-1 flex items-center gap-1.5">
+              <span>🚜</span>
+              3. The 4 Tank Classes
+            </span>
+            <ul className="space-y-1.5 text-zinc-400 pl-2">
+              <li>• <strong className="text-amber-400">⚔️ Striker (Assault):</strong> Balanced all-rounder (3 HP, standard mobility, reliable standard cannon).</li>
+              <li>• <strong className="text-orange-400">🛡️ Titan (Juggernaut):</strong> Heavy armored powerhouse (4 HP, heavy cannon shells, slower movement and reload).</li>
+              <li>• <strong className="text-sky-400">⚡ Specter (Scout):</strong> High-speed flanker (2 HP, +27% speed, rapid-cycle autocannon).</li>
+              <li>• <strong className="text-purple-400">🎯 Ballista (Sniper):</strong> Precision sniper (3 HP, ultra-high-velocity railgun shells, longer reload).</li>
+            </ul>
+          </div>
+
+          <div>
+            <span className="font-bold text-white block mb-1 flex items-center gap-1.5">
               <Radio className="w-3.5 h-3.5 text-rose-400" />
-              3. Team Tactics & Drops
+              4. Team Tactics & Drops
             </span>
             <ul className="space-y-1 text-zinc-400 pl-2">
-              <li>• <strong className="text-zinc-200">Health Bars (3 HP):</strong> Tanks withstand multiple hits! Standard Shells deal 1 damage, Heavy Rockets deal 2 damage, and Shields absorb an entire incoming hit.</li>
+              <li>• <strong className="text-zinc-200">Health & Damage:</strong> Standard shells deal 1 damage, Heavy Rockets deal 2 damage, and Shields absorb an entire incoming hit.</li>
               <li>• <strong className="text-zinc-200">Friendly Fire:</strong> Safe! Shells pass through teammates harmlessly.</li>
               <li>• <strong className="text-zinc-200">Tactical Ping:</strong> Tap Ping (or Right-Click) to send a radar alert to your partner.</li>
               <li>• <strong className="text-zinc-200">Ghost Drone:</strong> Eliminated teammates scout the map and drop radar pings for their partner.</li>
@@ -66,7 +79,7 @@ export default function TankRulesModal({ isOpen, onClose }) {
           <div>
             <span className="font-bold text-white block mb-1 flex items-center gap-1.5">
               <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-              4. Controls
+              5. Controls
             </span>
             <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800/80 space-y-1 text-[11px]">
               <div><strong className="text-zinc-200">Desktop:</strong> WASD / Arrows to drive, Mouse to aim, Left Click / Space to fire.</div>
