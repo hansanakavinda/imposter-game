@@ -122,6 +122,17 @@ export class TankNetwork {
           }
         })
 
+        this.peer.on('disconnected', () => {
+          console.warn('[TankNetwork] Signaling server disconnected. Attempting automatic reconnect...')
+          try {
+            if (this.peer && !this.peer.destroyed) {
+              this.peer.reconnect()
+            }
+          } catch (e) {
+            console.warn('[TankNetwork] Peer reconnect failed:', e)
+          }
+        })
+
         this.peer.on('error', (err) => {
           console.error('[TankNetwork] Peer error:', err)
           this.onError(err)
@@ -135,6 +146,14 @@ export class TankNetwork {
         reject(err)
       }
     })
+  }
+
+  updateCallbacks({ onStatusChange, onClientJoin, onPlayerLeave, onMessage, onError } = {}) {
+    if (onStatusChange) this.onStatusChange = onStatusChange
+    if (onClientJoin) this.onClientJoin = onClientJoin
+    if (onPlayerLeave) this.onPlayerLeave = onPlayerLeave
+    if (onMessage) this.onMessage = onMessage
+    if (onError) this.onError = onError
   }
 
   handleIncomingConnection(conn) {
@@ -166,16 +185,16 @@ export class TankNetwork {
 
   broadcast(message) {
     if (this.isHost) {
-      for (const [, conn] of this.connections) {
-        if (conn && conn.open) {
+      for (const [peerId, conn] of this.connections) {
+        if (conn && (conn.open || conn._open)) {
           try {
             conn.send(message)
           } catch (e) {
-            console.warn('[TankNetwork] broadcast error:', e)
+            console.warn('[TankNetwork] broadcast error to', peerId, e)
           }
         }
       }
-    } else if (this.hostConnection && this.hostConnection.open) {
+    } else if (this.hostConnection && (this.hostConnection.open || this.hostConnection._open)) {
       try {
         this.hostConnection.send(message)
       } catch (e) {
@@ -185,7 +204,7 @@ export class TankNetwork {
   }
 
   sendToHost(message) {
-    if (this.hostConnection && this.hostConnection.open) {
+    if (this.hostConnection && (this.hostConnection.open || this.hostConnection._open)) {
       try {
         this.hostConnection.send(message)
       } catch (e) {
@@ -196,7 +215,7 @@ export class TankNetwork {
 
   sendToPeer(peerId, message) {
     const conn = this.connections.get(peerId)
-    if (conn && conn.open) {
+    if (conn && (conn.open || conn._open)) {
       try {
         conn.send(message)
       } catch (e) {

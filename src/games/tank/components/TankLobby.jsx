@@ -24,6 +24,7 @@ export default function TankLobby({
   connectionStatus,
   players, // array of { id, name, peerId, slotId, team, isReady, isHost }
   mySlotId,
+  myPeerId,
   onSelectSlot,
   onToggleReady,
   onStartGame,
@@ -200,15 +201,21 @@ export default function TankLobby({
   }
 
   // Inside Room Lobby
-  const myPlayer = players.find((p) => p.slotId === mySlotId)
-  const isMyReady = myPlayer ? myPlayer.isReady : false
+  const myPlayer = players.find(
+    (p) => (myPeerId && p.peerId === myPeerId) || p.slotId === mySlotId
+  )
+  const isMyReady = myPlayer ? !!myPlayer.isReady : false
 
   const blueSlots = currentModeConfig.slots.filter((s) => s.team === 'blue')
   const redSlots = currentModeConfig.slots.filter((s) => s.team === 'red')
 
   const totalRequired = currentModeConfig.maxPlayers
   const filledCount = players.length
-  const allReady = players.length >= totalRequired && players.every((p) => p.isReady)
+  const blueCount = players.filter((p) => p.team === 'blue').length
+  const redCount = players.filter((p) => p.team === 'red').length
+  const hasBothTeams = blueCount >= 1 && redCount >= 1
+  const readyCount = players.filter((p) => p.isReady).length
+  const allReady = filledCount >= 2 && hasBothTeams && readyCount === filledCount
 
   return (
     <div className="w-full max-w-xl mx-auto px-4 py-4 flex flex-col items-center justify-center select-none animate-fadeIn">
@@ -274,7 +281,9 @@ export default function TankLobby({
           <div className="space-y-2">
             {blueSlots.map((slot) => {
               const occupant = players.find((p) => p.slotId === slot.id)
-              const isMe = occupant && occupant.slotId === mySlotId
+              const isMe =
+                occupant &&
+                ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
 
               return (
                 <div
@@ -364,7 +373,9 @@ export default function TankLobby({
           <div className="space-y-2">
             {redSlots.map((slot) => {
               const occupant = players.find((p) => p.slotId === slot.id)
-              const isMe = occupant && occupant.slotId === mySlotId
+              const isMe =
+                occupant &&
+                ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
 
               return (
                 <div
@@ -443,10 +454,12 @@ export default function TankLobby({
       {/* Status & Match Launch Controls */}
       <div className="w-full space-y-2.5">
         {/* Waiting Status Helper */}
-        {filledCount < totalRequired && (
+        {(!hasBothTeams || filledCount < 2) && (
           <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 text-center space-y-1">
             <p className="text-xs text-amber-400 font-bold">
-              Waiting for {totalRequired - filledCount} more commander{totalRequired - filledCount > 1 ? 's' : ''} to join...
+              {!hasBothTeams && filledCount >= 2
+                ? 'Both Blue and Red bases require at least 1 commander to start battle!'
+                : `Waiting for commander${totalRequired - filledCount > 1 ? 's' : ''} to join...`}
             </p>
             <p className="text-[11px] text-zinc-400">
               Share room code <strong className="font-mono text-cyan-400 font-bold">{roomCode}</strong> or click Share Link above to invite!
@@ -491,15 +504,19 @@ export default function TankLobby({
               <span>
                 {allReady
                   ? 'START BATTLE!'
-                  : filledCount < totalRequired
-                  ? `WAITING FOR PLAYERS (${filledCount}/${totalRequired})`
-                  : `WAITING FOR READY (${players.filter((p) => p.isReady).length}/${totalRequired})`}
+                  : filledCount < 2
+                  ? `WAITING FOR PLAYERS (${filledCount}/2)`
+                  : !hasBothTeams
+                  ? 'NEED BOTH BLUE & RED PLAYERS'
+                  : `WAITING FOR READY (${readyCount}/${filledCount})`}
               </span>
             </button>
           ) : (
             <div className="flex-1 py-3.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center flex items-center justify-center">
               <span className="text-xs font-semibold text-zinc-400">
-                {allReady ? 'Host is ready to start battle...' : 'Waiting for commanders to ready up...'}
+                {allReady
+                  ? 'Host is ready to start battle...'
+                  : `Waiting for commanders to ready up (${readyCount}/${filledCount})...`}
               </span>
             </div>
           )}

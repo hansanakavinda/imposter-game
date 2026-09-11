@@ -47,7 +47,7 @@ export default function TankGame({
 }) {
   // Lobby State
   const [mode, setMode] = useState('1v1') // '1v1' or '2v2'
-  const [roomCode, setRoomCode] = useState(initialRoomCode)
+  const [roomCode, setRoomCode] = useState('')
   const [inputCode, setInputCode] = useState(initialRoomCode)
   const [playerName, setPlayerName] = useState(() => {
     try {
@@ -58,8 +58,9 @@ export default function TankGame({
   })
   const [isHost, setIsHost] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState('idle') // 'idle', 'hosting', 'connecting', 'connected', 'disconnected'
-  const [players, setPlayers] = useState([]) // array of { id, name, slotId, team, isReady, isHost }
+  const [players, setPlayers] = useState([]) // array of { id, name, peerId, slotId, team, isReady, isHost }
   const [mySlotId, setMySlotId] = useState('p1')
+  const [myPeerId, setMyPeerId] = useState('')
   const [error, setError] = useState(null)
 
   // Game Flow State
@@ -89,19 +90,64 @@ export default function TankGame({
     aimCoord: { x: 500, y: 325 },
   })
 
+  // Synchronized refs to avoid stale closures in callbacks and event listeners
+  const isHostRef = useRef(false)
+  const modeRef = useRef(mode)
+  const playersRef = useRef(players)
+  const mySlotIdRef = useRef(mySlotId)
+  const playerNameRef = useRef(playerName)
+  const roundStatusRef = useRef('playing')
+  const roundWinnerRef = useRef(null)
+  const scoreRef = useRef({ blue: 0, red: 0 })
+  const currentMapIndexRef = useRef(0)
+
+  // World simulation refs for smooth 30FPS physics loop
+  const tanksRef = useRef([])
+  const bulletsRef = useRef([])
+  const obstaclesRef = useRef([])
+  const barrelsRef = useRef([])
+  const cratesRef = useRef([])
+  const particlesRef = useRef([])
+  const pingsRef = useRef([])
+
   const networkRef = useRef(null)
   const simulationTimerRef = useRef(null)
   const lastCrateDropRef = useRef(0)
   const lastFiredTimeRef = useRef(0)
-  const modeRef = useRef(mode)
-  const playersRef = useRef(players)
-  const mySlotIdRef = useRef(mySlotId)
 
+  // Network callback dynamic refs
+  const handleNetworkMessageRef = useRef(null)
+  const handleClientJoinRef = useRef(null)
+  const handlePlayerLeaveRef = useRef(null)
+
+  // Sync refs with state on every render
+  useEffect(() => {
+    isHostRef.current = isHost
+  }, [isHost])
   useEffect(() => {
     modeRef.current = mode
+  }, [mode])
+  useEffect(() => {
     playersRef.current = players
+  }, [players])
+  useEffect(() => {
     mySlotIdRef.current = mySlotId
-  }, [mode, players, mySlotId])
+  }, [mySlotId])
+  useEffect(() => {
+    playerNameRef.current = playerName
+  }, [playerName])
+  useEffect(() => {
+    roundStatusRef.current = roundStatus
+  }, [roundStatus])
+  useEffect(() => {
+    roundWinnerRef.current = roundWinner
+  }, [roundWinner])
+  useEffect(() => {
+    scoreRef.current = score
+  }, [score])
+  useEffect(() => {
+    currentMapIndexRef.current = currentMapIndex
+  }, [currentMapIndex])
 
   // Persist player name
   useEffect(() => {
@@ -117,9 +163,11 @@ export default function TankGame({
     return () => {
       if (simulationTimerRef.current) {
         clearInterval(simulationTimerRef.current)
+        simulationTimerRef.current = null
       }
       if (networkRef.current) {
         networkRef.current.destroy()
+        networkRef.current = null
       }
     }
   }, [])
@@ -127,15 +175,17 @@ export default function TankGame({
   // -------------------------------------------------------------
   // Spawn & World Initialization (Host Authoritative)
   // -------------------------------------------------------------
-  const initRoundWorld = useCallback((currentScore = score, mapIdx = currentMapIndex) => {
+  const initRoundWorld = useCallback((currentScore = scoreRef.current, mapIdx = currentMapIndexRef.current) => {
     const map = getBattlefieldMap(mapIdx)
-    const spawns = getSpawnPoints(mode)
+    const currentMode = modeRef.current
+    const spawns = getSpawnPoints(currentMode)
 
     const initialTanks = []
-    const modeConfig = MODES[mode]
+    const modeConfig = MODES[currentMode] || MODES['1v1']
+    const currentPlayers = playersRef.current
 
     modeConfig.slots.forEach((slot) => {
-      const p = players.find((pl) => pl.slotId === slot.id)
+      const p = currentPlayers.find((pl) => pl.slotId === slot.id)
       const spawn = spawns[slot.id] || { x: 100, y: 300, angle: 0 }
 
       if (p) {
@@ -156,6 +206,19 @@ export default function TankGame({
       }
     })
 
+    tanksRef.current = initialTanks
+    obstaclesRef.current = map.obstacles
+    barrelsRef.current = map.barrels
+    bulletsRef.current = []
+    cratesRef.current = []
+    particlesRef.current = []
+    pingsRef.current = []
+    scoreRef.current = currentScore
+    roundStatusRef.current = 'playing'
+    roundWinnerRef.current = null
+    currentMapIndexRef.current = mapIdx
+    lastCrateDropRef.current = Date.now()
+
     setTanks(initialTanks)
     setObstacles(map.obstacles)
     setBarrels(map.barrels)
@@ -165,7 +228,8 @@ export default function TankGame({
     setPings([])
     setRoundStatus('playing')
     setRoundWinner(null)
-    lastCrateDropRef.current = Date.now()
+    setScore(currentScore)
+    setCurrentMapIndex(mapIdx)
 
     return {
       tanks: initialTanks,
@@ -174,142 +238,163 @@ export default function TankGame({
       score: currentScore,
       mapIndex: mapIdx,
     }
-  }, [mode, players, score, currentMapIndex])
+  }, [])
 
   // Handle Round Win & Score Update
   const handleRoundWin = useCallback((winner) => {
     setRoundStatus('round_win')
+    roundStatusRef.current = 'round_win'
     setRoundWinner(winner)
+    roundWinnerRef.current = winner
     playTankExplosionSound()
 
-    setScore((prevScore) => {
-      const newScore = {
-        ...prevScore,
-        [winner]: prevScore[winner] + 1,
-      }
+    const prevScore = scoreRef.current
+    const newScore = {
+      ...prevScore,
+      [winner]: (prevScore[winner] || 0) + 1,
+    }
+    scoreRef.current = newScore
+    setScore(newScore)
 
-      if (newScore[winner] >= TARGET_SCORE_DEFAULT) {
-        setTimeout(() => {
-          setMatchWinner(winner)
-          setGamePhase('game_over')
-        }, 1800)
-      } else {
-        setTimeout(() => {
-          setCurrentMapIndex((prev) => {
-            const nextMap = prev + 1
-            initRoundWorld(newScore, nextMap)
-            return nextMap
-          })
-        }, 2400)
-      }
-      return newScore
-    })
+    if (newScore[winner] >= TARGET_SCORE_DEFAULT) {
+      setTimeout(() => {
+        setMatchWinner(winner)
+        setGamePhase('game_over')
+        networkRef.current?.broadcast({
+          type: 'MATCH_OVER',
+          winner,
+        })
+      }, 1800)
+    } else {
+      setTimeout(() => {
+        const nextMap = currentMapIndexRef.current + 1
+        const nextWorld = initRoundWorld(newScore, nextMap)
+        networkRef.current?.broadcast({
+          type: 'START_MATCH',
+          score: newScore,
+          tanks: nextWorld.tanks,
+          obstacles: nextWorld.obstacles,
+          barrels: nextWorld.barrels,
+        })
+      }, 2400)
+    }
   }, [initRoundWorld])
 
   // -------------------------------------------------------------
-  // Host Game Simulation Loop (~35Hz)
+  // Host Game Simulation Loop (~31 FPS Physics Tick)
   // -------------------------------------------------------------
   const runHostSimulationTick = useCallback(() => {
-    if (roundStatus !== 'playing') return
+    if (roundStatusRef.current !== 'playing') return
 
-    setTanks((prevTanks) => {
-      let updatedTanks = prevTanks.map((tank) => {
-        if (!tank.isAlive) return tank
+    const currentTanks = tanksRef.current
+    if (!currentTanks || !currentTanks.length) return
 
-        // Determine input for this tank
-        let input = { forward: false, reverse: false, steerLeft: false, steerRight: false }
-        if (tank.slotId === mySlotId) {
-          input = localInputRef.current
-        } else {
-          input = tank.remoteInput || input
-        }
+    // 1. Steering & Tank Movement
+    let updatedTanks = currentTanks.map((tank) => {
+      if (!tank.isAlive) return tank
 
-        // 1. Steering Rotation
-        let newAngle = tank.angle
-        if (input.steerLeft) newAngle -= TANK_TURN_SPEED
-        if (input.steerRight) newAngle += TANK_TURN_SPEED
+      // Determine input for this tank
+      let input = { forward: false, reverse: false, steerLeft: false, steerRight: false }
+      if (tank.slotId === mySlotIdRef.current) {
+        input = localInputRef.current
+      } else {
+        input = tank.remoteInput || input
+      }
 
-        // 2. Mud speed modifier
-        const inMud = isTankInMud(tank, obstacles)
-        const speedMult = inMud ? TANK_MUD_SPEED_MULT : 1.0
+      let newAngle = tank.angle
+      if (input.steerLeft) newAngle -= TANK_TURN_SPEED
+      if (input.steerRight) newAngle += TANK_TURN_SPEED
 
-        // 3. Movement
-        let targetX = tank.x
-        let targetY = tank.y
-        if (input.forward) {
-          targetX += Math.cos(newAngle) * TANK_SPEED * speedMult
-          targetY += Math.sin(newAngle) * TANK_SPEED * speedMult
-        } else if (input.reverse) {
-          targetX -= Math.cos(newAngle) * TANK_REVERSE_SPEED * speedMult
-          targetY -= Math.sin(newAngle) * TANK_REVERSE_SPEED * speedMult
-        }
+      const inMud = isTankInMud(tank, obstaclesRef.current)
+      const speedMult = inMud ? TANK_MUD_SPEED_MULT : 1.0
 
-        // 4. Collision resolution against obstacles, barrels, and other tanks
-        const resolved = moveTankWithCollision(tank, targetX, targetY, obstacles, barrels, prevTanks)
+      let targetX = tank.x
+      let targetY = tank.y
+      if (input.forward) {
+        targetX += Math.cos(newAngle) * TANK_SPEED * speedMult
+        targetY += Math.sin(newAngle) * TANK_SPEED * speedMult
+      } else if (input.reverse) {
+        targetX -= Math.cos(newAngle) * TANK_REVERSE_SPEED * speedMult
+        targetY -= Math.sin(newAngle) * TANK_REVERSE_SPEED * speedMult
+      }
 
-        return {
-          ...tank,
-          x: resolved.x,
-          y: resolved.y,
-          angle: newAngle,
-          turretAngle: input.turretAngle ?? tank.turretAngle ?? newAngle,
-        }
-      })
+      const resolved = moveTankWithCollision(
+        tank,
+        targetX,
+        targetY,
+        obstaclesRef.current,
+        barrelsRef.current,
+        currentTanks
+      )
 
-      // 5. Check Crate Pickups
-      setCrates((prevCrates) => {
-        if (!prevCrates.length) return prevCrates
-        const remaining = []
-
-        prevCrates.forEach((crate) => {
-          let pickedBy = null
-          for (let i = 0; i < updatedTanks.length; i++) {
-            const t = updatedTanks[i]
-            if (t.isAlive) {
-              const dx = t.x - crate.x
-              const dy = t.y - crate.y
-              if (dx * dx + dy * dy < (TANK_RADIUS + CRATE_SIZE / 2) * (TANK_RADIUS + CRATE_SIZE / 2)) {
-                pickedBy = t
-                break
-              }
-            }
-          }
-
-          if (pickedBy) {
-            playCratePickupSound()
-            // Apply powerup
-            updatedTanks = updatedTanks.map((t) => {
-              if (t.id === pickedBy.id) {
-                if (crate.type === 'SHIELD') {
-                  return { ...t, shield: true }
-                }
-                return { ...t, weapon: crate.type }
-              }
-              return t
-            })
-          } else {
-            remaining.push(crate)
-          }
-        })
-
-        return remaining
-      })
-
-      return updatedTanks
+      return {
+        ...tank,
+        x: resolved.x,
+        y: resolved.y,
+        angle: newAngle,
+        turretAngle: input.turretAngle ?? tank.turretAngle ?? newAngle,
+      }
     })
 
-    // 6. Update Bullets & Collisions
-    setBullets((prevBullets) => {
-      if (!prevBullets.length) return prevBullets
-      const remainingBullets = []
+    // 2. Check Crate Pickups
+    let remainingCrates = []
+    if (cratesRef.current && cratesRef.current.length) {
+      cratesRef.current.forEach((crate) => {
+        let pickedBy = null
+        for (let i = 0; i < updatedTanks.length; i++) {
+          const t = updatedTanks[i]
+          if (t.isAlive) {
+            const dx = t.x - crate.x
+            const dy = t.y - crate.y
+            if (dx * dx + dy * dy < (TANK_RADIUS + CRATE_SIZE / 2) * (TANK_RADIUS + CRATE_SIZE / 2)) {
+              pickedBy = t
+              break
+            }
+          }
+        }
 
-      prevBullets.forEach((bullet) => {
+        if (pickedBy) {
+          playCratePickupSound()
+          updatedTanks = updatedTanks.map((t) => {
+            if (t.id === pickedBy.id) {
+              if (crate.type === 'SHIELD') {
+                return { ...t, shield: true }
+              }
+              return { ...t, weapon: crate.type }
+            }
+            return t
+          })
+        } else {
+          remainingCrates.push(crate)
+        }
+      })
+    }
+
+    // 3. Crate Drop Timer
+    if (Date.now() - lastCrateDropRef.current > CRATE_DROP_INTERVAL_MS) {
+      lastCrateDropRef.current = Date.now()
+      const weaponOptions = ['LASER', 'ROCKET', 'SHOTGUN', 'SHIELD']
+      const chosenWeapon = weaponOptions[Math.floor(Math.random() * weaponOptions.length)]
+      const randomX = 350 + Math.random() * 300
+      const randomY = 150 + Math.random() * 350
+      remainingCrates.push({
+        id: `crate_${Date.now()}`,
+        x: randomX,
+        y: randomY,
+        type: chosenWeapon,
+      })
+    }
+
+    // 4. Update Bullets & Collisions
+    let remainingBullets = []
+    if (bulletsRef.current && bulletsRef.current.length) {
+      bulletsRef.current.forEach((bullet) => {
         let bx = bullet.x + bullet.vx
         let by = bullet.y + bullet.vy
         let bounces = bullet.bounces
         let destroyed = false
 
-        // A. Arena boundary bounce
+        // Boundary bounce
         if (bx <= BULLET_RADIUS || bx >= ARENA_WIDTH - BULLET_RADIUS) {
           bullet.vx = -bullet.vx
           bx = Math.max(BULLET_RADIUS, Math.min(ARENA_WIDTH - BULLET_RADIUS, bx))
@@ -323,9 +408,9 @@ export default function TankGame({
           playTankRicochetSound()
         }
 
-        // B. Steel & Brick Obstacle Collisions
-        for (let i = 0; i < obstacles.length; i++) {
-          const obs = obstacles[i]
+        // Obstacles
+        for (let i = 0; i < obstaclesRef.current.length; i++) {
+          const obs = obstaclesRef.current[i]
           if (
             obs.type === TERRAIN_TYPES.STEEL ||
             (obs.type === TERRAIN_TYPES.BRICK && (obs.hp || 0) > 0)
@@ -333,7 +418,6 @@ export default function TankGame({
             const col = testCircleRect(bx, by, bullet.radius, obs.x, obs.y, obs.width, obs.height)
             if (col.collided) {
               if (obs.type === TERRAIN_TYPES.STEEL) {
-                // Ricochet reflection v' = v - 2(v·n)n
                 const dot = bullet.vx * col.normal.x + bullet.vy * col.normal.y
                 bullet.vx = bullet.vx - 2 * dot * col.normal.x
                 bullet.vy = bullet.vy - 2 * dot * col.normal.y
@@ -342,7 +426,6 @@ export default function TankGame({
                 bounces++
                 playTankRicochetSound()
               } else if (obs.type === TERRAIN_TYPES.BRICK) {
-                // Damage brick wall
                 obs.hp -= 1
                 destroyed = true
                 playTankRicochetSound()
@@ -352,10 +435,10 @@ export default function TankGame({
           }
         }
 
-        // C. Explosive Barrels Collision
-        if (!destroyed && barrels) {
-          for (let i = 0; i < barrels.length; i++) {
-            const barrel = barrels[i]
+        // Barrels
+        if (!destroyed && barrelsRef.current) {
+          for (let i = 0; i < barrelsRef.current.length; i++) {
+            const barrel = barrelsRef.current[i]
             if (barrel.hp > 0) {
               const dx = bx - barrel.x
               const dy = by - barrel.y
@@ -364,55 +447,47 @@ export default function TankGame({
                 destroyed = true
                 playBarrelExplosionSound()
 
-                // Barrel AOE blast
-                setTanks((currTanks) =>
-                  currTanks.map((t) => {
-                    if (!t.isAlive) return t
-                    const bdx = t.x - barrel.x
-                    const bdy = t.y - barrel.y
-                    if (bdx * bdx + bdy * bdy < 75 * 75) {
-                      if (t.shield) {
-                        return { ...t, shield: false }
-                      }
-                      return { ...t, isAlive: false }
+                updatedTanks = updatedTanks.map((t) => {
+                  if (!t.isAlive) return t
+                  const bdx = t.x - barrel.x
+                  const bdy = t.y - barrel.y
+                  if (bdx * bdx + bdy * bdy < 75 * 75) {
+                    if (t.shield) {
+                      return { ...t, shield: false }
                     }
-                    return t
-                  })
-                )
+                    return { ...t, isAlive: false }
+                  }
+                  return t
+                })
                 break
               }
             }
           }
         }
 
-        // D. Tank Hit Check (Friendly Fire Safe!)
+        // Tank hit
         if (!destroyed) {
-          setTanks((currTanks) => {
-            let hitTank = null
-            const mapped = currTanks.map((t) => {
-              if (!t.isAlive || t.team === bullet.team) return t
-
-              const dx = bx - t.x
-              const dy = by - t.y
-              if (dx * dx + dy * dy < (bullet.radius + TANK_RADIUS) * (bullet.radius + TANK_RADIUS)) {
-                hitTank = t
-                if (t.shield) {
-                  return { ...t, shield: false } // Shield absorbs hit
-                }
-                return { ...t, isAlive: false } // Destroyed
+          let hitTank = null
+          updatedTanks = updatedTanks.map((t) => {
+            if (!t.isAlive || t.team === bullet.team) return t
+            const dx = bx - t.x
+            const dy = by - t.y
+            if (dx * dx + dy * dy < (bullet.radius + TANK_RADIUS) * (bullet.radius + TANK_RADIUS)) {
+              hitTank = t
+              if (t.shield) {
+                return { ...t, shield: false }
               }
-              return t
-            })
-
-            if (hitTank) {
-              destroyed = true
-              playTankExplosionSound()
+              return { ...t, isAlive: false }
             }
-            return mapped
+            return t
           })
+
+          if (hitTank) {
+            destroyed = true
+            playTankExplosionSound()
+          }
         }
 
-        // E. Lifetime or bounce expiry
         if (!destroyed && bounces <= bullet.maxBounces) {
           remainingBullets.push({
             ...bullet,
@@ -422,79 +497,60 @@ export default function TankGame({
           })
         }
       })
-
-      return remainingBullets
-    })
-
-    // 7. Crate Drop Timer (Spawns mystery weapon crate in open center)
-    if (Date.now() - lastCrateDropRef.current > CRATE_DROP_INTERVAL_MS) {
-      lastCrateDropRef.current = Date.now()
-      const weaponOptions = ['LASER', 'ROCKET', 'SHOTGUN', 'SHIELD']
-      const chosenWeapon = weaponOptions[Math.floor(Math.random() * weaponOptions.length)]
-      const randomX = 350 + Math.random() * 300
-      const randomY = 150 + Math.random() * 350
-      setCrates((c) => [
-        ...c,
-        { id: `crate_${Date.now()}`, x: randomX, y: randomY, type: chosenWeapon },
-      ])
     }
 
-    // 8. Check Round Win Condition (One team eliminated)
-    setTanks((currentTanks) => {
-      const hasBlue = currentTanks.some((t) => t.team === 'blue')
-      const hasRed = currentTanks.some((t) => t.team === 'red')
+    // 5. Check Round Win Condition
+    const hasBlue = updatedTanks.some((t) => t.team === 'blue')
+    const hasRed = updatedTanks.some((t) => t.team === 'red')
+    if (hasBlue && hasRed) {
+      const aliveBlue = updatedTanks.some((t) => t.team === 'blue' && t.isAlive)
+      const aliveRed = updatedTanks.some((t) => t.team === 'red' && t.isAlive)
+      if (!aliveBlue || !aliveRed) {
+        let winner = null
+        if (aliveBlue && !aliveRed) winner = 'blue'
+        if (aliveRed && !aliveBlue) winner = 'red'
 
-      if (hasBlue && hasRed) {
-        const aliveBlue = currentTanks.some((t) => t.team === 'blue' && t.isAlive)
-        const aliveRed = currentTanks.some((t) => t.team === 'red' && t.isAlive)
-
-        if (!aliveBlue || !aliveRed) {
-          let winner = null
-          if (aliveBlue && !aliveRed) winner = 'blue'
-          if (aliveRed && !aliveBlue) winner = 'red'
-
-          if (winner && roundStatus === 'playing') {
-            handleRoundWin(winner)
-          }
+        if (winner && roundStatusRef.current === 'playing') {
+          handleRoundWin(winner)
         }
       }
-      return currentTanks
-    })
+    }
 
-    // 9. Host Broadcasts World State to Clients
-    if (networkRef.current && isHost) {
+    // 6. Update refs
+    tanksRef.current = updatedTanks
+    bulletsRef.current = remainingBullets
+    cratesRef.current = remainingCrates
+
+    // 7. Update React state for host canvas
+    setTanks(updatedTanks)
+    setBullets(remainingBullets)
+    setCrates(remainingCrates)
+
+    // 8. Broadcast world state to clients
+    if (networkRef.current && isHostRef.current) {
       networkRef.current.broadcast({
         type: 'WORLD_STATE',
-        tanks,
-        bullets,
-        obstacles,
-        barrels,
-        crates,
-        score,
-        roundStatus,
-        roundWinner,
+        tanks: updatedTanks,
+        bullets: remainingBullets,
+        obstacles: obstaclesRef.current,
+        barrels: barrelsRef.current,
+        crates: remainingCrates,
+        score: scoreRef.current,
+        roundStatus: roundStatusRef.current,
+        roundWinner: roundWinnerRef.current,
       })
     }
-  }, [
-    roundStatus,
-    obstacles,
-    barrels,
-    mySlotId,
-    score,
-    isHost,
-    tanks,
-    bullets,
-    crates,
-    roundWinner,
-    handleRoundWin,
-  ])
+  }, [handleRoundWin])
 
-  // Run simulation interval on Host
+  // Simulation interval for Host
   useEffect(() => {
     if (gamePhase === 'battle' && isHost) {
-      simulationTimerRef.current = setInterval(runHostSimulationTick, 32) // ~32ms = ~31 FPS physics tick
+      simulationTimerRef.current = setInterval(runHostSimulationTick, 32)
       return () => {
-        if (simulationTimerRef.current) clearInterval(simulationTimerRef.current)
+        if (simulationTimerRef.current) {
+          clearInterval(simulationTimerRef.current)
+          simulationTimerRef.current = null
+        }
       }
     }
   }, [gamePhase, isHost, runHostSimulationTick])
@@ -503,7 +559,8 @@ export default function TankGame({
   // Firing Cannon & Spawning Projectiles
   // -------------------------------------------------------------
   const handleFireCannon = () => {
-    const myTank = tanks.find((t) => t.slotId === mySlotId)
+    const currentTanks = tanksRef.current
+    const myTank = currentTanks.find((t) => t.slotId === mySlotIdRef.current)
     if (!myTank || !myTank.isAlive) return
 
     const weaponCfg = WEAPON_TYPES[myTank.weapon] || WEAPON_TYPES.STANDARD
@@ -532,11 +589,12 @@ export default function TankGame({
         bounces: 0,
         maxBounces: weaponCfg.maxBounces,
         team: myTank.team,
-        ownerSlotId: mySlotId,
+        ownerSlotId: mySlotIdRef.current,
       }))
 
-      if (isHost) {
-        setBullets((b) => [...b, ...newBullets])
+      if (isHostRef.current) {
+        bulletsRef.current = [...bulletsRef.current, ...newBullets]
+        setBullets(bulletsRef.current)
       } else {
         networkRef.current?.sendToHost({ type: 'FIRE_BULLETS', bullets: newBullets })
       }
@@ -553,27 +611,29 @@ export default function TankGame({
         bounces: 0,
         maxBounces: weaponCfg.maxBounces,
         team: myTank.team,
-        ownerSlotId: mySlotId,
+        ownerSlotId: mySlotIdRef.current,
       }
 
-      if (isHost) {
-        setBullets((b) => [...b, newBullet])
+      if (isHostRef.current) {
+        bulletsRef.current = [...bulletsRef.current, newBullet]
+        setBullets(bulletsRef.current)
       } else {
         networkRef.current?.sendToHost({ type: 'FIRE_BULLETS', bullets: [newBullet] })
       }
     }
 
     // Set lastFiredAt on local tank to reveal from bushes
-    setTanks((curr) =>
-      curr.map((t) => (t.slotId === mySlotId ? { ...t, lastFiredAt: Date.now() } : t))
+    tanksRef.current = currentTanks.map((t) =>
+      t.slotId === mySlotIdRef.current ? { ...t, lastFiredAt: Date.now() } : t
     )
+    setTanks(tanksRef.current)
   }
 
   // -------------------------------------------------------------
   // Radar Ping
   // -------------------------------------------------------------
   const handleTriggerRadarPing = (coords) => {
-    const myTank = tanks.find((t) => t.slotId === mySlotId)
+    const myTank = tanksRef.current.find((t) => t.slotId === mySlotIdRef.current)
     const team = myTank ? myTank.team : 'blue'
     const pingPos = coords || (myTank ? { x: myTank.x, y: myTank.y } : { x: 500, y: 325 })
 
@@ -590,7 +650,7 @@ export default function TankGame({
     setPings((prev) => [...prev.slice(-4), newPing])
 
     if (networkRef.current) {
-      if (isHost) {
+      if (isHostRef.current) {
         networkRef.current.broadcast({ type: 'RADAR_PING', ping: newPing })
       } else {
         networkRef.current.sendToHost({ type: 'RADAR_PING', ping: newPing })
@@ -641,10 +701,10 @@ export default function TankGame({
         handleTriggerRadarPingRef.current?.()
       }
 
-      if (changed && !isHost && networkRef.current) {
+      if (changed && !isHostRef.current && networkRef.current) {
         networkRef.current.sendToHost({
           type: 'PLAYER_INPUT',
-          slotId: mySlotId,
+          slotId: mySlotIdRef.current,
           input: localInputRef.current,
         })
       }
@@ -671,10 +731,10 @@ export default function TankGame({
         changed = true
       }
 
-      if (changed && !isHost && networkRef.current) {
+      if (changed && !isHostRef.current && networkRef.current) {
         networkRef.current.sendToHost({
           type: 'PLAYER_INPUT',
-          slotId: mySlotId,
+          slotId: mySlotIdRef.current,
           input: localInputRef.current,
         })
       }
@@ -687,191 +747,336 @@ export default function TankGame({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [gamePhase, isHost, mySlotId])
+  }, [gamePhase])
 
   // Mouse Aim on Canvas
   const handleCanvasPointerMove = (coords) => {
-    const myTank = tanks.find((t) => t.slotId === mySlotId)
+    const myTank = tanksRef.current.find((t) => t.slotId === mySlotIdRef.current)
     if (!myTank) return
 
     const angle = Math.atan2(coords.y - myTank.y, coords.x - myTank.x)
     localInputRef.current.turretAngle = angle
     localInputRef.current.aimCoord = coords
 
-    if (!isHost && networkRef.current) {
+    if (!isHostRef.current && networkRef.current) {
       networkRef.current.sendToHost({
         type: 'PLAYER_INPUT',
-        slotId: mySlotId,
+        slotId: mySlotIdRef.current,
         input: localInputRef.current,
       })
     }
   }
 
   // -------------------------------------------------------------
+  // Host Handlers for Client Join / Leave
+  // -------------------------------------------------------------
+  const handleClientJoin = useCallback((clientPeerId, clientPlayer, conn) => {
+    const currentMode = modeRef.current
+    const modeConfig = MODES[currentMode] || MODES['1v1']
+    const currentPlayers = playersRef.current
+
+    const occupiedSlots = new Set(currentPlayers.map((p) => p.slotId))
+    const freeSlot = modeConfig.slots.find((s) => !occupiedSlots.has(s.id))
+    const assignedSlotId = freeSlot ? freeSlot.id : 'p2'
+    const slotDef = modeConfig.slots.find((s) => s.id === assignedSlotId)
+    const assignedTeam = slotDef ? slotDef.team : 'red'
+
+    const newPlayer = {
+      id: clientPlayer?.id || `player_${Date.now()}`,
+      name: clientPlayer?.name || 'Commander',
+      peerId: clientPeerId,
+      slotId: assignedSlotId,
+      team: assignedTeam,
+      isReady: false,
+      isHost: false,
+    }
+
+    const filtered = currentPlayers.filter(
+      (p) =>
+        p.peerId !== clientPeerId &&
+        (!clientPlayer?.id || p.id !== clientPlayer.id) &&
+        p.slotId !== assignedSlotId
+    )
+    const updated = [...filtered, newPlayer]
+    playersRef.current = updated
+    setPlayers(updated)
+
+    try {
+      conn.send({
+        type: 'WELCOME',
+        mySlotId: assignedSlotId,
+        players: updated,
+        mode: currentMode,
+      })
+    } catch (e) {
+      console.warn('[Host] send WELCOME error:', e)
+    }
+
+    setTimeout(() => {
+      networkRef.current?.broadcast({
+        type: 'LOBBY_STATE',
+        players: updated,
+        mode: currentMode,
+      })
+    }, 50)
+  }, [])
+
+  const handlePlayerLeave = useCallback((peerId) => {
+    const currentPlayers = playersRef.current
+    const updated = currentPlayers.filter((p) => p.peerId !== peerId)
+    playersRef.current = updated
+    setPlayers(updated)
+    networkRef.current?.broadcast({
+      type: 'LOBBY_STATE',
+      players: updated,
+      mode: modeRef.current,
+    })
+  }, [])
+
+  // -------------------------------------------------------------
   // Network Message Dispatcher
   // -------------------------------------------------------------
-  const handleNetworkMessage = useCallback(
-    (data, _senderPeerId) => {
-      switch (data.type) {
-        case 'WELCOME': {
-          if (data.mySlotId) setMySlotId(data.mySlotId)
-          if (data.players) setPlayers(data.players)
-          if (data.mode) setMode(data.mode)
-          setConnectionStatus('connected')
-          break
+  const handleNetworkMessage = useCallback((data, _senderPeerId) => {
+    if (!data || !data.type) return
+
+    switch (data.type) {
+      case 'WELCOME': {
+        if (data.mySlotId) {
+          setMySlotId(data.mySlotId)
+          mySlotIdRef.current = data.mySlotId
         }
-        case 'JOIN_LOBBY': {
-          if (isHost && data.player) {
-            setPlayers((prev) => {
-              const currentSlots = MODES[mode].slots
-              const occupiedSlots = new Set(prev.map((p) => p.slotId))
-              const requestedSlot = data.player.slotId
-              const isFree = requestedSlot && !occupiedSlots.has(requestedSlot)
-              const fallbackSlot = currentSlots.find((s) => !occupiedSlots.has(s.id))
-              const finalSlotId = isFree ? requestedSlot : (fallbackSlot ? fallbackSlot.id : 'p2')
-              const slotInfo = currentSlots.find((s) => s.id === finalSlotId)
-
-              const newPlayer = {
-                id: data.player.id || `p_${Date.now()}`,
-                name: data.player.name || 'Commander',
-                peerId: _senderPeerId,
-                slotId: finalSlotId,
-                team: slotInfo ? slotInfo.team : 'red',
-                isReady: false,
-                isHost: false,
-              }
-
-              const filtered = prev.filter((p) => p.peerId !== _senderPeerId && p.slotId !== finalSlotId)
-              const updated = [...filtered, newPlayer]
-
-              networkRef.current?.broadcast({
-                type: 'LOBBY_STATE',
-                players: updated,
-                mode,
-              })
-
-              return updated
-            })
-          }
-          break
-        }
-        case 'TOGGLE_READY': {
-          if (isHost) {
-            setPlayers((prev) => {
-              const updated = prev.map((p) =>
-                p.slotId === data.slotId ? { ...p, isReady: !p.isReady } : p
-              )
-              networkRef.current?.broadcast({
-                type: 'LOBBY_STATE',
-                players: updated,
-                mode,
-              })
-              return updated
-            })
-          }
-          break
-        }
-        case 'CHANGE_SLOT': {
-          if (isHost) {
-            const slotConfig = MODES[mode].slots.find((s) => s.id === data.newSlot)
-            if (slotConfig) {
-              setPlayers((prev) => {
-                const isOccupied = prev.some((p) => p.slotId === data.newSlot)
-                if (isOccupied) return prev
-
-                const updated = prev.map((p) =>
-                  p.slotId === data.oldSlot
-                    ? { ...p, slotId: data.newSlot, team: slotConfig.team }
-                    : p
-                )
-                networkRef.current?.broadcast({
-                  type: 'LOBBY_STATE',
-                  players: updated,
-                  mode,
-                })
-                return updated
-              })
-            }
-          }
-          break
-        }
-        case 'LOBBY_STATE': {
+        if (data.players) {
           setPlayers(data.players)
-          if (data.mode) setMode(data.mode)
-          if (!isHost && data.players && networkRef.current) {
-            const me = data.players.find(
-              (p) => p.peerId === networkRef.current.myPeerId || p.name === playerName
-            )
-            if (me) {
-              setMySlotId(me.slotId)
+          playersRef.current = data.players
+        }
+        if (data.mode) {
+          setMode(data.mode)
+          modeRef.current = data.mode
+        }
+        setConnectionStatus('connected')
+        break
+      }
+
+      case 'TOGGLE_READY': {
+        if (isHostRef.current) {
+          const senderPeerId = _senderPeerId || data.peerId
+          const updated = playersRef.current.map((p) => {
+            const isMatch =
+              (senderPeerId && p.peerId === senderPeerId) ||
+              (data.slotId && p.slotId === data.slotId)
+            if (!isMatch) return p
+            const newReady = typeof data.isReady === 'boolean' ? data.isReady : !p.isReady
+            return { ...p, isReady: newReady }
+          })
+          playersRef.current = updated
+          setPlayers(updated)
+          networkRef.current?.broadcast({
+            type: 'LOBBY_STATE',
+            players: updated,
+            mode: modeRef.current,
+          })
+        }
+        break
+      }
+
+      case 'CHANGE_SLOT': {
+        if (isHostRef.current) {
+          const currentMode = modeRef.current
+          const slotConfig = MODES[currentMode]?.slots.find((s) => s.id === data.newSlot)
+          if (slotConfig) {
+            const currentPlayers = playersRef.current
+            const isOccupied = currentPlayers.some((p) => p.slotId === data.newSlot)
+            if (!isOccupied) {
+              const senderPeerId = _senderPeerId || data.peerId
+              const updated = currentPlayers.map((p) => {
+                const isMatch =
+                  (senderPeerId && p.peerId === senderPeerId) ||
+                  (data.oldSlot && p.slotId === data.oldSlot)
+                return isMatch
+                  ? { ...p, slotId: data.newSlot, team: slotConfig.team }
+                  : p
+              })
+              playersRef.current = updated
+              setPlayers(updated)
+              networkRef.current?.broadcast({
+                type: 'LOBBY_STATE',
+                players: updated,
+                mode: currentMode,
+              })
             }
           }
-          break
         }
-        case 'START_MATCH': {
-          setGamePhase('battle')
+        break
+      }
+
+      case 'LOBBY_STATE': {
+        if (data.players) {
+          setPlayers(data.players)
+          playersRef.current = data.players
+        }
+        if (data.mode) {
+          setMode(data.mode)
+          modeRef.current = data.mode
+        }
+        if (!isHostRef.current && data.players && networkRef.current) {
+          const me = data.players.find(
+            (p) =>
+              (networkRef.current?.myPeerId && p.peerId === networkRef.current.myPeerId) ||
+              p.name === playerNameRef.current
+          )
+          if (me && me.slotId) {
+            setMySlotId(me.slotId)
+            mySlotIdRef.current = me.slotId
+          }
+        }
+        break
+      }
+
+      case 'START_MATCH': {
+        setGamePhase('battle')
+        if (data.score) {
           setScore(data.score)
+          scoreRef.current = data.score
+        }
+        if (data.tanks) {
           setTanks(data.tanks)
+          tanksRef.current = data.tanks
+        }
+        if (data.obstacles) {
           setObstacles(data.obstacles)
+          obstaclesRef.current = data.obstacles
+        }
+        if (data.barrels) {
           setBarrels(data.barrels)
-          break
+          barrelsRef.current = data.barrels
         }
-        case 'WORLD_STATE': {
-          if (!isHost) {
+        setBullets([])
+        bulletsRef.current = []
+        setCrates([])
+        cratesRef.current = []
+        setParticles([])
+        particlesRef.current = []
+        setPings([])
+        pingsRef.current = []
+        setRoundStatus('playing')
+        roundStatusRef.current = 'playing'
+        setRoundWinner(null)
+        roundWinnerRef.current = null
+        setMatchWinner(null)
+        break
+      }
+
+      case 'WORLD_STATE': {
+        if (!isHostRef.current) {
+          if (data.tanks) {
             setTanks(data.tanks)
+            tanksRef.current = data.tanks
+          }
+          if (data.bullets) {
             setBullets(data.bullets)
+            bulletsRef.current = data.bullets
+          }
+          if (data.obstacles) {
             setObstacles(data.obstacles)
+            obstaclesRef.current = data.obstacles
+          }
+          if (data.barrels) {
             setBarrels(data.barrels)
+            barrelsRef.current = data.barrels
+          }
+          if (data.crates) {
             setCrates(data.crates)
+            cratesRef.current = data.crates
+          }
+          if (data.score) {
             setScore(data.score)
+            scoreRef.current = data.score
+          }
+          if (data.roundStatus) {
             setRoundStatus(data.roundStatus)
+            roundStatusRef.current = data.roundStatus
+          }
+          if (data.roundWinner !== undefined) {
             setRoundWinner(data.roundWinner)
+            roundWinnerRef.current = data.roundWinner
           }
-          break
         }
-        case 'PLAYER_INPUT': {
-          if (isHost) {
-            setTanks((prev) =>
-              prev.map((t) =>
-                t.slotId === data.slotId ? { ...t, remoteInput: data.input } : t
-              )
-            )
-          }
-          break
+        break
+      }
+
+      case 'PLAYER_INPUT': {
+        if (isHostRef.current && data.slotId && data.input) {
+          tanksRef.current = tanksRef.current.map((t) =>
+            t.slotId === data.slotId ? { ...t, remoteInput: data.input } : t
+          )
         }
-        case 'FIRE_BULLETS': {
-          if (isHost) {
-            setBullets((b) => [...b, ...data.bullets])
-          }
-          break
+        break
+      }
+
+      case 'FIRE_BULLETS': {
+        if (isHostRef.current && Array.isArray(data.bullets)) {
+          bulletsRef.current = [...bulletsRef.current, ...data.bullets]
+          setBullets(bulletsRef.current)
         }
-        case 'RADAR_PING': {
+        break
+      }
+
+      case 'RADAR_PING': {
+        if (data.ping) {
           playRadarPingSound()
           setPings((p) => [...p.slice(-4), data.ping])
-          if (isHost) {
+          if (isHostRef.current) {
             networkRef.current?.broadcast(data)
           }
-          break
         }
-        case 'MATCH_OVER': {
-          setMatchWinner(data.winner)
-          setGamePhase('game_over')
-          break
-        }
-        case 'REMATCH_START': {
-          setGamePhase('battle')
-          setScore({ blue: 0, red: 0 })
-          setRoundStatus('playing')
-          setRoundWinner(null)
-          setMatchWinner(null)
-          break
-        }
-        default:
-          break
+        break
       }
-    },
-    [isHost, mode, playerName]
-  )
+
+      case 'MATCH_OVER': {
+        setMatchWinner(data.winner)
+        setGamePhase('game_over')
+        break
+      }
+
+      case 'REMATCH_START': {
+        setGamePhase('battle')
+        setScore({ blue: 0, red: 0 })
+        scoreRef.current = { blue: 0, red: 0 }
+        setRoundStatus('playing')
+        roundStatusRef.current = 'playing'
+        setRoundWinner(null)
+        roundWinnerRef.current = null
+        setMatchWinner(null)
+        if (data.tanks) {
+          setTanks(data.tanks)
+          tanksRef.current = data.tanks
+        }
+        if (data.obstacles) {
+          setObstacles(data.obstacles)
+          obstaclesRef.current = data.obstacles
+        }
+        if (data.barrels) {
+          setBarrels(data.barrels)
+          barrelsRef.current = data.barrels
+        }
+        setBullets([])
+        bulletsRef.current = []
+        setCrates([])
+        cratesRef.current = []
+        break
+      }
+
+      default:
+        break
+    }
+  }, [])
+
+  // Keep callback refs fresh
+  useEffect(() => {
+    handleNetworkMessageRef.current = handleNetworkMessage
+    handleClientJoinRef.current = handleClientJoin
+    handlePlayerLeaveRef.current = handlePlayerLeave
+  })
 
   // -------------------------------------------------------------
   // Host Room Creation
@@ -881,7 +1086,9 @@ export default function TankGame({
     const code = generateRoomCode()
     setRoomCode(code)
     setIsHost(true)
+    isHostRef.current = true
     setMySlotId('p1')
+    mySlotIdRef.current = 'p1'
 
     const initialPlayer = {
       id: `player_${Date.now()}`,
@@ -891,75 +1098,22 @@ export default function TankGame({
       isReady: false,
       isHost: true,
     }
+    playersRef.current = [initialPlayer]
     setPlayers([initialPlayer])
 
     try {
       const net = new TankNetwork({
         onStatusChange: (status) => setConnectionStatus(status),
-        onClientJoin: (clientPeerId, clientPlayer, conn) => {
-          const currentMode = modeRef.current
-          const modeConfig = MODES[currentMode] || MODES['1v1']
-
-          setPlayers((prev) => {
-            const occupiedSlots = new Set(prev.map((p) => p.slotId))
-            const freeSlot = modeConfig.slots.find((s) => !occupiedSlots.has(s.id))
-            const assignedSlotId = freeSlot ? freeSlot.id : 'p2'
-            const slotDef = modeConfig.slots.find((s) => s.id === assignedSlotId)
-            const assignedTeam = slotDef ? slotDef.team : 'red'
-
-            const newPlayer = {
-              id: clientPlayer?.id || `player_${Date.now()}`,
-              name: clientPlayer?.name || 'Commander',
-              peerId: clientPeerId,
-              slotId: assignedSlotId,
-              team: assignedTeam,
-              isReady: false,
-              isHost: false,
-            }
-
-            const filtered = prev.filter(
-              (p) => p.peerId !== clientPeerId && p.slotId !== assignedSlotId
-            )
-            const updated = [...filtered, newPlayer]
-
-            try {
-              conn.send({
-                type: 'WELCOME',
-                mySlotId: assignedSlotId,
-                players: updated,
-                mode: currentMode,
-              })
-            } catch (e) {
-              console.warn('[Host] send WELCOME error:', e)
-            }
-
-            setTimeout(() => {
-              net.broadcast({
-                type: 'LOBBY_STATE',
-                players: updated,
-                mode: currentMode,
-              })
-            }, 30)
-
-            return updated
-          })
-        },
-        onPlayerLeave: (peerId) => {
-          setPlayers((prev) => {
-            const updated = prev.filter((p) => p.peerId !== peerId)
-            net.broadcast({
-              type: 'LOBBY_STATE',
-              players: updated,
-              mode: modeRef.current,
-            })
-            return updated
-          })
-        },
-        onMessage: handleNetworkMessage,
+        onClientJoin: (clientPeerId, clientPlayer, conn) =>
+          handleClientJoinRef.current?.(clientPeerId, clientPlayer, conn),
+        onPlayerLeave: (peerId) => handlePlayerLeaveRef.current?.(peerId),
+        onMessage: (data, senderPeerId) =>
+          handleNetworkMessageRef.current?.(data, senderPeerId),
         onError: (err) => setError(err.message || 'Connection error'),
       })
 
-      await net.init(code, true)
+      const id = await net.init(code, true)
+      setMyPeerId(id)
       networkRef.current = net
       setConnectionStatus('hosting')
     } catch (err) {
@@ -972,9 +1126,11 @@ export default function TankGame({
   // Join Existing Room
   // -------------------------------------------------------------
   const handleJoinRoom = async () => {
-    if (!inputCode || inputCode.length < 3) return
+    const cleanCode = (inputCode || '').trim().toUpperCase()
+    if (!cleanCode || cleanCode.length < 3) return
     setError(null)
     setIsHost(false)
+    isHostRef.current = false
     setConnectionStatus('connecting')
 
     const myPlayer = {
@@ -987,13 +1143,15 @@ export default function TankGame({
     try {
       const net = new TankNetwork({
         onStatusChange: (status) => setConnectionStatus(status),
-        onMessage: handleNetworkMessage,
+        onMessage: (data, senderPeerId) =>
+          handleNetworkMessageRef.current?.(data, senderPeerId),
         onError: (err) => setError(err.message || 'Could not connect to room'),
       })
 
-      await net.init(inputCode, false, myPlayer)
+      const id = await net.init(cleanCode, false, myPlayer)
+      setMyPeerId(id)
       networkRef.current = net
-      setRoomCode(inputCode)
+      setRoomCode(cleanCode)
     } catch (err) {
       setError(err.message || 'Room not found or host unreachable.')
       setConnectionStatus('idle')
@@ -1002,61 +1160,90 @@ export default function TankGame({
 
   // Switch Slot in Lobby
   const handleSelectSlot = (slotId) => {
-    const slotConfig = MODES[mode].slots.find((s) => s.id === slotId)
+    const currentMode = modeRef.current
+    const slotConfig = MODES[currentMode]?.slots.find((s) => s.id === slotId)
     if (!slotConfig) return
 
-    if (isHost) {
+    const oldSlot = mySlotIdRef.current
+
+    if (isHostRef.current) {
       setMySlotId(slotId)
-      setPlayers((prev) => {
-        const updated = prev.map((p) =>
-          p.slotId === mySlotId ? { ...p, slotId, team: slotConfig.team } : p
-        )
-        networkRef.current?.broadcast({
-          type: 'LOBBY_STATE',
-          players: updated,
-          mode,
-        })
-        return updated
+      mySlotIdRef.current = slotId
+      const updated = playersRef.current.map((p) =>
+        p.slotId === oldSlot ? { ...p, slotId, team: slotConfig.team } : p
+      )
+      playersRef.current = updated
+      setPlayers(updated)
+      networkRef.current?.broadcast({
+        type: 'LOBBY_STATE',
+        players: updated,
+        mode: currentMode,
       })
     } else {
       setMySlotId(slotId)
-      setPlayers((prev) =>
-        prev.map((p) =>
-          p.slotId === mySlotId ? { ...p, slotId, team: slotConfig.team } : p
-        )
+      mySlotIdRef.current = slotId
+      const updated = playersRef.current.map((p) =>
+        p.slotId === oldSlot ||
+        (networkRef.current?.myPeerId && p.peerId === networkRef.current.myPeerId)
+          ? { ...p, slotId, team: slotConfig.team }
+          : p
       )
-      networkRef.current?.sendToHost({ type: 'CHANGE_SLOT', oldSlot: mySlotId, newSlot: slotId })
+      playersRef.current = updated
+      setPlayers(updated)
+      networkRef.current?.sendToHost({
+        type: 'CHANGE_SLOT',
+        oldSlot,
+        newSlot: slotId,
+        peerId: networkRef.current?.myPeerId,
+      })
     }
   }
 
   // Toggle Ready
   const handleToggleReady = () => {
-    if (isHost) {
-      setPlayers((prev) => {
-        const updated = prev.map((p) =>
-          p.slotId === mySlotId ? { ...p, isReady: !p.isReady } : p
-        )
-        networkRef.current?.broadcast({
-          type: 'LOBBY_STATE',
-          players: updated,
-          mode,
-        })
-        return updated
+    if (isHostRef.current) {
+      const updated = playersRef.current.map((p) =>
+        p.slotId === mySlotIdRef.current ? { ...p, isReady: !p.isReady } : p
+      )
+      playersRef.current = updated
+      setPlayers(updated)
+      networkRef.current?.broadcast({
+        type: 'LOBBY_STATE',
+        players: updated,
+        mode: modeRef.current,
       })
     } else {
-      setPlayers((prev) =>
-        prev.map((p) => (p.slotId === mySlotId ? { ...p, isReady: !p.isReady } : p))
+      const myPlayer = playersRef.current.find(
+        (p) =>
+          p.slotId === mySlotIdRef.current ||
+          (networkRef.current?.myPeerId && p.peerId === networkRef.current.myPeerId)
       )
-      networkRef.current?.sendToHost({ type: 'TOGGLE_READY', slotId: mySlotId })
+      const nextReady = myPlayer ? !myPlayer.isReady : true
+      const updated = playersRef.current.map((p) =>
+        p.slotId === mySlotIdRef.current ||
+        (networkRef.current?.myPeerId && p.peerId === networkRef.current.myPeerId)
+          ? { ...p, isReady: nextReady }
+          : p
+      )
+      playersRef.current = updated
+      setPlayers(updated)
+
+      networkRef.current?.sendToHost({
+        type: 'TOGGLE_READY',
+        slotId: mySlotIdRef.current,
+        peerId: networkRef.current?.myPeerId,
+        isReady: nextReady,
+      })
     }
   }
 
   const handleSelectMode = (newMode) => {
     setMode(newMode)
-    if (isHost && networkRef.current) {
+    modeRef.current = newMode
+    if (isHostRef.current && networkRef.current) {
       networkRef.current.broadcast({
         type: 'LOBBY_STATE',
-        players,
+        players: playersRef.current,
         mode: newMode,
       })
     }
@@ -1064,7 +1251,7 @@ export default function TankGame({
 
   // Start Game (Host only)
   const handleStartGame = () => {
-    if (!isHost) return
+    if (!isHostRef.current) return
 
     const initialWorld = initRoundWorld({ blue: 0, red: 0 }, 0)
     setGamePhase('battle')
@@ -1080,8 +1267,8 @@ export default function TankGame({
 
   // Rematch
   const handleRematch = () => {
-    if (!isHost) return
-    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, currentMapIndex + 1)
+    if (!isHostRef.current) return
+    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, currentMapIndexRef.current + 1)
     setGamePhase('battle')
     setMatchWinner(null)
 
@@ -1094,14 +1281,25 @@ export default function TankGame({
   }
 
   const handleLeaveRoom = () => {
+    if (simulationTimerRef.current) {
+      clearInterval(simulationTimerRef.current)
+      simulationTimerRef.current = null
+    }
     if (networkRef.current) {
       networkRef.current.destroy()
+      networkRef.current = null
     }
     setRoomCode('')
     setInputCode('')
+    setIsHost(false)
+    isHostRef.current = false
     setGamePhase('lobby')
     setConnectionStatus('idle')
     setPlayers([])
+    playersRef.current = []
+    setMySlotId('p1')
+    mySlotIdRef.current = 'p1'
+    setMyPeerId('')
   }
 
   // Active tank for local player
@@ -1123,6 +1321,7 @@ export default function TankGame({
           connectionStatus={connectionStatus}
           players={players}
           mySlotId={mySlotId}
+          myPeerId={myPeerId}
           onSelectSlot={handleSelectSlot}
           onToggleReady={handleToggleReady}
           onStartGame={handleStartGame}
