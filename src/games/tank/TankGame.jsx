@@ -12,6 +12,7 @@ import {
   TANK_TYPES,
   DEFAULT_TANK_TYPE,
 } from './constants/tankConstants'
+import { useTankInput } from './hooks/useTankInput'
 import {
   createEmptyWorld,
   buildRoundWorld,
@@ -112,18 +113,8 @@ export default function TankGame({
     }
   }, [])
 
-  // Local Input tracking
-  const localInputRef = useRef({
-    forward: false,
-    reverse: false,
-    steerLeft: false,
-    steerRight: false,
-    isMoving: false,
-    moveAngle: 0,
-    moveMagnitude: 0,
-    turretAngle: 0,
-    aimCoord: { x: 500, y: 325 },
-  })
+  // Local controls live in hooks/useTankInput.js; mounted further down, once the
+  // handlers it needs exist.
 
   // Synchronized refs to avoid stale closures in callbacks and event listeners
   const isHostRef = useRef(false)
@@ -143,6 +134,11 @@ export default function TankGame({
 
   const networkRef = useRef(null)
   const simulationTimerRef = useRef(null)
+
+  // Declared here so useTankInput can reach the handlers it fires without depending
+  // on their declaration order further down.
+  const handleFireCannonRef = useRef(null)
+  const handleTriggerRadarPingRef = useRef(null)
   // Round-win and match-over transitions are deferred; keep the handle so leaving
   // mid-transition does not fire state updates into an unmounted component.
   const roundTransitionTimerRef = useRef(null)
@@ -195,6 +191,26 @@ export default function TankGame({
       }
     }
   }, [])
+
+  // -------------------------------------------------------------
+  // Local controls (keyboard, mouse aim, touch joysticks)
+  // -------------------------------------------------------------
+  const { inputRef: localInputRef, updateInput, setTurretAngle, aimAt } = useTankInput({
+    active: gamePhase === 'battle',
+    onFire: () => handleFireCannonRef.current?.(),
+    onPing: () => handleTriggerRadarPingRef.current?.(),
+    // Only a client needs to publish: the host's tick reads the ref directly.
+    sendInput: (input) => {
+      if (!isHostRef.current && networkRef.current) {
+        networkRef.current.sendToHost({
+          type: 'PLAYER_INPUT',
+          slotId: mySlotIdRef.current,
+          input,
+        })
+      }
+    },
+    resolveMyTank: () => worldRef.current.tanks.find((t) => t.slotId === mySlotIdRef.current),
+  })
 
   // -------------------------------------------------------------
   // World lifecycle (Host Authoritative)
@@ -317,8 +333,7 @@ export default function TankGame({
     if (roundWin) {
       handleRoundWin(roundWin.winner, roundWin.score)
     }
-  }, [commitWorld, playWorldEvents, handleRoundWin])
-
+  }, [commitWorld, playWorldEvents, handleRoundWin, localInputRef])
 
   // Simulation interval for Host
   useEffect(() => {
@@ -389,126 +404,10 @@ export default function TankGame({
   }
 
 
-  const handleFireCannonRef = useRef(handleFireCannon)
-  const handleTriggerRadarPingRef = useRef(handleTriggerRadarPing)
-
   useEffect(() => {
     handleFireCannonRef.current = handleFireCannon
     handleTriggerRadarPingRef.current = handleTriggerRadarPing
   })
-
-  // -------------------------------------------------------------
-  // Keyboard Event Listeners (Desktop)
-  // -------------------------------------------------------------
-  useEffect(() => {
-    if (gamePhase !== 'battle') return
-
-    const handleKeyDown = (e) => {
-      const key = e.key.toLowerCase()
-      let changed = false
-
-      if (key === 'w' || key === 'arrowup') {
-        localInputRef.current.forward = true
-        changed = true
-      }
-      if (key === 's' || key === 'arrowdown') {
-        localInputRef.current.reverse = true
-        changed = true
-      }
-      if (key === 'a' || key === 'arrowleft') {
-        localInputRef.current.steerLeft = true
-        changed = true
-      }
-      if (key === 'd' || key === 'arrowright') {
-        localInputRef.current.steerRight = true
-        changed = true
-      }
-      if (key === ' ') {
-        e.preventDefault()
-        handleFireCannonRef.current?.()
-      }
-      if (key === 'e') {
-        e.preventDefault()
-        handleTriggerRadarPingRef.current?.()
-      }
-
-      if (changed && !isHostRef.current && networkRef.current) {
-        networkRef.current.sendToHost({
-          type: 'PLAYER_INPUT',
-          slotId: mySlotIdRef.current,
-          input: localInputRef.current,
-        })
-      }
-    }
-
-    const handleKeyUp = (e) => {
-      const key = e.key.toLowerCase()
-      let changed = false
-
-      if (key === 'w' || key === 'arrowup') {
-        localInputRef.current.forward = false
-        changed = true
-      }
-      if (key === 's' || key === 'arrowdown') {
-        localInputRef.current.reverse = false
-        changed = true
-      }
-      if (key === 'a' || key === 'arrowleft') {
-        localInputRef.current.steerLeft = false
-        changed = true
-      }
-      if (key === 'd' || key === 'arrowright') {
-        localInputRef.current.steerRight = false
-        changed = true
-      }
-
-      if (changed && !isHostRef.current && networkRef.current) {
-        networkRef.current.sendToHost({
-          type: 'PLAYER_INPUT',
-          slotId: mySlotIdRef.current,
-          input: localInputRef.current,
-        })
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
-    }
-  }, [gamePhase])
-
-  // Mouse Aim on Canvas
-  const handleCanvasPointerMove = (coords) => {
-    const myTankNow = worldRef.current.tanks.find((t) => t.slotId === mySlotIdRef.current)
-    if (!myTankNow) return
-
-    const angle = Math.atan2(coords.y - myTankNow.y, coords.x - myTankNow.x)
-    localInputRef.current.turretAngle = angle
-    localInputRef.current.aimCoord = coords
-
-    if (!isHostRef.current && networkRef.current) {
-      networkRef.current.sendToHost({
-        type: 'PLAYER_INPUT',
-        slotId: mySlotIdRef.current,
-        input: localInputRef.current,
-      })
-    }
-  }
-
-  // Virtual Joystick Aim Change Handler
-  const handleAimChange = useCallback((worldAngle) => {
-    localInputRef.current.turretAngle = worldAngle
-    if (!isHostRef.current && networkRef.current) {
-      networkRef.current.sendToHost({
-        type: 'PLAYER_INPUT',
-        slotId: mySlotIdRef.current,
-        input: localInputRef.current,
-      })
-    }
-  }, [])
 
   // -------------------------------------------------------------
   // Host Handlers for Client Join / Leave
@@ -1166,23 +1065,14 @@ export default function TankGame({
               roundWinner={roundWinner}
               is2v2={mode === '2v2'}
               isPortrait={isPortrait}
-              onCanvasPointerMove={handleCanvasPointerMove}
+              onCanvasPointerMove={aimAt}
               onCanvasPointerDown={() => handleFireCannon()}
               onCanvasContextMenu={handleTriggerRadarPing}
             />
 
             <TankControls
-              onInputChange={(delta) => {
-                localInputRef.current = { ...localInputRef.current, ...delta }
-                if (!isHostRef.current && networkRef.current) {
-                  networkRef.current.sendToHost({
-                    type: 'PLAYER_INPUT',
-                    slotId: mySlotIdRef.current,
-                    input: localInputRef.current,
-                  })
-                }
-              }}
-              onAimChange={handleAimChange}
+              onInputChange={updateInput}
+              onAimChange={setTurretAngle}
               onFire={handleFireCannon}
               onPing={handleTriggerRadarPing}
               activeWeapon={myTank?.weapon || 'STANDARD'}
