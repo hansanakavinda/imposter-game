@@ -229,6 +229,9 @@ export default function UnoGame({
 
   const runHostActionRef = useRef(null)
 
+  // Guards against a double-tap on the draw pile firing two ACTION_DRAW_CARDs before
+  // the host's reply lands. mpCurrentPlayerIndex is an intentional extra dependency:
+  // the lock must also clear on a turn change, even when hasDrawn was already false.
   const isDrawingMpRef = useRef(false)
   useEffect(() => {
     if (!mpHasDrawnCardThisTurn) {
@@ -1302,6 +1305,9 @@ export default function UnoGame({
       clientNetworkRef.current = null
     }
     handleJoinRoom(myProfileRef.current)
+    // handleJoinRoom is deliberately omitted: it is a plain function re-created every
+    // render, so declaring it would make this callback unstable for no benefit. It
+    // reads nothing that goes stale - the profile comes from a ref.
   }, [mpRoomState.isHost])
 
   const handleSyncGameStateMp = useCallback(() => {

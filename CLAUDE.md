@@ -28,6 +28,12 @@ There is no `tailwind.config.js` — do not create one.
 Linting is **oxlint**, not ESLint. `eslint-disable` comments are honoured, but there is
 no ESLint config and no `eslint` dependency. Rules live in `.oxlintrc.json`.
 
+**Do not disable `no-undef`.** `vite build` happily compiles a reference to an
+identifier that resolves to nothing — it only fails at runtime, in the browser, on the
+screen that uses it. `no-undef` is the only check in the toolchain that catches it, and
+it caught two such crashes during the last refactor. `env` is set to browser + node so
+DOM and `process` globals resolve.
+
 ## Layout
 
 ```
@@ -51,8 +57,11 @@ Rules of thumb:
 
 - A game's code lives under `src/games/<game>/`. If it is only used by one game, it does
   not belong in `src/components/`, `src/data/` or `src/utils/`.
-- `engine/` must stay free of React and of side effects. Sound, broadcasting and
-  celebration are injected as an `fx` object so the engine stays unit-testable.
+- `engine/` must stay free of React and of side effects. Engine functions mutate or
+  return state and report what happened as an `events` array; the caller turns those
+  into sound, broadcasts, modals and timers. That is what keeps them unit-testable.
+  - UNO: `(game, ...args) => { ok, reason?, events }`, mutating `game` in place.
+  - Tank: `stepWorld(world, inputs) => { world, events }`, returning a new world.
 - When a file passes ~400 lines, that is the signal to split it, not a target to beat.
 
 ## The rule that matters most: host authority
@@ -76,8 +85,23 @@ closures inside network callbacks and timers. Keep it that way.
 
 ## Before claiming a change works
 
-Run `npm test`. The engine tests exist because the UNO rules and the Tank collision
-maths are easy to break silently.
+Run `npm test` (235 tests) and `npm run lint`. The engine tests exist because the UNO
+rules and the Tank collision maths are easy to break silently.
+
+Where the coverage is:
+
+| Module | Tests |
+|---|---|
+| `uno/utils/deck.js` | 43 |
+| `uno/engine/hostEngine.js` | 63 |
+| `uno/services/unoHandshake.js` | 20 |
+| `uno/utils/unoAi.js` | 23 |
+| `tank/engine/tankSimulation.js` | 53 |
+| `tank/utils/tankPhysics.js` | 33 |
+
+The notable gap is `uno/hooks/useUnoAiGame.js` — solo-vs-AI holds its state in React,
+so it cannot be tested without a renderer. Treat changes there as unverified and play a
+solo game through.
 
 For rules changes, the invariant to check by hand is that a UNO deck stays whole:
 `sum(all hands) + drawPile + discardPile === 108` (216 with 6+ players, which uses two

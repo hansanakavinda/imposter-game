@@ -66,6 +66,9 @@ export function useUnoAiGame({
     aiUnoCalledPlayersRef.current = aiUnoCalledPlayers
   }, [aiUnoCalledPlayers])
 
+  // Guards against a double-tap on the draw pile drawing twice. aiCurrentPlayerIndex is
+  // an intentional extra dependency: the lock must also clear on a turn change, even
+  // when hasDrawn was already false.
   const isDrawingAiRef = useRef(false)
   useEffect(() => {
     if (!aiHasDrawnCardThisTurn) {
