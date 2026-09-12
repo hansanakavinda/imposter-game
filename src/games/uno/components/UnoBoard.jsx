@@ -1,25 +1,23 @@
-import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useRef, useState, useMemo, useCallback } from 'react'
 import UnoSettingsModal from './UnoSettingsModal'
 import { COLOR_CONFIG, CARD_COLORS } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { getActivePlayers, findNextPlayerIndex } from '../utils/turnOrder'
 import useDrawAnimation from '../hooks/useDrawAnimation'
 import UnoDisconnectBanner from './board/UnoDisconnectBanner'
-import UnoSkipAlert from './board/UnoSkipAlert'
-import UnoStackBanner from './board/UnoStackBanner'
-import UnoActionToast from './board/UnoActionToast'
 import UnoFlyingCardsLayer from './board/UnoFlyingCardsLayer'
-import UnoTurnTrack from './board/UnoTurnTrack'
+import UnoSeats from './board/UnoSeats'
 import UnoTopBar from './board/UnoTopBar'
 import UnoPileArea from './board/UnoPileArea'
-import UnoPlayerActionRow from './board/UnoPlayerActionRow'
-import UnoTurnPrompt from './board/UnoTurnPrompt'
+import UnoHandHeader from './board/UnoHandHeader'
+import UnoStatusLine from './board/UnoStatusLine'
 import UnoSpectatorPanel from './board/UnoSpectatorPanel'
-import UnoHandToolbar from './board/UnoHandToolbar'
 import UnoHandTray from './board/UnoHandTray'
 import { playClickSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
+const EMPTY_SET = new Set()
+const LIVE_COLOUR_VAR = '--live'
 
 export default function UnoBoard({
   players,
@@ -92,29 +90,30 @@ export default function UnoBoard({
   const activeColorConfig =
     COLOR_CONFIG[activeColor] || COLOR_CONFIG[topCard?.color] || COLOR_CONFIG[CARD_COLORS.WILD]
 
-  const myCanPlayAnyCard =
-    !isSpectating &&
-    handCards.some((card) =>
-      canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
-    )
+  // One pass over the hand instead of three. This used to be two `.some()`
+  // scans here plus a `canPlayCard` call per card inside the tray, all asking
+  // the same question of the same hand on every render.
+  const playableIds = useMemo(() => {
+    if (isSpectating) return EMPTY_SET
+    const ids = new Set()
+    for (const card of handCards) {
+      if (canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)) {
+        ids.add(card.id)
+      }
+    }
+    return ids
+  }, [isSpectating, handCards, topCard, activeColor, pendingDrawCount, pendingStackType])
 
-  const myCanStack =
-    !isSpectating &&
-    pendingDrawCount > 0 &&
-    handCards.some((card) =>
-      canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
-    )
-
-  const showUnoButton = !isSpectating && handCards.length > 0
-
+  const myCanPlayAnyCard = playableIds.size > 0
+  const myCanStack = pendingDrawCount > 0 && myCanPlayAnyCard
 
   const [handSortMode, setHandSortMode] = useState('none') // 'none' | 'color' | 'number'
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [flightSpacing, setFlightSpacing] = useState(null)
 
   const drawPileRef = useRef(null)
   const handTrayRef = useRef(null)
-  const activeNodeRef = useRef(null)
 
   const resetHandSort = useCallback(() => setHandSortMode('none'), [])
 
@@ -123,20 +122,29 @@ export default function UnoBoard({
     drawPileRef,
     handTrayRef,
     onCardsDrawn: resetHandSort,
+    spacing: flightSpacing,
   })
 
-  const handlePlayCardWithBadgeClear = (card) => {
-    clearNewBadges()
-    onPlayCard(card)
-  }
+  // Every handler crossing into a memoized child has to be stable, or the memo
+  // buys nothing.
+  const handlePlayCardWithBadgeClear = useCallback(
+    (card) => {
+      clearNewBadges()
+      onPlayCard(card)
+    },
+    [clearNewBadges, onPlayCard]
+  )
 
-  const handleHeaderSync = () => {
+  const openMenu = useCallback(() => setIsSettingsOpen(true), [])
+  const closeMenu = useCallback(() => setIsSettingsOpen(false), [])
+
+  const handleHeaderSync = useCallback(() => {
     if (!onSyncState || isSyncing) return
     playClickSound()
     setIsSyncing(true)
     onSyncState()
     setTimeout(() => setIsSyncing(false), 800)
-  }
+  }, [onSyncState, isSyncing])
 
   // Memoize sorted cards for smooth rendering and persistent sort preference
   const displayedHandCards = useMemo(() => {
@@ -149,55 +157,37 @@ export default function UnoBoard({
     return handCards
   }, [handCards, handSortMode])
 
-  // Auto-scroll the turn track when currentPlayerIndex changes so active player is visible
-  useEffect(() => {
-    if (activeNodeRef.current) {
-      activeNodeRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
-      })
-    }
-  }, [currentPlayerIndex])
-
-  const handleTrayWheel = (e) => {
+  const handleTrayWheel = useCallback((e) => {
     if (e.deltaY !== 0 && handTrayRef.current) {
       handTrayRef.current.scrollLeft += e.deltaY
     }
-  }
+  }, [])
 
-  const scrollTray = (offset) => {
-    if (handTrayRef.current) {
-      handTrayRef.current.scrollBy({ left: offset, behavior: 'smooth' })
-    }
-  }
+  const liveColour = useMemo(
+    () => ({ [LIVE_COLOUR_VAR]: activeColorConfig.hex }),
+    [activeColorConfig.hex]
+  )
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-3 flex flex-col justify-between min-h-[88vh] select-none">
-      {/* 1. Top Section: Header Bar & Turn Order Track */}
-      <div className="w-full pt-1 pb-3">
+    <div className="relative w-full max-w-2xl mx-auto px-3 flex-1 min-h-0 flex flex-col select-none">
+      {/* 1. Who is at the table */}
+      <div className="relative z-10 w-full pt-1">
         {isMultiplayer && !isHost && connectionStatus === 'disconnected' && (
-          <UnoDisconnectBanner
-            onReconnect={onReconnect}
-            onOpenMenu={() => setIsSettingsOpen(true)}
-          />
+          <UnoDisconnectBanner onReconnect={onReconnect} onOpenMenu={openMenu} />
         )}
 
-        {/* Unified Top Utility Bar: Room Info, Direction Indicator, and Actions */}
         <UnoTopBar
           isMultiplayer={isMultiplayer}
           isHost={isHost}
           roomCode={roomCode}
           connectionStatus={connectionStatus}
-          direction={direction}
           onSyncState={onSyncState}
           isSyncing={isSyncing}
           onSync={handleHeaderSync}
-          onOpenMenu={() => setIsSettingsOpen(true)}
+          onOpenMenu={openMenu}
         />
 
-        {/* Players Turn Flow Row with Direction Arrows */}
-        <UnoTurnTrack
+        <UnoSeats
           players={players}
           currentPlayerIndex={currentPlayerIndex}
           nextPlayerIndex={nextPlayerIndex}
@@ -208,37 +198,28 @@ export default function UnoBoard({
           unoCalledPlayers={unoCalledPlayers}
           skippedInfo={skippedInfo}
           onCatchUno={onCatchUno}
-          activeNodeRef={activeNodeRef}
         />
-
-        {skippedInfo && (
-          <UnoSkipAlert
-            skippedInfo={skippedInfo}
-            isMyTurnSkipped={isMyTurnSkipped}
-            activePlayer={activePlayer}
-          />
-        )}
       </div>
 
-      {/* 2. Middle Section: The Table Arena */}
-      <div className="relative my-auto flex flex-col items-center justify-center py-4 mt-1 sm:mt-2">
-        {pendingDrawCount > 0 && (
-          <UnoStackBanner
-            pendingDrawCount={pendingDrawCount}
-            pendingStackType={pendingStackType}
-            isCurrentTurnForMe={isCurrentTurnForMe}
-            myCanStack={myCanStack}
-            activePlayer={activePlayer}
-          />
-        )}
+      {/* 2. The table itself. flex-1, not my-auto: margin-block:auto absorbed
+          every spare pixel and split it evenly above and below this block,
+          which is exactly where the dead band under the piles came from. */}
+      <div className="relative z-10 flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-3 py-3">
+        {/* The table top. The middle of the board used to be the one region
+            with no object in it, which is what made the space between the
+            piles and your hand read as a gap rather than as a table. */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[118%] max-w-[560px] aspect-[5/4] max-h-full rounded-[50%] bg-felt border border-edge shadow-lift-1 overflow-hidden">
+          {/* UNO's one extension to the lamp rule: the colour in play is the
+              light falling on the felt. Never the only signal -- the pile
+              names the colour in words directly underneath it. */}
+          <div className="uno-table-light" style={liveColour} />
+        </div>
 
-        {/* Center Card Play Area (Draw Pile & Discard Pile) */}
         <UnoPileArea
           drawPileRef={drawPileRef}
           drawPileCount={drawPileCount}
           canDrawCard={canDrawCard}
           onDrawCard={onDrawCard}
-          isCurrentTurnForMe={isCurrentTurnForMe}
           hasDrawnCardThisTurn={hasDrawnCardThisTurn}
           pendingDrawCount={pendingDrawCount}
           topCard={topCard}
@@ -246,27 +227,7 @@ export default function UnoBoard({
           activeColorConfig={activeColorConfig}
         />
 
-        {actionMessage && <UnoActionToast actionMessage={actionMessage} />}
-      </div>
-
-      {/* 3. Bottom Section: Player Hand & Controls */}
-      <div className="w-full pb-2 pt-3 border-t border-edge space-y-2">
-        {/* Turn Bar & Status */}
-        <UnoPlayerActionRow
-          myPlayer={myPlayer}
-          handCards={handCards}
-          isCurrentTurnForMe={isCurrentTurnForMe}
-          hasDrawnCardThisTurn={hasDrawnCardThisTurn}
-          hasCalledUnoThisRound={hasCalledUnoThisRound}
-          unoCalledPlayers={unoCalledPlayers}
-          showUnoButton={showUnoButton}
-          pendingDrawCount={pendingDrawCount}
-          onCallUno={onCallUno}
-          onPassTurn={onPassTurn}
-        />
-
-        {/* Turn Prompt Banner */}
-        <UnoTurnPrompt
+        <UnoStatusLine
           isSpectating={isSpectating}
           isCurrentTurnForMe={isCurrentTurnForMe}
           isMyTurnSkipped={isMyTurnSkipped}
@@ -274,13 +235,16 @@ export default function UnoBoard({
           activePlayer={activePlayer}
           activePlayers={activePlayers}
           skippedInfo={skippedInfo}
-          hasDrawnCardThisTurn={hasDrawnCardThisTurn}
           myCanPlayAnyCard={myCanPlayAnyCard}
           myCanStack={myCanStack}
           pendingDrawCount={pendingDrawCount}
           pendingStackType={pendingStackType}
+          actionMessage={actionMessage}
         />
+      </div>
 
+      {/* 3. Your hand */}
+      <div className="relative z-10 w-full pt-2 pb-1 border-t border-edge">
         {isSpectating ? (
           <UnoSpectatorPanel
             myPlayerRank={myPlayerRank}
@@ -290,27 +254,31 @@ export default function UnoBoard({
           />
         ) : (
           <>
-            {/* Hand Toolbar: Sorting Options & Scroll controls */}
-            <UnoHandToolbar
+            <UnoHandHeader
+              myPlayer={myPlayer}
               handCards={handCards}
+              isCurrentTurnForMe={isCurrentTurnForMe}
+              hasDrawnCardThisTurn={hasDrawnCardThisTurn}
+              hasCalledUnoThisRound={hasCalledUnoThisRound}
+              unoCalledPlayers={unoCalledPlayers}
+              pendingDrawCount={pendingDrawCount}
+              onCallUno={onCallUno}
+              onPassTurn={onPassTurn}
               handSortMode={handSortMode}
-              setHandSortMode={setHandSortMode}
-              scrollTray={scrollTray}
+              onCycleSort={setHandSortMode}
+              isSpectating={isSpectating}
             />
 
-            {/* Player's Hand Horizontal Tray */}
             <UnoHandTray
               handTrayRef={handTrayRef}
               displayedHandCards={displayedHandCards}
               isCurrentTurnForMe={isCurrentTurnForMe}
-              topCard={topCard}
-              activeColor={activeColor}
-              pendingDrawCount={pendingDrawCount}
-              pendingStackType={pendingStackType}
+              playableIds={playableIds}
               newlyDrawnCardIds={newlyDrawnCardIds}
               flyingCards={flyingCards}
               onPlayCard={handlePlayCardWithBadgeClear}
               onWheel={handleTrayWheel}
+              onStepChange={setFlightSpacing}
             />
           </>
         )}
@@ -318,10 +286,9 @@ export default function UnoBoard({
 
       {flyingCards.length > 0 && <UnoFlyingCardsLayer flyingCards={flyingCards} />}
 
-      {/* In-Game Settings / Menu Modal */}
       <UnoSettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={closeMenu}
         isMultiplayer={isMultiplayer}
         isHost={isHost}
         roomCode={roomCode}

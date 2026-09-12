@@ -1,111 +1,99 @@
 import React from 'react'
 import UnoCard from '../UnoCard'
-import { CARD_COLORS } from '../../constants/unoConstants'
+import Label from '../../../../components/ui/Label'
+import { FOCUS, cx } from '../../../../components/ui/tokens'
 
-/** The table centre: draw pile and discard pile. */
-export default function UnoPileArea({
+/**
+ * The middle of the table: what you can take, and what you have to match.
+ *
+ * The blurred halo that used to sit under the discard is gone. It was a
+ * blur-xl plus a 35px-spread box-shadow with transition-all on it, mounted the
+ * whole time -- the most expensive element on the board, spent on saying
+ * something the table light now says better and for free.
+ */
+function UnoPileArea({
   drawPileRef,
   drawPileCount,
   canDrawCard,
   onDrawCard,
-  isCurrentTurnForMe,
   hasDrawnCardThisTurn,
   pendingDrawCount,
   topCard,
   activeColor,
   activeColorConfig,
 }) {
-  return (
-    <div className="flex items-center justify-center gap-6 sm:gap-10">
-      {/* Draw Pile */}
-      <div ref={drawPileRef} className="flex flex-col items-center">
-        <div className="relative group">
-          {/* Stack effect */}
-          <div className="absolute inset-0 bg-felt rounded-xl translate-x-1.5 translate-y-1.5 border border-edge pointer-events-none" />
-          <div className="absolute inset-0 bg-well rounded-xl translate-x-0.5 translate-y-0.5 border border-edge pointer-events-none" />
+  const owed = pendingDrawCount > 0
 
+  const drawLabel = owed
+    ? `Take ${pendingDrawCount}`
+    : hasDrawnCardThisTurn
+    ? 'Drawn'
+    : 'Draw'
+
+  return (
+    <div className="relative z-10 flex items-start justify-center gap-7 sm:gap-10">
+      {/* Draw */}
+      <div className="flex flex-col items-center gap-2">
+        <button
+          type="button"
+          ref={drawPileRef}
+          onClick={canDrawCard ? onDrawCard : undefined}
+          disabled={!canDrawCard}
+          aria-label={owed ? `Take ${pendingDrawCount} cards` : 'Draw a card'}
+          className={cx(
+            'relative rounded-object transition-transform duration-150',
+            canDrawCard
+              ? 'cursor-pointer hover:-translate-y-1 active:scale-[0.97]'
+              : 'cursor-not-allowed opacity-60',
+            FOCUS
+          )}
+        >
+          {/* The pile has depth: two backs peeking out under the top one. */}
+          <span className="absolute inset-0 translate-x-1 translate-y-1 rounded-well bg-felt border border-edge" />
+          <span className="absolute inset-0 translate-x-0.5 translate-y-0.5 rounded-well bg-felt border border-edge" />
           <UnoCard
             isBack
-            size="md"
-            onClick={canDrawCard ? onDrawCard : undefined}
-            className={
-              canDrawCard
-                ? pendingDrawCount > 0
-                  ? 'cursor-pointer ring-4 ring-red-500 hover:scale-105 active:scale-95 shadow-2xl shadow-red-600/50 animate-pulse'
-                  : 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
-                : 'cursor-not-allowed opacity-75'
-            }
+            size="xl"
+            className={cx('relative', owed && 'ring-2 ring-danger')}
           />
-        </div>
-        <span
-          className={`text-micro font-semibold mt-2 ${
-            pendingDrawCount > 0 && isCurrentTurnForMe
-              ? 'text-red-400 font-bold animate-pulse'
-              : hasDrawnCardThisTurn && isCurrentTurnForMe
-              ? 'text-amber-400 font-medium'
-              : 'text-ink-muted'
-          }`}
-        >
-          {pendingDrawCount > 0
-            ? `Draw +${pendingDrawCount} Penalty`
-            : hasDrawnCardThisTurn && isCurrentTurnForMe
-            ? 'Card Drawn (Play or Pass)'
-            : `Draw Pile (${drawPileCount})`}
+        </button>
+
+        <span className="flex flex-col items-center gap-0.5">
+          <Label className={owed ? 'text-danger' : undefined}>{drawLabel}</Label>
+          {!owed && (
+            <span className="font-mono text-mini text-ink-faint leading-none">{drawPileCount}</span>
+          )}
         </span>
       </div>
 
-      {/* Discard Pile */}
-      <div className="flex flex-col items-center">
+      {/* Discard */}
+      <div className="flex flex-col items-center gap-2">
         <div className="relative">
-          {/* Vibrant active color halo glow */}
-          <div
-            className="absolute -inset-3 rounded-2xl blur-xl opacity-75 transition-all duration-500 pointer-events-none"
-            style={{
-              backgroundColor: activeColorConfig.hex || '#ef4444',
-              boxShadow: `0 0 35px 8px ${activeColorConfig.hex || '#ef4444'}50`,
-            }}
-          />
-
-          {/* Stack effect representing underneath cards */}
-          <div className="absolute inset-0 bg-felt-high rounded-xl rotate-6 translate-x-1.5 translate-y-1 border border-white/20 shadow-md pointer-events-none" />
-          <div className="absolute inset-0 bg-felt-high rounded-xl -rotate-4 -translate-x-1 translate-y-0.5 border border-white/20 shadow-md pointer-events-none" />
-
-          {/* Floating Active Color Badge when top card is Wild */}
-          {topCard?.color === CARD_COLORS.WILD && (
-            <div
-              className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-nano font-bold uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-              <span>Declared: {activeColorConfig.name}</span>
-            </div>
-          )}
-
-          <UnoCard
-            card={topCard}
-            size="md"
-            isPlayable={false}
-            activeColor={activeColor}
-            style={{ transform: 'rotate(-2deg)' }}
-            className="relative z-10 shadow-2xl border-white ring-3 ring-white/90 brightness-105"
-          />
-        </div>
-
-        {/* Discard Pile label with active color */}
-        <div className="flex items-center gap-1.5 mt-2 text-micro font-semibold text-ink-muted">
-          <span>Discard Pile</span>
-          <span className="text-ink-faint">•</span>
-          <span
-            className="font-bold flex items-center gap-1"
-            style={{ color: activeColorConfig.hex || '#ef4444' }}
-          >
-            <span
-              className="w-2 h-2 rounded-full inline-block shadow-sm"
-              style={{ backgroundColor: activeColorConfig.hex || '#ef4444' }}
+          <span className="absolute inset-0 rotate-[7deg] rounded-object bg-felt border border-edge" />
+          <span className="absolute inset-0 -rotate-3 rounded-object bg-felt border border-edge" />
+          {topCard && (
+            <UnoCard
+              card={topCard}
+              size="xl"
+              isPlayable={false}
+              activeColor={activeColor}
+              className="relative rotate-2 shadow-lift-2"
             />
-            {activeColorConfig.name}
-          </span>
+          )}
         </div>
+
+        {/* The live colour, in words. The table light carries it as ambience;
+            this is what makes it legible without relying on colour at all. */}
+        <span className="flex items-center gap-1.5">
+          <span
+            className={cx('w-2 h-2 rounded-full', activeColorConfig.bg)}
+            aria-hidden="true"
+          />
+          <Label className={activeColorConfig.text}>{activeColorConfig.name} in play</Label>
+        </span>
       </div>
     </div>
   )
 }
+
+export default React.memo(UnoPileArea)

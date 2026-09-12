@@ -68,4 +68,25 @@ describe('computeFlightPath - targets', () => {
     })
     expect(targets).toEqual([])
   })
+
+  describe('spacing', () => {
+    // The tray shingles its cards, so how far apart they land depends on how
+    // many are in the hand. It measures that and passes it in.
+    it('lands cards on the spacing the tray reports', () => {
+      const { targets } = computeFlightPath({
+        drawRect: rect(400, 300), trayRect: rect(0, 700), count: 3, ...VIEW, spacing: 30,
+      })
+      expect(targets.map((t) => t.x)).toEqual([12, 42, 72])
+    })
+
+    it('falls back to the default whenever the tray has not measured yet', () => {
+      const unmeasured = [undefined, null, 0, -20, NaN]
+      for (const spacing of unmeasured) {
+        const { targets } = computeFlightPath({
+          drawRect: rect(400, 300), trayRect: rect(0, 700), count: 2, ...VIEW, spacing,
+        })
+        expect(targets.map((t) => t.x)).toEqual([12, 60])
+      }
+    })
+  })
 })

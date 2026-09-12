@@ -15,56 +15,65 @@ export const CARD_TYPES = {
   WILD_DRAW_FOUR: 'wild4',
 }
 
+/**
+ * The four card colours, plus wild.
+ *
+ * These are the one place saturated colour belongs to a game's own material
+ * rather than its ink, so they are real tokens (--color-card-* in index.css)
+ * rather than raw Tailwind palette classes. Every class here is written out in
+ * full: Tailwind scans source text for complete names, so a `bg-card-${color}`
+ * built at runtime is never generated.
+ *
+ * `hex` is what .uno-table-light burns -- it has to stay in step with the
+ * token, because CSS custom properties cannot be read back as a class.
+ */
 export const COLOR_CONFIG = {
   [CARD_COLORS.RED]: {
     name: 'Red',
-    bg: 'bg-red-600',
-    border: 'border-red-500',
-    ring: 'ring-red-500',
-    text: 'text-red-500',
-    badge: 'bg-red-500/20 text-red-300 border-red-500/40',
-    gradient: 'from-red-600 to-rose-700',
-    hex: '#ef4444',
+    bg: 'bg-card-red',
+    border: 'border-card-red',
+    ring: 'ring-card-red',
+    text: 'text-card-red',
+    wash: 'bg-card-red/12 border-card-red/35 text-card-red',
+    hex: '#e0443f',
   },
   [CARD_COLORS.BLUE]: {
     name: 'Blue',
-    bg: 'bg-blue-600',
-    border: 'border-blue-500',
-    ring: 'ring-blue-500',
-    text: 'text-blue-500',
-    badge: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    gradient: 'from-blue-600 to-indigo-700',
-    hex: '#3b82f6',
+    bg: 'bg-card-blue',
+    border: 'border-card-blue',
+    ring: 'ring-card-blue',
+    text: 'text-card-blue',
+    wash: 'bg-card-blue/12 border-card-blue/35 text-card-blue',
+    hex: '#3b7fd4',
   },
   [CARD_COLORS.GREEN]: {
     name: 'Green',
-    bg: 'bg-emerald-600',
-    border: 'border-emerald-500',
-    ring: 'ring-emerald-500',
-    text: 'text-emerald-500',
-    badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    gradient: 'from-emerald-600 to-teal-700',
-    hex: '#10b981',
+    bg: 'bg-card-green',
+    border: 'border-card-green',
+    ring: 'ring-card-green',
+    text: 'text-card-green',
+    wash: 'bg-card-green/12 border-card-green/35 text-card-green',
+    hex: '#3fa96b',
   },
   [CARD_COLORS.YELLOW]: {
     name: 'Yellow',
-    bg: 'bg-amber-500',
-    border: 'border-amber-400',
-    ring: 'ring-amber-400',
-    text: 'text-amber-400',
-    badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    gradient: 'from-amber-400 to-yellow-600',
-    hex: '#f59e0b',
+    bg: 'bg-card-yellow',
+    border: 'border-card-yellow',
+    ring: 'ring-card-yellow',
+    text: 'text-card-yellow',
+    wash: 'bg-card-yellow/12 border-card-yellow/35 text-card-yellow',
+    hex: '#f0b429',
   },
   [CARD_COLORS.WILD]: {
     name: 'Wild',
-    bg: 'bg-felt',
+    bg: 'bg-well',
     border: 'border-edge-lit',
-    ring: 'ring-purple-500',
+    ring: 'ring-lamp',
     text: 'text-ink',
-    badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    gradient: 'from-felt via-purple-900/50 to-felt',
-    hex: '#8b5cf6',
+    wash: 'bg-lamp/10 border-lamp/30 text-lamp',
+    // A wild with no colour declared is not a colour. The light goes plain
+    // lamp-white rather than guessing one.
+    hex: '#ffe7be',
   },
 }
 
@@ -75,48 +84,26 @@ export const PLAYABLE_COLORS = [
   CARD_COLORS.YELLOW,
 ]
 
+/**
+ * Placement medal and wording. The three raw-palette class keys this used to
+ * carry (`text`, `badge`, `ring`) had no readers left once the turn track was
+ * rebuilt, so they are a single `tone` the ui/ primitives understand.
+ */
 export function getRankBadge(rank) {
   switch (rank) {
     case 1:
-      return {
-        label: '1st Place',
-        shortLabel: '1st',
-        medal: '🥇',
-        title: 'Winner',
-        text: 'text-amber-300',
-        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        ring: 'ring-amber-400',
-      }
+      return { label: '1st place', shortLabel: '1st', medal: '🥇', title: 'Winner', tone: 'uno' }
     case 2:
-      return {
-        label: '2nd Place',
-        shortLabel: '2nd',
-        medal: '🥈',
-        title: 'Runner-up',
-        text: 'text-slate-200',
-        badge: 'bg-slate-400/20 text-slate-200 border-slate-400/40',
-        ring: 'ring-slate-300',
-      }
+      return { label: '2nd place', shortLabel: '2nd', medal: '🥈', title: 'Runner-up', tone: 'neutral' }
     case 3:
-      return {
-        label: '3rd Place',
-        shortLabel: '3rd',
-        medal: '🥉',
-        title: '3rd Place',
-        text: 'text-amber-500',
-        badge: 'bg-amber-700/20 text-amber-400 border-amber-600/40',
-        ring: 'ring-amber-600',
-      }
+      return { label: '3rd place', shortLabel: '3rd', medal: '🥉', title: '3rd place', tone: 'neutral' }
     default:
       return {
-        label: `${rank}th Place`,
+        label: `${rank}th place`,
         shortLabel: `${rank}th`,
         medal: '🏅',
-        title: `${rank}th Place`,
-        text: 'text-ink-muted',
-        badge: 'bg-felt-high text-ink border-edge-lit',
-        ring: 'ring-edge-lit',
+        title: `${rank}th place`,
+        tone: 'neutral',
       }
   }
 }
-

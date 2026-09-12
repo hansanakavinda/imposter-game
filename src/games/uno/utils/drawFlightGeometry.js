@@ -9,6 +9,12 @@
 
 const CARD_HALF_WIDTH = 36
 const CARD_HALF_HEIGHT = 48
+/**
+ * How far apart consecutive cards land. The tray shingles its cards now, so
+ * the real gap depends on how many are in the hand -- the tray measures it and
+ * passes it in. The constant stays as the default so a caller that has not
+ * measured yet (and every existing test) behaves exactly as before.
+ */
 const CARD_SPACING = 48
 const TRAY_INSET = 12
 const TRAY_TOP_PADDING = 4
@@ -23,9 +29,18 @@ const FALLBACK_TRAY_BOTTOM = 130
  * @param {number}      p.count      how many cards were drawn
  * @param {number}      p.viewportWidth
  * @param {number}      p.viewportHeight
+ * @param {number}     [p.spacing]   px between landing slots; defaults to 48
  * @returns {{ startX: number, startY: number, targets: {x: number, y: number}[] }}
  */
-export function computeFlightPath({ drawRect, trayRect, count, viewportWidth, viewportHeight }) {
+export function computeFlightPath({
+  drawRect,
+  trayRect,
+  count,
+  viewportWidth,
+  viewportHeight,
+  spacing,
+}) {
+  const step = Number.isFinite(spacing) && spacing > 0 ? spacing : CARD_SPACING
   const startX = drawRect
     ? drawRect.left + drawRect.width / 2 - CARD_HALF_WIDTH
     : viewportWidth / 2 - CARD_HALF_WIDTH
@@ -38,8 +53,8 @@ export function computeFlightPath({ drawRect, trayRect, count, viewportWidth, vi
   const targets = []
   for (let index = 0; index < count; index++) {
     const unclamped = trayRect
-      ? trayRect.left + TRAY_INSET + index * CARD_SPACING
-      : FALLBACK_TRAY_INSET + index * CARD_SPACING
+      ? trayRect.left + TRAY_INSET + index * step
+      : FALLBACK_TRAY_INSET + index * step
     targets.push({
       x: Math.min(unclamped, viewportWidth - RIGHT_MARGIN),
       y: targetY,

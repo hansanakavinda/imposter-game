@@ -47,6 +47,21 @@
   --color-team-blue: #06b6d4;
   --color-team-red:  #f43f5e;
 
+  /* -- UNO's four card colours --------------------------------------------
+     The one place saturated colour is allowed to belong to a game's own
+     material rather than its ink. Retuned off the raw Tailwind palette to sit
+     on a warm dark ground, and spaced far enough apart to survive greyscale --
+     red/green is UNO's classic accessibility failure and this board makes the
+     live colour ambient, so it must never be the only signal.
+     COLOR_CONFIG in unoConstants.js mirrors these as literal class names and
+     hexes; the hex is what .uno-table-light burns at runtime. */
+  --color-card-red:    #e0443f;
+  --color-card-yellow: #f0b429;
+  --color-card-green:  #3fa96b;
+  --color-card-blue:   #3b7fd4;
+  --color-card-face:   #fbf7f1;  /* the oval and the frame -- warm, so a card
+                                    rests on the table instead of glowing on it */
+
   /* -- type --------------------------------------------------------------- */
   --font-display: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
   --font-sans:    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -135,6 +150,35 @@
 }
 
 /* ---------------------------------------------------------------------------
+   UNO's one extension to the lamp rule: the light over the board burns the
+   colour of the card in play, and crosses to the new colour over 400ms.
+
+   It is the game's core state made readable peripherally -- you can tell what
+   is live from across the room without looking at the pile. It also replaces
+   the blur-xl + 35px box-shadow halo that used to sit under the discard, which
+   was the most expensive element on the board, so the signature costs less
+   than the decoration it removes.
+
+   background-color is transitioned rather than a gradient colour stop because
+   a colour interpolates everywhere and a gradient does not. The falloff is a
+   static mask, so nothing about the shape animates. An undeclared wild has no
+   colour and the light goes plain lamp-white -- that is meaningful, not a
+   fallback. The live colour is always also named in words on the board; this
+   layer is never the only signal.
+   --------------------------------------------------------------------------- */
+.uno-table-light {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--live, transparent);
+  -webkit-mask-image: radial-gradient(105% 85% at 50% 6%, #000, transparent 72%);
+  mask-image: radial-gradient(105% 85% at 50% 6%, #000, transparent 72%);
+  opacity: 0.22;
+  transition: background-color 400ms ease;
+}
+
+/* ---------------------------------------------------------------------------
    Motion. One idea: objects are picked up and put down. Nothing else moves.
    `scaleUp` was referenced by four modals and defined nowhere, so those four
    have never animated.
@@ -192,9 +236,16 @@
     animation-iteration-count: 1;
   }
 
+  /* This block used to name only the three keyframes above, so a user who had
+     asked for no motion still got every looping pulse, ping, bounce and spin
+     in the app. Stopping the transitions but not the animations is the wrong
+     half. Kept as animation-duration rather than `animation: none` so a
+     forwards-filling animation still lands on its end state. */
   *,
   *::before,
   *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
