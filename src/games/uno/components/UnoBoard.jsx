@@ -1,16 +1,9 @@
 import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  RotateCw,
   RotateCcw,
-  Sparkles,
-  Check,
-  ArrowRight,
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  Flame,
   ArrowUpDown,
-  Settings,
   Eye,
 } from 'lucide-react'
 import UnoCard from './UnoCard'
@@ -24,6 +17,11 @@ import UnoSkipAlert from './board/UnoSkipAlert'
 import UnoStackBanner from './board/UnoStackBanner'
 import UnoActionToast from './board/UnoActionToast'
 import UnoFlyingCardsLayer from './board/UnoFlyingCardsLayer'
+import UnoTurnTrack from './board/UnoTurnTrack'
+import UnoTopBar from './board/UnoTopBar'
+import UnoPileArea from './board/UnoPileArea'
+import UnoPlayerActionRow from './board/UnoPlayerActionRow'
+import UnoTurnPrompt from './board/UnoTurnPrompt'
 import { playClickSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
@@ -191,229 +189,32 @@ export default function UnoBoard({
         )}
 
         {/* Unified Top Utility Bar: Room Info, Direction Indicator, and Actions */}
-        <div className="flex items-center justify-between px-1 mb-2 max-w-lg mx-auto text-xs">
-          {/* Room / Mode Info */}
-          <div className="flex items-center gap-2">
-            {isMultiplayer && roomCode ? (
-              <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1.5 shadow-sm">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isHost || connectionStatus === 'connected'
-                      ? 'bg-emerald-400 animate-pulse'
-                      : connectionStatus === 'reconnecting'
-                      ? 'bg-amber-400 animate-ping'
-                      : 'bg-rose-500'
-                  }`}
-                />
-                <span>Room {roomCode}</span>
-              </span>
-            ) : (
-              <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400 flex items-center gap-1 shadow-sm">
-                <span>🤖</span>
-                <span>Solo vs Bots</span>
-              </span>
-            )}
-          </div>
-
-          {/* Central Turn Direction Pill (Single Source of Truth) */}
-          <div
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-sm transition-colors ${
-              direction === 1
-                ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
-                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
-            }`}
-            title={`Direction: ${direction === 1 ? 'Clockwise' : 'Counter-Clockwise'}`}
-          >
-            {direction === 1 ? (
-              <>
-                <RotateCw className="w-3 h-3 text-blue-400 animate-spin-slow" />
-                <span>Clockwise</span>
-              </>
-            ) : (
-              <>
-                <RotateCcw className="w-3 h-3 text-purple-400 animate-spin-slow" />
-                <span>Counter-Clockwise</span>
-              </>
-            )}
-          </div>
-
-          {/* Top Actions: Quick State Sync & Settings Menu */}
-          <div className="flex items-center gap-1.5">
-            {isMultiplayer && onSyncState && (
-              <button
-                type="button"
-                onClick={handleHeaderSync}
-                disabled={isSyncing}
-                title="Sync game state with host"
-                className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm disabled:opacity-50"
-              >
-                <RotateCw
-                  className={`w-3.5 h-3.5 ${
-                    isSyncing ? 'animate-spin text-amber-400' : 'text-blue-400'
-                  }`}
-                />
-                <span className="hidden sm:inline">Sync</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                playClickSound()
-                setIsSettingsOpen(true)
-              }}
-              title="Game settings, rules, and exit options"
-              className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
-            >
-              <Settings className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Menu</span>
-            </button>
-          </div>
-        </div>
+        <UnoTopBar
+          isMultiplayer={isMultiplayer}
+          isHost={isHost}
+          roomCode={roomCode}
+          connectionStatus={connectionStatus}
+          direction={direction}
+          onSyncState={onSyncState}
+          isSyncing={isSyncing}
+          onSync={handleHeaderSync}
+          onOpenMenu={() => setIsSettingsOpen(true)}
+        />
 
         {/* Players Turn Flow Row with Direction Arrows */}
-        <div className="w-full overflow-x-auto scrollbar-none pt-3.5 pb-2 px-0.5">
-          <div className="flex items-center justify-center gap-1 sm:gap-1.5 min-w-max mx-auto">
-            {players.map((p, idx) => {
-              const pRank =
-                p.rank || rankings.find((r) => r.playerId === p.id)?.rank || null
-              const isPlayerFinished = Boolean(pRank)
-              const badgeInfo = pRank ? getRankBadge(pRank) : null
-              const isActive = idx === currentPlayerIndex && !isPlayerFinished
-              const isNext = idx === nextPlayerIndex && !isPlayerFinished
-              const isMe = p.id === myPlayer?.id
-              const isSkipped = skippedInfo?.playerId === p.id && !isPlayerFinished
-              const cardCount =
-                isPlayerFinished
-                  ? 0
-                  : p.id === myPlayer?.id
-                  ? handCards.length
-                  : p.cardCount !== undefined
-                  ? p.cardCount
-                  : p.hand
-                  ? p.hand.length
-                  : 0
-              const hasUno = cardCount === 1 && !isPlayerFinished
-              const calledUno = unoCalledPlayers?.has(p.id)
-
-              return (
-                <React.Fragment key={p.id}>
-                  {/* Player Card Node: Clickable on opponents without revealing hints */}
-                  <div
-                    ref={isActive ? activeNodeRef : null}
-                    onClick={() => {
-                      if (!isMe && !isPlayerFinished && onCatchUno) {
-                        playClickSound()
-                        onCatchUno(p.id)
-                      }
-                    }}
-                    className={`relative flex flex-col items-center p-2 rounded-2xl transition-all duration-300 min-w-[68px] sm:min-w-[80px] ${
-                      !isMe && !isPlayerFinished ? 'cursor-pointer hover:opacity-95' : ''
-                    } ${
-                      isPlayerFinished
-                        ? 'bg-zinc-900/40 border border-amber-500/30 opacity-75'
-                        : isSkipped
-                        ? 'bg-red-950/70 border-2 border-red-500 shadow-lg shadow-red-950/50 ring-2 ring-red-500/40 animate-pulse'
-                        : isActive
-                        ? 'bg-amber-500/20 border-2 border-amber-400 shadow-xl shadow-amber-500/20 ring-2 ring-amber-400/50 scale-105 z-10'
-                        : isNext
-                        ? 'bg-blue-950/40 border-2 border-blue-400/60 shadow-md shadow-blue-500/10'
-                        : 'bg-zinc-900/60 border border-zinc-800/80 opacity-80'
-                    }`}
-                  >
-                    {/* Status Badges */}
-                    {isPlayerFinished ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-black text-[8px] uppercase tracking-wider shadow">
-                        {badgeInfo?.medal} {badgeInfo?.shortLabel}
-                      </span>
-                    ) : isSkipped ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow animate-bounce">
-                        SKIPPED
-                      </span>
-                    ) : hasUno && calledUno ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shadow border border-red-400 flex items-center gap-0.5">
-                        UNO!
-                      </span>
-                    ) : isActive ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-amber-400 text-zinc-950 font-black text-[8px] uppercase tracking-wider shadow">
-                        TURN
-                      </span>
-                    ) : isNext ? (
-                      <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-blue-500 text-white font-black text-[8px] uppercase tracking-wider shadow">
-                        NEXT
-                      </span>
-                    ) : null}
-
-                    {/* Avatar with Status Ring */}
-                    <div className="relative">
-                      <div
-                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg sm:text-xl shadow-inner ${
-                          isPlayerFinished
-                            ? 'bg-zinc-900 border-2 border-amber-400/50'
-                            : isSkipped
-                            ? 'bg-red-950 border border-red-500/60'
-                            : isActive
-                            ? 'bg-zinc-800 border-2 border-amber-400'
-                            : 'bg-zinc-800 border border-zinc-700'
-                        }`}
-                      >
-                        {p.avatar || '👤'}
-                      </div>
-
-                      {/* Skipped Overlay Icon */}
-                      {isSkipped && (
-                        <span className="absolute inset-0 flex items-center justify-center text-base bg-red-950/60 rounded-full">
-                          🚫
-                        </span>
-                      )}
-
-                      {/* Active Player Live Pulse */}
-                      {isActive && (
-                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-amber-400 border-2 border-zinc-900 rounded-full animate-ping" />
-                      )}
-                    </div>
-
-                    {/* Name & Badge */}
-                    <div className="flex items-center gap-0.5 mt-1 max-w-[78px] justify-center">
-                      <span className="text-[11px] font-bold text-white leading-tight truncate text-center">
-                        {p.name}
-                      </span>
-                      {isMe && (
-                        <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/20 px-1 rounded flex-shrink-0">
-                          YOU
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Card Count / Finished Rank */}
-                    {isPlayerFinished ? (
-                      <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-amber-400">
-                        <span>{badgeInfo?.medal}</span>
-                        <span>{badgeInfo?.shortLabel}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-0.5 mt-0.5 text-[10px] font-bold text-zinc-400">
-                        <span>🃏</span>
-                        <span>{cardCount}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Direction Arrow Between Players */}
-                  {idx < players.length - 1 && (
-                    <div className="flex items-center justify-center px-0.5 flex-shrink-0 text-zinc-600">
-                      {direction === 1 ? (
-                        <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400/60" />
-                      ) : (
-                        <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400/60" />
-                      )}
-                    </div>
-                  )}
-                </React.Fragment>
-              )
-            })}
-          </div>
-        </div>
+        <UnoTurnTrack
+          players={players}
+          currentPlayerIndex={currentPlayerIndex}
+          nextPlayerIndex={nextPlayerIndex}
+          direction={direction}
+          myPlayer={myPlayer}
+          handCards={handCards}
+          rankings={rankings}
+          unoCalledPlayers={unoCalledPlayers}
+          skippedInfo={skippedInfo}
+          onCatchUno={onCatchUno}
+          activeNodeRef={activeNodeRef}
+        />
 
         {skippedInfo && (
           <UnoSkipAlert
@@ -437,97 +238,18 @@ export default function UnoBoard({
         )}
 
         {/* Center Card Play Area (Draw Pile & Discard Pile) */}
-        <div className="flex items-center justify-center gap-6 sm:gap-10">
-          {/* Draw Pile */}
-          <div ref={drawPileRef} className="flex flex-col items-center">
-            <div className="relative group">
-              {/* Stack effect */}
-              <div className="absolute inset-0 bg-zinc-900 rounded-xl translate-x-1.5 translate-y-1.5 border border-zinc-800 pointer-events-none" />
-              <div className="absolute inset-0 bg-zinc-950 rounded-xl translate-x-0.5 translate-y-0.5 border border-zinc-800 pointer-events-none" />
-
-              <UnoCard
-                isBack
-                size="md"
-                onClick={canDrawCard ? onDrawCard : undefined}
-                className={
-                  canDrawCard
-                    ? pendingDrawCount > 0
-                      ? 'cursor-pointer ring-4 ring-red-500 hover:scale-105 active:scale-95 shadow-2xl shadow-red-600/50 animate-pulse'
-                      : 'cursor-pointer ring-2 ring-amber-400/80 hover:scale-105 active:scale-95 shadow-xl shadow-amber-500/10'
-                    : 'cursor-not-allowed opacity-75'
-                }
-              />
-            </div>
-            <span
-              className={`text-[11px] font-semibold mt-2 ${
-                pendingDrawCount > 0 && isCurrentTurnForMe
-                  ? 'text-red-400 font-black animate-pulse'
-                  : hasDrawnCardThisTurn && isCurrentTurnForMe
-                  ? 'text-amber-400 font-medium'
-                  : 'text-zinc-400'
-              }`}
-            >
-              {pendingDrawCount > 0
-                ? `Draw +${pendingDrawCount} Penalty`
-                : hasDrawnCardThisTurn && isCurrentTurnForMe
-                ? 'Card Drawn (Play or Pass)'
-                : `Draw Pile (${drawPileCount})`}
-            </span>
-          </div>
-
-          {/* Discard Pile */}
-          <div className="flex flex-col items-center">
-            <div className="relative">
-              {/* Vibrant active color halo glow */}
-              <div
-                className="absolute -inset-3 rounded-2xl blur-xl opacity-75 transition-all duration-500 pointer-events-none"
-                style={{
-                  backgroundColor: activeColorConfig.hex || '#ef4444',
-                  boxShadow: `0 0 35px 8px ${activeColorConfig.hex || '#ef4444'}50`,
-                }}
-              />
-
-              {/* Stack effect representing underneath cards */}
-              <div className="absolute inset-0 bg-zinc-800/90 rounded-xl rotate-6 translate-x-1.5 translate-y-1 border border-white/20 shadow-md pointer-events-none" />
-              <div className="absolute inset-0 bg-zinc-700/90 rounded-xl -rotate-4 -translate-x-1 translate-y-0.5 border border-white/20 shadow-md pointer-events-none" />
-
-              {/* Floating Active Color Badge when top card is Wild */}
-              {topCard?.color === CARD_COLORS.WILD && (
-                <div
-                  className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                  <span>Declared: {activeColorConfig.name}</span>
-                </div>
-              )}
-
-              <UnoCard
-                card={topCard}
-                size="md"
-                isPlayable={false}
-                activeColor={activeColor}
-                style={{ transform: 'rotate(-2deg)' }}
-                className="relative z-10 shadow-2xl border-white ring-3 ring-white/90 brightness-105"
-              />
-            </div>
-
-            {/* Discard Pile label with active color */}
-            <div className="flex items-center gap-1.5 mt-2 text-[11px] font-semibold text-zinc-400">
-              <span>Discard Pile</span>
-              <span className="text-zinc-600">•</span>
-              <span
-                className="font-bold flex items-center gap-1"
-                style={{ color: activeColorConfig.hex || '#ef4444' }}
-              >
-                <span
-                  className="w-2 h-2 rounded-full inline-block shadow-sm"
-                  style={{ backgroundColor: activeColorConfig.hex || '#ef4444' }}
-                />
-                {activeColorConfig.name}
-              </span>
-            </div>
-          </div>
-        </div>
+        <UnoPileArea
+          drawPileRef={drawPileRef}
+          drawPileCount={drawPileCount}
+          canDrawCard={canDrawCard}
+          onDrawCard={onDrawCard}
+          isCurrentTurnForMe={isCurrentTurnForMe}
+          hasDrawnCardThisTurn={hasDrawnCardThisTurn}
+          pendingDrawCount={pendingDrawCount}
+          topCard={topCard}
+          activeColor={activeColor}
+          activeColorConfig={activeColorConfig}
+        />
 
         {actionMessage && <UnoActionToast actionMessage={actionMessage} />}
       </div>
@@ -535,135 +257,34 @@ export default function UnoBoard({
       {/* 3. Bottom Section: Player Hand & Controls */}
       <div className="w-full pb-2 pt-3 border-t border-zinc-900 space-y-2">
         {/* Turn Bar & Status */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{myPlayer.avatar || '😎'}</span>
-            <div className="flex items-center gap-2">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white block leading-tight">
-                    {myPlayer.name} (You)
-                  </span>
-                  {handCards.length === 1 && (hasCalledUnoThisRound || unoCalledPlayers?.has(myPlayer?.id)) && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[8px] font-black tracking-wider shadow-sm">
-                      UNO!
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] text-zinc-400">
-                  {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Player Action Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Uno Button */}
-            {showUnoButton && (
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  onCallUno()
-                }}
-                disabled={hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id))}
-                className={`px-3 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider border flex items-center gap-1.5 transition select-none ${
-                  (hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id)))
-                    ? 'bg-zinc-800/90 border-emerald-500/40 text-emerald-300 opacity-90 cursor-default'
-                    : 'bg-red-700 hover:bg-red-600 active:scale-95 text-white border-red-500/50 shadow-sm cursor-pointer'
-                }`}
-                title={
-                  (hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id)))
-                    ? 'UNO already called!'
-                    : 'Call UNO!'
-                }
-              >
-                {(hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id))) ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>UNO Called</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Call UNO!</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Pass Turn Button (after drawing a card) */}
-            {isCurrentTurnForMe && hasDrawnCardThisTurn && pendingDrawCount === 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  onPassTurn()
-                }}
-                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold border border-zinc-700 flex items-center gap-1 cursor-pointer transition active:scale-95"
-              >
-                <span>Pass Turn</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
+        <UnoPlayerActionRow
+          myPlayer={myPlayer}
+          handCards={handCards}
+          isCurrentTurnForMe={isCurrentTurnForMe}
+          hasDrawnCardThisTurn={hasDrawnCardThisTurn}
+          hasCalledUnoThisRound={hasCalledUnoThisRound}
+          unoCalledPlayers={unoCalledPlayers}
+          showUnoButton={showUnoButton}
+          pendingDrawCount={pendingDrawCount}
+          onCallUno={onCallUno}
+          onPassTurn={onPassTurn}
+        />
 
         {/* Turn Prompt Banner */}
-        <div
-          className={`py-1.5 px-3 rounded-xl text-center text-xs font-bold transition-all ${
-            isSpectating
-              ? 'bg-zinc-900 text-zinc-300 border border-zinc-800/80 flex items-center justify-center gap-2'
-              : isCurrentTurnForMe
-              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-              : 'bg-zinc-900 text-zinc-400 border border-zinc-800/80'
-          }`}
-        >
-          {isSpectating ? (
-            <>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-              <span>
-                Spectating: {activePlayer?.name}&apos;s turn • {activePlayers.length} players remaining
-              </span>
-            </>
-          ) : isCurrentTurnForMe ? (
-            pendingDrawCount > 0 ? (
-              myCanStack ? (
-                <span className="text-amber-300 font-bold flex items-center justify-center gap-1">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" /> Stack Alert: Play a {pendingStackType === 'draw2' ? '+2' : '+4'} to counter, or click Draw Pile to take +{pendingDrawCount} cards!
-                </span>
-              ) : (
-                <span className="text-red-400 font-bold flex items-center justify-center gap-1">
-                  <Flame className="w-3.5 h-3.5 text-red-400" /> Stack Penalty: No counter in hand! Click the Draw Pile to draw +{pendingDrawCount} cards.
-                </span>
-              )
-            ) : hasDrawnCardThisTurn ? (
-              <span>You drew a card! Play it if valid, or click &quot;Pass Turn&quot;.</span>
-            ) : myCanPlayAnyCard ? (
-              <span>Your Turn — Select a card from your hand to play!</span>
-            ) : (
-              <span>No playable cards! Click the Draw Pile to draw a card.</span>
-            )
-          ) : isMyTurnSkipped ? (
-            <span className="text-red-400 font-bold">
-              🚫 Your turn was skipped! Waiting for {activePlayer?.name}&apos;s move...
-            </span>
-          ) : skippedInfo ? (
-            <span>
-              🚫 {skippedInfo.playerName} was skipped. Waiting for {activePlayer?.name}&apos;s move...
-            </span>
-          ) : isWaitingForBot ? (
-            <span className="flex items-center justify-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span>{activePlayer?.name} is thinking...</span>
-            </span>
-          ) : (
-            <span>
-              Waiting for {activePlayer?.name}&apos;s move...
-            </span>
-          )}
-        </div>
+        <UnoTurnPrompt
+          isSpectating={isSpectating}
+          isCurrentTurnForMe={isCurrentTurnForMe}
+          isMyTurnSkipped={isMyTurnSkipped}
+          isWaitingForBot={isWaitingForBot}
+          activePlayer={activePlayer}
+          activePlayers={activePlayers}
+          skippedInfo={skippedInfo}
+          hasDrawnCardThisTurn={hasDrawnCardThisTurn}
+          myCanPlayAnyCard={myCanPlayAnyCard}
+          myCanStack={myCanStack}
+          pendingDrawCount={pendingDrawCount}
+          pendingStackType={pendingStackType}
+        />
 
         {isSpectating ? (
           <div className="w-full max-w-lg mx-auto p-4 sm:p-5 rounded-3xl bg-zinc-950/80 border border-zinc-800/90 text-center space-y-3 shadow-2xl animate-fadeIn my-1">
