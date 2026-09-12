@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react'
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import {
   RotateCw,
   RotateCcw,
@@ -20,10 +20,10 @@ import UnoSettingsModal from './UnoSettingsModal'
 import { COLOR_CONFIG, CARD_COLORS, getRankBadge } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { getActivePlayers, findNextPlayerIndex } from '../utils/turnOrder'
-import { playClickSound, playCardDrawSound } from '../../../utils/sound'
+import useDrawAnimation from '../hooks/useDrawAnimation'
+import { playClickSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
-const NEW_CARD_HIGHLIGHT_DURATION_MS = 2000 // 2 seconds highlight for newly drawn cards
 
 export default function UnoBoard({
   players,
@@ -116,143 +116,21 @@ export default function UnoBoard({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
 
-  // Flying cards animation & highlight for newly drawn cards
-  const [flyingCards, setFlyingCards] = useState([])
-  const [newlyDrawnCardIds, setNewlyDrawnCardIds] = useState(new Set())
-  const prevHandCardIdsRef = useRef(new Set())
-  const hasInitializedHandRef = useRef(false)
   const drawPileRef = useRef(null)
   const handTrayRef = useRef(null)
   const activeNodeRef = useRef(null)
 
-  // Timer ref to clear "NEW" badges after highlight duration
-  const newCardHighlightTimerRef = useRef(null)
+  const resetHandSort = useCallback(() => setHandSortMode('none'), [])
 
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (newCardHighlightTimerRef.current) {
-        clearTimeout(newCardHighlightTimerRef.current)
-        newCardHighlightTimerRef.current = null
-      }
-    }
-  }, [])
-
-  // Trigger card flight & highlight when player draws new cards from pile
-  useEffect(() => {
-    const currentIds = new Set(handCards.map((c) => c.id))
-
-    // First time hand loads (e.g. 7 cards at start): register ids without draw animation
-    if (!hasInitializedHandRef.current) {
-      if (handCards.length > 0) {
-        hasInitializedHandRef.current = true
-        prevHandCardIdsRef.current = currentIds
-      }
-      return
-    }
-
-    // Hand was emptied (e.g. match reset)
-    if (handCards.length === 0) {
-      hasInitializedHandRef.current = false
-      prevHandCardIdsRef.current = new Set()
-      if (newCardHighlightTimerRef.current) {
-        clearTimeout(newCardHighlightTimerRef.current)
-        newCardHighlightTimerRef.current = null
-      }
-      // Clearing the NEW badges when the hand empties is a genuine
-      // synchronisation with a prop change, not derivable during render.
-      // Suppressed narrowly and with the rule's real oxlint name -- a
-      // `react-hooks/`-prefixed name silences the entire file (see commit).
-      // eslint-disable-next-line react/set-state-in-effect
-      setNewlyDrawnCardIds(new Set())
-      return
-    }
-
-    // Find cards that were just added to the hand
-    const addedCards = handCards.filter((c) => !prevHandCardIdsRef.current.has(c.id))
-    prevHandCardIdsRef.current = currentIds
-
-    if (addedCards.length > 0) {
-      // 1. Reset sorting so newly drawn cards appear immediately at the start of the hand
-      setHandSortMode('none')
-
-      // Scroll hand tray to start so new cards are immediately in view
-      if (handTrayRef.current) {
-        handTrayRef.current.scrollTo({ left: 0, behavior: 'smooth' })
-      }
-
-      // 2. Highlight newly drawn cards with "NEW" badge & amber ring for 2 seconds
-      const newIds = new Set(addedCards.map((c) => c.id))
-      setNewlyDrawnCardIds(newIds)
-
-      if (newCardHighlightTimerRef.current) {
-        clearTimeout(newCardHighlightTimerRef.current)
-      }
-      newCardHighlightTimerRef.current = setTimeout(() => {
-        setNewlyDrawnCardIds(new Set())
-        newCardHighlightTimerRef.current = null
-      }, NEW_CARD_HIGHLIGHT_DURATION_MS)
-
-      // 3. Staggered flying card animation from draw pile down to hand
-      const drawRect = drawPileRef.current?.getBoundingClientRect()
-      const trayRect = handTrayRef.current?.getBoundingClientRect()
-
-      const startX = drawRect
-        ? drawRect.left + drawRect.width / 2 - 36
-        : window.innerWidth / 2 - 36
-      const startY = drawRect
-        ? drawRect.top + drawRect.height / 2 - 48
-        : window.innerHeight / 2 - 48
-
-      const targetY = trayRect ? trayRect.top + 4 : window.innerHeight - 130
-
-      addedCards.forEach((card, index) => {
-        const targetX = trayRect
-          ? Math.min(trayRect.left + 12 + index * 48, window.innerWidth - 85)
-          : Math.min(20 + index * 48, window.innerWidth - 85)
-
-        const animId = `draw-${card.id}-${Date.now()}-${index}`
-
-        setTimeout(() => {
-          playCardDrawSound()
-
-          setFlyingCards((prev) => [
-            ...prev,
-            {
-              animId,
-              card,
-              startX,
-              startY,
-              targetX,
-              targetY,
-              phase: 'start',
-            },
-          ])
-
-          // Trigger smooth CSS transform on next animation frame
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              setFlyingCards((prev) =>
-                prev.map((fc) => (fc.animId === animId ? { ...fc, phase: 'flying' } : fc))
-              )
-            })
-          })
-
-          // Settle into hand after flight duration
-          setTimeout(() => {
-            setFlyingCards((prev) => prev.filter((fc) => fc.animId !== animId))
-          }, 550)
-        }, index * 320)
-      })
-    }
-  }, [handCards, isCurrentTurnForMe])
+  const { flyingCards, newlyDrawnCardIds, clearNewBadges } = useDrawAnimation({
+    handCards,
+    drawPileRef,
+    handTrayRef,
+    onCardsDrawn: resetHandSort,
+  })
 
   const handlePlayCardWithBadgeClear = (card) => {
-    setNewlyDrawnCardIds(new Set())
-    if (newCardHighlightTimerRef.current) {
-      clearTimeout(newCardHighlightTimerRef.current)
-      newCardHighlightTimerRef.current = null
-    }
+    clearNewBadges()
     onPlayCard(card)
   }
 
