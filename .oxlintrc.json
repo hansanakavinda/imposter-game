@@ -1,8 +1,30 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "oxc"],
+  "plugins": ["react", "oxc", "unicorn"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react/jsx-key": "error",
+    "react/no-danger": "error",
+    "react/exhaustive-deps": "warn",
+    "react/exhaustive-effect-dependencies": "warn",
+    "react/memo-dependencies": "warn",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "eqeqeq": ["warn", "smart"],
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+
+    "react/react-in-jsx-scope": "off",
+    "oxc/no-map-spread": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "eslint/no-underscore-dangle": "off",
+    "react/no-array-index-key": "off",
+    "react/no-object-type-as-default-prop": "off"
+  },
+  "ignorePatterns": ["dist", "node_modules", "docs"]
 }
