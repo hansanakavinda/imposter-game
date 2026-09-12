@@ -1,7 +1,18 @@
 import React from 'react'
-import { Volume2, VolumeX, RotateCcw, HelpCircle, ArrowLeft, Gamepad2 } from 'lucide-react'
+import { Volume2, VolumeX, RotateCcw, HelpCircle, ArrowLeft } from 'lucide-react'
+import { getGame } from '../data/games'
 import { playClickSound } from '../utils/sound'
+import IconButton from './ui/IconButton'
+import { FOCUS } from './ui/tokens'
 
+/**
+ * The rail the lamp hangs over. Not sticky and not a panel -- it sits flush on
+ * the table so the first real object on the page is the one the light hits.
+ *
+ * Going back to the hub lives here and only here. Screens used to show their
+ * own "Games" link alongside this arrow, so every in-game screen had two ways
+ * back sitting a few pixels apart.
+ */
 export default function Navbar({
   soundOn,
   onToggleSound,
@@ -11,98 +22,60 @@ export default function Navbar({
   activeGame,
   onBackToMenu,
 }) {
-  const getGameLabel = () => {
-    if (activeGame === 'imposter') {
-      return { emoji: '🕵️', title: 'Imposter' }
-    }
-    if (activeGame === 'uno') {
-      return { emoji: '🃏', title: 'UNO' }
-    }
-    if (activeGame === 'tank') {
-      return { emoji: '🚜', title: 'Tank Arena' }
-    }
-    return { emoji: '🎮', title: 'Arcade Hub' }
+  const game = getGame(activeGame)
+
+  const handleBack = () => {
+    playClickSound()
+    if (inGame && !window.confirm('Leave this game? The round will be lost.')) return
+    onBackToMenu()
   }
 
-  const { emoji, title } = getGameLabel()
+  const handleRestart = () => {
+    playClickSound()
+    if (window.confirm('Restart this round?')) onResetGame()
+  }
 
   return (
-    <header className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between select-none">
-      {/* Brand / Navigation */}
-      <div className="flex items-center gap-2">
-        {activeGame ? (
-          <button
-            onClick={() => {
-              playClickSound()
-              if (inGame) {
-                if (window.confirm('Return to game menu? Progress will be lost.')) {
-                  onBackToMenu()
-                }
-              } else {
-                onBackToMenu()
-              }
-            }}
-            className="flex items-center gap-2 text-left group px-2.5 py-1.5 rounded-xl hover:bg-zinc-800/60 transition cursor-pointer"
-            title="Back to All Games"
-          >
-            <ArrowLeft className="w-4 h-4 text-zinc-400 group-hover:text-white transition" />
-            <span className="text-xl">{emoji}</span>
-            <span className="font-bold text-base tracking-tight text-white group-hover:text-zinc-300 transition">
-              {title}
-            </span>
-          </button>
-        ) : (
-          <div className="flex items-center gap-2.5 px-2 py-1">
-            <div className="w-8 h-8 rounded-xl bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-amber-400 shadow-inner">
-              <Gamepad2 className="w-4 h-4" />
-            </div>
-            <span className="font-extrabold text-base tracking-tight text-white">
-              Party Arcade
-            </span>
-          </div>
-        )}
-      </div>
+    <header className="relative z-10 w-full max-w-xl mx-auto px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3 flex items-center justify-between gap-2 select-none">
+      {game ? (
+        <button
+          type="button"
+          onClick={handleBack}
+          title="Back to all games"
+          className={`group flex items-center gap-2 -ml-2 px-2 py-1.5 rounded-well hover:bg-felt-high transition cursor-pointer ${FOCUS}`}
+        >
+          <ArrowLeft className="w-4 h-4 text-ink-faint group-hover:text-ink transition" />
+          <span className="text-lg leading-none">{game.emoji}</span>
+          <span className="font-display text-lg leading-none text-ink">{game.title}</span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 py-1">
+          <span className="font-display text-lg leading-none text-ink">Party Arcade</span>
+        </div>
+      )}
 
-      {/* Actions */}
-      <div className="flex items-center gap-1">
-        {activeGame && inGame && onResetGame && (
-          <button
-            onClick={() => {
-              playClickSound()
-              if (window.confirm('Restart game?')) {
-                onResetGame()
-              }
-            }}
-            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition active:scale-95 cursor-pointer"
-            title="Restart"
-            aria-label="Restart"
-          >
+      <div className="flex items-center gap-0.5">
+        {game && inGame && onResetGame && (
+          <IconButton label="Restart round" onClick={handleRestart}>
             <RotateCcw className="w-4 h-4" />
-          </button>
+          </IconButton>
         )}
 
-        {activeGame && onOpenRules && (
-          <button
+        {game && onOpenRules && (
+          <IconButton
+            label="How to play"
             onClick={() => {
               playClickSound()
               onOpenRules()
             }}
-            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition active:scale-95 cursor-pointer"
-            title="How to play"
-            aria-label="How to play"
           >
             <HelpCircle className="w-4 h-4" />
-          </button>
+          </IconButton>
         )}
 
-        <button
-          onClick={onToggleSound}
-          className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition active:scale-95 cursor-pointer"
-          title={soundOn ? 'Mute' : 'Unmute'}
-          aria-label="Sound toggle"
-        >
-          {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-zinc-600" />}
-        </button>
+        <IconButton label={soundOn ? 'Mute sound' : 'Unmute sound'} onClick={onToggleSound}>
+          {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        </IconButton>
       </div>
     </header>
   )

@@ -32,3 +32,7 @@ coverage
 *.tsbuildinfo
 
 # Local AI/dev working notes (docs/.gitignore keeps the folder, drops the contents)
+
+# Local tool scratch
+.playwright-mcp/
+.claude/
