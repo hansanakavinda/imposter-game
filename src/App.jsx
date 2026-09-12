@@ -4,7 +4,6 @@ import GameHub from './components/GameHub'
 import ImposterGame from './games/imposter/ImposterGame'
 import UnoGame from './games/uno/UnoGame'
 import TankGame from './games/tank/TankGame'
-import RulesModal from './games/imposter/components/RulesModal'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 
@@ -109,11 +108,6 @@ export default function App() {
           />
         )}
       </main>
-
-      {/* Global Modals for Hub preview if needed */}
-      {selectedGame === null && isRulesOpen && (
-        <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
-      )}
     </div>
   )
 }
