@@ -161,6 +161,9 @@ export default function TankGame({
   const simulationTimerRef = useRef(null)
   const lastCrateDropRef = useRef(0)
   const lastFiredTimeRef = useRef(0)
+  // Round-win and match-over transitions are deferred; keep the handle so leaving
+  // mid-transition does not fire state updates into an unmounted component.
+  const roundTransitionTimerRef = useRef(null)
 
   // Network callback dynamic refs
   const handleNetworkMessageRef = useRef(null)
@@ -211,6 +214,10 @@ export default function TankGame({
       if (simulationTimerRef.current) {
         clearInterval(simulationTimerRef.current)
         simulationTimerRef.current = null
+      }
+      if (roundTransitionTimerRef.current) {
+        clearTimeout(roundTransitionTimerRef.current)
+        roundTransitionTimerRef.current = null
       }
       if (networkRef.current) {
         networkRef.current.destroy()
@@ -315,8 +322,13 @@ export default function TankGame({
     scoreRef.current = newScore
     setScore(newScore)
 
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current)
+    }
+
     if (newScore[winner] >= TARGET_SCORE_DEFAULT) {
-      setTimeout(() => {
+      roundTransitionTimerRef.current = setTimeout(() => {
+        roundTransitionTimerRef.current = null
         setMatchWinner(winner)
         setGamePhase('game_over')
         networkRef.current?.broadcast({
@@ -325,7 +337,8 @@ export default function TankGame({
         })
       }, 1800)
     } else {
-      setTimeout(() => {
+      roundTransitionTimerRef.current = setTimeout(() => {
+        roundTransitionTimerRef.current = null
         const nextMap = currentMapIndexRef.current + 1
         const nextWorld = initRoundWorld(newScore, nextMap)
         networkRef.current?.broadcast({
@@ -906,7 +919,29 @@ export default function TankGame({
 
     const occupiedSlots = new Set(currentPlayers.map((p) => p.slotId))
     const freeSlot = modeConfig.slots.find((s) => !occupiedSlots.has(s.id))
-    const assignedSlotId = freeSlot ? freeSlot.id : 'p2'
+
+    // No seat left. Previously this fell back to 'p2' and then filtered out whoever
+    // legitimately held it, silently kicking a connected player out of the lobby.
+    if (!freeSlot) {
+      try {
+        conn.send({
+          type: 'ROOM_FULL',
+          error: `This room is full (${modeConfig.maxPlayers} players in ${modeConfig.label}).`,
+        })
+      } catch (e) {
+        console.warn('[Host] Failed to send ROOM_FULL:', e)
+      }
+      setTimeout(() => {
+        try {
+          conn.close()
+        } catch {
+          // ignore
+        }
+      }, 300)
+      return
+    }
+
+    const assignedSlotId = freeSlot.id
     const slotDef = modeConfig.slots.find((s) => s.id === assignedSlotId)
     const assignedTeam = slotDef ? slotDef.team : 'red'
 
@@ -1182,6 +1217,16 @@ export default function TankGame({
         break
       }
 
+      case 'ROOM_FULL': {
+        setError(data.error || 'This room is full.')
+        setConnectionStatus('idle')
+        if (networkRef.current) {
+          networkRef.current.destroy()
+          networkRef.current = null
+        }
+        break
+      }
+
       case 'MATCH_OVER': {
         setMatchWinner(data.winner)
         setGamePhase('game_over')
@@ -1395,7 +1440,9 @@ export default function TankGame({
     setSelectedTank(tankType)
     try {
       localStorage.setItem('tank_selected_type', tankType)
-    } catch {}
+    } catch {
+      // ignore
+    }
 
     const mySlot = mySlotIdRef.current
     const myPeer = networkRef.current?.myPeerId
@@ -1476,6 +1523,10 @@ export default function TankGame({
     if (simulationTimerRef.current) {
       clearInterval(simulationTimerRef.current)
       simulationTimerRef.current = null
+    }
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current)
+      roundTransitionTimerRef.current = null
     }
     if (networkRef.current) {
       networkRef.current.destroy()
