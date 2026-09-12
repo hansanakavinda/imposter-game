@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Copy, Check, Play, ArrowLeft, Share2 } from 'lucide-react'
-import { MODES, TEAMS, TANK_TYPES, DEFAULT_TANK_TYPE } from '../../constants/tankConstants'
+import { MODES, DEFAULT_TANK_TYPE } from '../../constants/tankConstants'
 import { playClickSound } from '../../../../utils/sound'
 import TankSelector from './TankSelector'
+import TeamRosterColumn from './TeamRosterColumn'
 
 // The in-room screen: roster, readiness and launch. Was the second half of
 // TankLobby.jsx, reached past an early return.
@@ -115,205 +116,23 @@ export default function TankLobbyRoom({
 
       {/* Team Roster Layout */}
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        {/* Team Blue Column */}
-        <div className="bg-zinc-900/80 border border-cyan-500/30 rounded-2xl p-3.5 flex flex-col gap-2.5">
-          <div className="flex items-center justify-between pb-1 border-b border-cyan-500/20">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-              <span className="font-extrabold text-xs text-cyan-400 uppercase tracking-wider">
-                {TEAMS.blue.name}
-              </span>
-            </div>
-            <span className="text-[10px] text-zinc-400 font-semibold">West Base</span>
-          </div>
+        <TeamRosterColumn
+          team="blue"
+          slots={blueSlots}
+          players={players}
+          mySlotId={mySlotId}
+          myPeerId={myPeerId}
+          onSelectSlot={onSelectSlot}
+        />
 
-          <div className="space-y-2">
-            {blueSlots.map((slot) => {
-              const occupant = players.find((p) => p.slotId === slot.id)
-              const tankCfg = occupant ? (TANK_TYPES[occupant.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]) : null
-              const isMe =
-                occupant &&
-                ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
-
-              return (
-                <div
-                  key={slot.id}
-                  className={`p-2.5 rounded-xl border transition flex items-center justify-between ${
-                    occupant
-                      ? isMe
-                        ? 'bg-cyan-950/40 border-cyan-500/60'
-                        : 'bg-zinc-950/70 border-zinc-800'
-                      : 'bg-zinc-950/30 border-dashed border-zinc-800/80 hover:border-cyan-500/40 cursor-pointer'
-                  }`}
-                  onClick={() => {
-                    if (!occupant) {
-                      playClickSound()
-                      onSelectSlot(slot.id)
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm ${
-                        occupant
-                          ? 'bg-cyan-500 text-zinc-950 shadow-md shadow-cyan-500/20'
-                          : 'bg-zinc-800 text-zinc-500'
-                      }`}
-                    >
-                      {occupant && tankCfg ? tankCfg.icon : '🚜'}
-                    </div>
-                    <div className="truncate">
-                      <div className="font-bold text-xs text-white truncate flex items-center gap-1.5">
-                        <span>{occupant ? occupant.name : 'Open Slot'}</span>
-                        {isMe && (
-                          <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-semibold">
-                            YOU
-                          </span>
-                        )}
-                        {occupant?.isHost && (
-                          <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-semibold">
-                            HOST
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] text-zinc-500">{slot.label}</span>
-                        {occupant && tankCfg && (
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-black border uppercase ${tankCfg.badgeColor}`}>
-                            {tankCfg.icon} {tankCfg.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {occupant ? (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        occupant.isReady
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                          : 'bg-zinc-800 text-zinc-400'
-                      }`}
-                    >
-                      {occupant.isReady ? 'READY' : 'WAITING'}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound()
-                        onSelectSlot(slot.id)
-                      }}
-                      className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 uppercase px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 transition cursor-pointer"
-                    >
-                      Join Blue
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Team Red Column */}
-        <div className="bg-zinc-900/80 border border-rose-500/30 rounded-2xl p-3.5 flex flex-col gap-2.5">
-          <div className="flex items-center justify-between pb-1 border-b border-rose-500/20">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
-              <span className="font-extrabold text-xs text-rose-400 uppercase tracking-wider">
-                {TEAMS.red.name}
-              </span>
-            </div>
-            <span className="text-[10px] text-zinc-400 font-semibold">East Base</span>
-          </div>
-
-          <div className="space-y-2">
-            {redSlots.map((slot) => {
-              const occupant = players.find((p) => p.slotId === slot.id)
-              const tankCfg = occupant ? (TANK_TYPES[occupant.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]) : null
-              const isMe =
-                occupant &&
-                ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
-
-              return (
-                <div
-                  key={slot.id}
-                  className={`p-2.5 rounded-xl border transition flex items-center justify-between ${
-                    occupant
-                      ? isMe
-                        ? 'bg-rose-950/40 border-rose-500/60'
-                        : 'bg-zinc-950/70 border-zinc-800'
-                      : 'bg-zinc-950/30 border-dashed border-zinc-800/80 hover:border-rose-500/40 cursor-pointer'
-                  }`}
-                  onClick={() => {
-                    if (!occupant) {
-                      playClickSound()
-                      onSelectSlot(slot.id)
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm ${
-                        occupant
-                          ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                          : 'bg-zinc-800 text-zinc-500'
-                      }`}
-                    >
-                      {occupant && tankCfg ? tankCfg.icon : '🚜'}
-                    </div>
-                    <div className="truncate">
-                      <div className="font-bold text-xs text-white truncate flex items-center gap-1.5">
-                        <span>{occupant ? occupant.name : 'Open Slot'}</span>
-                        {isMe && (
-                          <span className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-semibold">
-                            YOU
-                          </span>
-                        )}
-                        {occupant?.isHost && (
-                          <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-semibold">
-                            HOST
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] text-zinc-500 block">{slot.label}</span>
-                        {occupant && tankCfg && (
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-black border uppercase ${tankCfg.badgeColor}`}>
-                            {tankCfg.icon} {tankCfg.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {occupant ? (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        occupant.isReady
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                          : 'bg-zinc-800 text-zinc-400'
-                      }`}
-                    >
-                      {occupant.isReady ? 'READY' : 'WAITING'}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound()
-                        onSelectSlot(slot.id)
-                      }}
-                      className="text-[10px] font-bold text-rose-400 hover:text-rose-300 uppercase px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 transition cursor-pointer"
-                    >
-                      Join Red
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <TeamRosterColumn
+          team="red"
+          slots={redSlots}
+          players={players}
+          mySlotId={mySlotId}
+          myPeerId={myPeerId}
+          onSelectSlot={onSelectSlot}
+        />
       </div>
 
       {/* Status & Match Launch Controls */}
