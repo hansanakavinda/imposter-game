@@ -1,125 +1,92 @@
 import React from 'react'
-import { Bot, Users, Sparkles, ArrowLeft, BookOpen, ShieldCheck } from 'lucide-react'
+import { Bot, Users, BookOpen, ShieldCheck } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
+import Screen, { ScreenHeader } from '../../../components/ui/Screen'
+import Button from '../../../components/ui/Button'
+import Pill from '../../../components/ui/Pill'
+import { Badge } from '../../../components/ui/PlayerRow'
+import { FOCUS, cx } from '../../../components/ui/tokens'
 
-export default function UnoModeSelect({
-  onSelectMode, // 'ai' | 'multiplayer'
-  onBackToMenu,
-  onOpenRules,
-}) {
+const MODES = [
+  {
+    id: 'multiplayer',
+    icon: Users,
+    tone: 'uno',
+    title: 'Play with friends',
+    badge: 'Online',
+    body: 'Open a room, read out the four-letter code. Everyone joins on their own phone.',
+  },
+  {
+    id: 'ai',
+    icon: Bot,
+    tone: 'neutral',
+    title: 'Solo against bots',
+    badge: 'Offline',
+    body: 'Play one to three bots right now. No room, no waiting.',
+  },
+]
+
+export default function UnoModeSelect({ onSelectMode, onOpenRules }) {
   return (
-    <div className="w-full max-w-md mx-auto px-5 py-4 flex flex-col justify-between min-h-[80vh] select-none animate-fadeIn">
-      {/* Header */}
-      <div className="pt-2 pb-6 text-center relative">
-        <button
-          type="button"
-          onClick={() => {
-            playClickSound()
-            onBackToMenu()
-          }}
-          className="absolute left-0 top-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Games</span>
-        </button>
+    <Screen>
+      <ScreenHeader
+        eyebrow={<Pill tone="uno">Card classic</Pill>}
+        title="UNO"
+        subtitle="Two ways to play."
+        className="pb-6"
+      />
 
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-400 mb-2">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Game Mode</span>
-        </div>
+      <div className="space-y-3">
+        {MODES.map(({ id, icon: Icon, tone, title, badge, body }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => {
+              playClickSound()
+              onSelectMode(id)
+            }}
+            className={cx(
+              'w-full text-left flex items-start gap-4 p-4 rounded-slab',
+              'bg-felt border border-edge shadow-lift-1 transition duration-200 cursor-pointer',
+              'hover:-translate-y-0.5 hover:bg-felt-high hover:shadow-lift-2 hover:border-edge-lit',
+              'active:translate-y-0 active:scale-[0.99] active:shadow-lift-0',
+              FOCUS
+            )}
+          >
+            <span className="shrink-0 w-11 h-11 rounded-object bg-well shadow-sink flex items-center justify-center text-ink-muted">
+              <Icon className="w-5 h-5" />
+            </span>
 
-        <h1 className="text-3xl font-black tracking-tight text-white">
-          UNO
-        </h1>
-        <p className="text-xs text-zinc-400 mt-1">
-          Select how you want to play
-        </p>
+            <span className="block min-w-0 flex-1 space-y-1">
+              <span className="flex items-center gap-2">
+                <span className="font-display text-lg leading-none text-ink">{title}</span>
+                <Badge tone={tone}>{badge}</Badge>
+              </span>
+              <span className="block text-mini text-ink-muted leading-relaxed">{body}</span>
+            </span>
+          </button>
+        ))}
       </div>
 
-      {/* Modes Grid */}
-      <div className="space-y-4 my-auto">
-        {/* Mode 1: Online Multiplayer with Friends */}
-        <div
-          onClick={() => {
-            playClickSound()
-            onSelectMode('multiplayer')
-          }}
-          className="group relative p-5 rounded-3xl bg-zinc-900 border border-zinc-800 hover:border-red-500/60 hover:shadow-xl hover:shadow-red-950/20 transition-all duration-300 cursor-pointer overflow-hidden active:scale-[0.98]"
-        >
-          <div className="absolute -top-12 -right-12 w-28 h-28 rounded-full bg-red-600/20 blur-2xl pointer-events-none group-hover:scale-125 transition" />
-
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-600 to-amber-500 flex items-center justify-center text-white shadow-lg flex-shrink-0">
-              <Users className="w-6 h-6" />
-            </div>
-
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-bold text-base text-white group-hover:text-amber-300 transition">
-                  Play with Friends
-                </h3>
-                <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/40">
-                  Online
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Create a private room with a 4-digit code. Friends join on their own phones or computers.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Mode 2: Play vs AI Bots */}
-        <div
-          onClick={() => {
-            playClickSound()
-            onSelectMode('ai')
-          }}
-          className="group relative p-5 rounded-3xl bg-zinc-900 border border-zinc-800 hover:border-blue-500/60 hover:shadow-xl hover:shadow-blue-950/20 transition-all duration-300 cursor-pointer overflow-hidden active:scale-[0.98]"
-        >
-          <div className="absolute -top-12 -right-12 w-28 h-28 rounded-full bg-blue-600/20 blur-2xl pointer-events-none group-hover:scale-125 transition" />
-
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg flex-shrink-0">
-              <Bot className="w-6 h-6" />
-            </div>
-
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-bold text-base text-white group-hover:text-blue-300 transition">
-                  Solo vs AI Bots
-                </h3>
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/40">
-                  Offline
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Practice and play against 1 to 3 smart bots. Fast-paced, no waiting.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer Info & Rules */}
       <div className="pt-6 space-y-3">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="md"
+          fullWidth
           onClick={() => {
             playClickSound()
             onOpenRules()
           }}
-          className="w-full py-2.5 rounded-xl bg-zinc-900/60 hover:bg-zinc-800/80 border border-zinc-800 text-xs font-semibold text-zinc-400 hover:text-white transition flex items-center justify-center gap-2 cursor-pointer"
         >
           <BookOpen className="w-4 h-4" />
-          <span>How to Play UNO Rules</span>
-        </button>
+          How to play
+        </Button>
 
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Peer-to-peer encrypted • No accounts needed</span>
-        </div>
+        <p className="flex items-center justify-center gap-1.5 text-micro text-ink-faint">
+          <ShieldCheck className="w-3.5 h-3.5 text-ok" />
+          Peer-to-peer. No account, nothing stored.
+        </p>
       </div>
-    </div>
+    </Screen>
   )
 }

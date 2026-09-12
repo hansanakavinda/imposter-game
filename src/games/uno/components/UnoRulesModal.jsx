@@ -1,108 +1,86 @@
 import React from 'react'
-import { X, CheckCircle2 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
+import Modal from '../../../components/ui/Modal'
+import Button from '../../../components/ui/Button'
+import Label from '../../../components/ui/Label'
+import Pill from '../../../components/ui/Pill'
+import Surface from '../../../components/ui/Surface'
+
+const ACTION_CARDS = [
+  { glyph: '⊘', name: 'Skip', body: 'The next player misses their turn.' },
+  { glyph: '⇄', name: 'Reverse', body: 'Turns play around. With two players it skips.' },
+  { glyph: '+2', name: 'Draw Two', body: 'The next player takes two and loses their turn.' },
+  { glyph: '★', name: 'Wild', body: 'Play it any time and name the next colour.' },
+  { glyph: '+4', name: 'Wild Draw Four', body: 'Name the colour; the next player takes four and loses their turn.' },
+]
 
 export default function UnoRulesModal({ isOpen, onClose }) {
-  if (!isOpen) return null
+  const close = () => {
+    playClickSound()
+    onClose()
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-md max-h-[90vh] bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl flex flex-col justify-between overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🃏</span>
-            <h2 className="text-xl font-bold text-white tracking-tight">
-              How to Play UNO
-            </h2>
-          </div>
-          <button
-            onClick={() => {
-              playClickSound()
-              onClose()
-            }}
-            className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
-            aria-label="Close rules"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <Modal
+      open={isOpen}
+      onClose={close}
+      title="How to play"
+      eyebrow={<Pill tone="uno">UNO</Pill>}
+      size="md"
+      footer={
+        <Button fullWidth onClick={close}>
+          Got it
+        </Button>
+      }
+      bodyClassName="space-y-5 text-mini"
+    >
+      <section className="space-y-1">
+        <h3 className="text-sm font-bold text-ink">The goal</h3>
+        <p className="text-ink-muted leading-relaxed">
+          Empty your hand first. Play a card that matches the top of the discard pile by
+          colour or by number.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold text-ink">Action cards</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {ACTION_CARDS.map(({ glyph, name, body }, index) => (
+            <Surface
+              key={name}
+              inset
+              radius="well"
+              className={`p-2.5 ${index === ACTION_CARDS.length - 1 ? 'sm:col-span-2' : ''}`}
+            >
+              <span className="block font-bold text-uno mb-0.5">
+                <span className="font-mono">{glyph}</span> {name}
+              </span>
+              <span className="block text-ink-muted">{body}</span>
+            </Surface>
+          ))}
         </div>
+      </section>
 
-        {/* Scrollable Rules Content */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-5 text-sm text-zinc-300 pr-1">
-          {/* Goal */}
-          <div className="space-y-1">
-            <h3 className="font-semibold text-white flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              Objective
-            </h3>
-            <p className="text-zinc-400 leading-relaxed text-xs">
-              Be the first player to play all cards from your hand! Match cards by color or number with the top card on the discard pile.
-            </p>
-          </div>
+      <section className="space-y-1.5 p-3 rounded-object bg-uno/10 border border-uno/25">
+        <Label className="text-uno">Calling UNO, and catching</Label>
+        <p className="text-ink-muted leading-relaxed">
+          Tap <strong className="font-semibold text-ink">Call UNO</strong> as you go down to
+          one card. A badge appears next to your name.
+        </p>
+        <p className="text-ink-muted leading-relaxed">
+          Miss it and anyone can tap your name to catch you. You then take one card from
+          every player still in. Each of them picks which card to give — and a player down
+          to their last card gives it away and wins.
+        </p>
+      </section>
 
-          {/* Action Cards */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-white">Action Cards</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-800">
-                <span className="font-bold text-amber-300 block mb-0.5">⊘ Skip</span>
-                <span className="text-zinc-400">Next player misses their turn.</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-800">
-                <span className="font-bold text-blue-300 block mb-0.5">⇄ Reverse</span>
-                <span className="text-zinc-400">Reverses play direction (acts as Skip in 2-player).</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-800">
-                <span className="font-bold text-emerald-300 block mb-0.5">+2 Draw Two</span>
-                <span className="text-zinc-400">Next player draws 2 cards and skips turn.</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-800">
-                <span className="font-bold text-purple-300 block mb-0.5">★ Wild Card</span>
-                <span className="text-zinc-400">Play anytime. You choose the next color.</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-800 sm:col-span-2">
-                <span className="font-bold text-rose-400 block mb-0.5">+4 Wild Draw Four</span>
-                <span className="text-zinc-400">Choose color + next player draws 4 cards and loses turn!</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Calling UNO & Catching */}
-          <div className="space-y-1.5 bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl">
-            <h3 className="font-bold text-amber-300 text-xs uppercase tracking-wider">
-              Calling &quot;UNO!&quot; &amp; Catching
-            </h3>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Press the <strong>Call UNO!</strong> button at any time when going down to 1 card. When successful, an <strong>UNO</strong> badge appears next to your profile.
-            </p>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              If a player reaches 1 card without calling UNO, other players can <strong>tap that player&apos;s profile</strong> to call them out! The caught player receives <strong>1 card from each active player</strong>. Each player chooses which card to give, and if a player has only <strong>1 card</strong>, giving it away lets them <strong>finish and win the game</strong>!
-            </p>
-          </div>
-
-          {/* Drawing */}
-          <div className="space-y-1">
-            <h3 className="font-semibold text-white">No Playable Cards?</h3>
-            <p className="text-zinc-400 text-xs leading-relaxed">
-              Click the <strong>Draw Pile</strong> to take 1 card. If the drawn card is playable, you can play it immediately or pass your turn.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="pt-3 border-t border-zinc-800">
-          <button
-            onClick={() => {
-              playClickSound()
-              onClose()
-            }}
-            className="w-full py-3 rounded-xl font-bold text-sm bg-zinc-800 hover:bg-zinc-700 text-white transition active:scale-95 cursor-pointer"
-          >
-            Got it, Let&apos;s Play!
-          </button>
-        </div>
-      </div>
-    </div>
+      <section className="space-y-1">
+        <h3 className="text-sm font-bold text-ink">Nothing playable?</h3>
+        <p className="text-ink-muted leading-relaxed">
+          Tap the draw pile for one card. If it can be played you may play it straight away,
+          or pass.
+        </p>
+      </section>
+    </Modal>
   )
 }

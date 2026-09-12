@@ -1,19 +1,64 @@
 import React, { useState } from 'react'
 import {
-  X,
-  Settings,
   RotateCw,
   BookOpen,
   Users,
   LogOut,
   Play,
-  Copy,
-  Check,
   AlertTriangle,
   Wifi,
   WifiOff,
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
+import useCopyFeedback from '../../../hooks/useCopyFeedback'
+import Modal from '../../../components/ui/Modal'
+import Button from '../../../components/ui/Button'
+import CodeDisplay from '../../../components/ui/CodeDisplay'
+import Label from '../../../components/ui/Label'
+import Surface from '../../../components/ui/Surface'
+import { Badge } from '../../../components/ui/PlayerRow'
+import { FOCUS, cx } from '../../../components/ui/tokens'
+
+/** One row of the in-game menu. There were four, written out four times. */
+function MenuRow({ icon, title, body, tone = 'neutral', onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cx(
+        'w-full p-2.5 rounded-object border text-left flex items-center gap-2.5 transition cursor-pointer',
+        'disabled:opacity-50 disabled:cursor-not-allowed',
+        tone === 'danger'
+          ? 'bg-danger/5 border-danger/25 hover:bg-danger/10'
+          : 'bg-felt border-edge hover:bg-felt-high shadow-lift-1',
+        FOCUS
+      )}
+    >
+      <span
+        className={cx(
+          'w-7 h-7 rounded-well flex items-center justify-center shrink-0',
+          tone === 'danger'
+            ? 'bg-danger/10 border border-danger/30 text-danger'
+            : 'bg-well shadow-sink text-ink-muted'
+        )}
+      >
+        {icon}
+      </span>
+      <span className="block min-w-0">
+        <span
+          className={cx(
+            'block text-mini font-bold',
+            tone === 'danger' ? 'text-danger' : 'text-ink'
+          )}
+        >
+          {title}
+        </span>
+        <span className="block text-nano text-ink-muted">{body}</span>
+      </span>
+    </button>
+  )
+}
 
 export default function UnoSettingsModal({
   isOpen,
@@ -31,9 +76,10 @@ export default function UnoSettingsModal({
   const [confirmAction, setConfirmAction] = useState(null) // null | 'lobby' | 'exit'
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncFeedback, setSyncFeedback] = useState('')
-  const [copiedCode, setCopiedCode] = useState(false)
 
-  if (!isOpen) return null
+  // Was a bare setTimeout that outlived the modal; this is the shared hook that
+  // exists precisely because both lobbies had the same leak.
+  const { copied, copy } = useCopyFeedback()
 
   const handleClose = () => {
     playClickSound()
@@ -42,22 +88,15 @@ export default function UnoSettingsModal({
     onClose()
   }
 
-  const handleCopyRoomCode = () => {
-    if (!roomCode) return
-    navigator.clipboard.writeText(roomCode)
-    setCopiedCode(true)
-    setTimeout(() => setCopiedCode(false), 2000)
-  }
-
   const handleTriggerSync = () => {
     playClickSound()
     if (!onSyncState || isSyncing) return
     setIsSyncing(true)
-    setSyncFeedback('Syncing with host...')
+    setSyncFeedback('Asking the host…')
     onSyncState()
     setTimeout(() => {
       setIsSyncing(false)
-      setSyncFeedback('✓ Game state synchronized!')
+      setSyncFeedback('Up to date')
       setTimeout(() => setSyncFeedback(''), 2500)
     }, 600)
   }
@@ -76,282 +115,166 @@ export default function UnoSettingsModal({
     onClose()
   }
 
+  const connection = () => {
+    if (isHost) return { tone: 'ok', icon: <Wifi className="w-3 h-3" />, label: 'Hosting' }
+    if (connectionStatus === 'connected') {
+      return { tone: 'ok', icon: <Wifi className="w-3 h-3" />, label: 'Connected' }
+    }
+    if (connectionStatus === 'reconnecting') {
+      return { tone: 'turn', icon: <WifiOff className="w-3 h-3" />, label: 'Reconnecting' }
+    }
+    return { tone: 'danger', icon: <WifiOff className="w-3 h-3" />, label: 'Disconnected' }
+  }
+
+  if (confirmAction) {
+    const toLobby = confirmAction === 'lobby'
+    const title = toLobby
+      ? isHost && isMultiplayer
+        ? 'Send everyone back to the lobby?'
+        : 'Back to the lobby?'
+      : 'Leave this match?'
+    const body = toLobby
+      ? isHost && isMultiplayer
+        ? 'The round ends and everyone returns to the lobby. The room code stays the same.'
+        : 'You leave this round and go back to the waiting lobby.'
+      : isHost && isMultiplayer
+      ? 'Leaving as host closes the room and disconnects everyone.'
+      : 'This round is lost and you go back to the menu.'
+
+    return (
+      <Modal
+        open={isOpen}
+        onClose={() => setConfirmAction(null)}
+        title={title}
+        size="sm"
+        footer={
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" onClick={() => setConfirmAction(null)}>
+              Keep playing
+            </Button>
+            <Button
+              tone={toLobby ? 'uno' : 'danger'}
+              onClick={toLobby ? handleConfirmLobby : handleConfirmExit}
+            >
+              {toLobby ? 'To the lobby' : 'Leave'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="flex items-start gap-2.5 p-3 rounded-object bg-turn/10 border border-turn/30 text-mini text-ink-muted">
+          <AlertTriangle className="w-4 h-4 text-turn shrink-0 mt-0.5" />
+          {body}
+        </p>
+      </Modal>
+    )
+  }
+
+  const status = connection()
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn select-none">
-      <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-2xl space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-300">
-              <Settings className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-white leading-tight">Game Menu</h3>
-              <p className="text-[10px] text-zinc-400">Manage match, sync, or exit</p>
-            </div>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title="Game menu"
+      size="sm"
+      footer={
+        <Button fullWidth onClick={handleClose}>
+          <Play className="w-3.5 h-3.5 fill-current" />
+          Back to the game
+        </Button>
+      }
+      bodyClassName="space-y-3"
+    >
+      {isMultiplayer ? (
+        <div className="space-y-2">
+          <CodeDisplay
+            code={roomCode || '----'}
+            tone="uno"
+            copied={copied}
+            onCopy={() => roomCode && copy(roomCode)}
+          />
+          <div className="flex justify-end">
+            <Badge tone={status.tone}>
+              {status.icon}
+              {status.label}
+            </Badge>
           </div>
-
-          <button
-            type="button"
-            onClick={handleClose}
-            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
-            aria-label="Close menu"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
-
-        {/* Confirmation Screen for Leaving or Returning to Lobby */}
-        {confirmAction ? (
-          <div className="py-2 space-y-4 animate-fadeIn">
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <div className="font-bold text-white text-xs">
-                  {confirmAction === 'lobby'
-                    ? isHost && isMultiplayer
-                      ? 'Return All Players to Room Lobby?'
-                      : 'Return to Lobby?'
-                    : 'Leave Match Entirely?'}
-                </div>
-                <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  {confirmAction === 'lobby'
-                    ? isHost && isMultiplayer
-                      ? 'This will end the active game and return all players to the room lobby with the same code.'
-                      : 'You will leave the current match and return to the waiting lobby.'
-                    : isHost && isMultiplayer
-                    ? 'Leaving as host will close the room and disconnect all players.'
-                    : 'Your match progress will be lost and you will exit back to the main menu.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setConfirmAction(null)}
-                className="py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={confirmAction === 'lobby' ? handleConfirmLobby : handleConfirmExit}
-                className={`py-2.5 rounded-xl text-white text-xs font-bold transition cursor-pointer shadow-lg ${
-                  confirmAction === 'lobby'
-                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-950/40'
-                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/40'
-                }`}
-              >
-                {confirmAction === 'lobby' ? 'Yes, To Lobby' : 'Yes, Leave'}
-              </button>
-            </div>
+      ) : (
+        <Surface inset radius="object" className="p-3 flex items-center justify-between">
+          <div>
+            <Label>Solo</Label>
+            <span className="text-mini text-ink-muted">Playing the bots</span>
           </div>
-        ) : (
-          <>
-            {/* Match Status Card */}
-            {isMultiplayer ? (
-              <div className="p-3.5 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                    Room Code
-                  </span>
-                  <div className="text-lg font-black tracking-wider text-amber-400 font-mono">
-                    {roomCode || '----'}
-                  </div>
-                </div>
+          <span className="text-xl">🤖</span>
+        </Surface>
+      )}
 
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 ${
-                      isHost || connectionStatus === 'connected'
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                        : connectionStatus === 'reconnecting'
-                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse'
-                        : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                    }`}
-                  >
-                    {isHost ? (
-                      <>
-                        <Wifi className="w-3 h-3 text-emerald-400" />
-                        <span>Hosting Room</span>
-                      </>
-                    ) : connectionStatus === 'connected' ? (
-                      <>
-                        <Wifi className="w-3 h-3 text-emerald-400" />
-                        <span>Connected</span>
-                      </>
-                    ) : (
-                      <>
-                        <WifiOff className="w-3 h-3 text-rose-400" />
-                        <span>{connectionStatus === 'reconnecting' ? 'Reconnecting...' : 'Disconnected'}</span>
-                      </>
-                    )}
-                  </div>
+      {isMultiplayer && !isHost && connectionStatus === 'disconnected' && onReconnect && (
+        <Button
+          tone="danger"
+          size="md"
+          fullWidth
+          onClick={() => {
+            playClickSound()
+            onReconnect()
+          }}
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+          Reconnect to the host
+        </Button>
+      )}
 
-                  <button
-                    type="button"
-                    onClick={handleCopyRoomCode}
-                    className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs transition cursor-pointer"
-                    title="Copy Room Code"
-                  >
-                    {copiedCode ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-3 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-white block">Solo vs AI</span>
-                  <span className="text-[10px] text-zinc-400">Playing with Bots</span>
-                </div>
-                <span className="text-xl">🤖</span>
-              </div>
+      <div className="space-y-1.5">
+        {isMultiplayer && (
+          <div>
+            <MenuRow
+              icon={<RotateCw className={cx('w-3.5 h-3.5', isSyncing && 'animate-spin')} />}
+              title="Resync with the host"
+              body="Pull the turn, the top card and your hand again"
+              onClick={handleTriggerSync}
+              disabled={isSyncing}
+            />
+            {syncFeedback && (
+              <p className="pt-1 text-center text-nano font-bold text-ok animate-fadeIn">
+                {syncFeedback}
+              </p>
             )}
-
-            {/* Reconnect Option if disconnected (Clients only) */}
-            {isMultiplayer && !isHost && connectionStatus === 'disconnected' && onReconnect && (
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  onReconnect()
-                }}
-                className="w-full py-2.5 px-3 rounded-xl bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-200 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                <span>Reconnect to Host Now</span>
-              </button>
-            )}
-
-            {/* Actions Menu */}
-            <div className="space-y-1.5 pt-1">
-              {/* 1. Sync State (Multiplayer only) */}
-              {isMultiplayer && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={handleTriggerSync}
-                    disabled={isSyncing}
-                    className="w-full p-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/60 text-left flex items-center justify-between transition cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center">
-                        <RotateCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-400' : ''}`} />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-white group-hover:text-blue-300 transition">
-                          Refresh & Sync State
-                        </div>
-                        <div className="text-[10px] text-zinc-400">
-                          Resynchronize turn, top card, and hand with host
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                  {syncFeedback && (
-                    <div className="text-[10px] font-bold text-emerald-400 text-center pt-1 animate-fadeIn">
-                      {syncFeedback}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 2. Official Rules */}
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  onClose()
-                  if (onOpenRules) onOpenRules()
-                }}
-                className="w-full p-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/60 text-left flex items-center justify-between transition cursor-pointer group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
-                    <BookOpen className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-white group-hover:text-amber-300 transition">
-                      UNO Rules & Actions
-                    </div>
-                    <div className="text-[10px] text-zinc-400">
-                      View card powers, penalties & stacking mechanics
-                    </div>
-                  </div>
-                </div>
-              </button>
-
-              {/* 3. Return to Lobby */}
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  setConfirmAction('lobby')
-                }}
-                className="w-full p-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/60 text-left flex items-center justify-between transition cursor-pointer group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
-                    <Users className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-white group-hover:text-amber-300 transition">
-                      {isMultiplayer && isHost ? 'Return All to Room Lobby' : 'Return to Lobby'}
-                    </div>
-                    <div className="text-[10px] text-zinc-400">
-                      {isMultiplayer
-                        ? 'Keep room code and re-configure lobby'
-                        : 'Return to bot player setup'}
-                    </div>
-                  </div>
-                </div>
-              </button>
-
-              {/* 4. Exit to Main Menu */}
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  setConfirmAction('exit')
-                }}
-                className="w-full p-2.5 rounded-xl bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/20 text-left flex items-center justify-between transition cursor-pointer group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center">
-                    <LogOut className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-rose-300 group-hover:text-rose-200 transition">
-                      Exit Match
-                    </div>
-                    <div className="text-[10px] text-zinc-400">
-                      Leave game and return to mode select
-                    </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Resume Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="w-full py-3 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-lg"
-              >
-                <Play className="w-3.5 h-3.5 fill-zinc-950" />
-                <span>Resume Game</span>
-              </button>
-            </div>
-          </>
+          </div>
         )}
+
+        <MenuRow
+          icon={<BookOpen className="w-3.5 h-3.5" />}
+          title="How to play"
+          body="Card powers, penalties and stacking"
+          onClick={() => {
+            playClickSound()
+            onClose()
+            if (onOpenRules) onOpenRules()
+          }}
+        />
+
+        <MenuRow
+          icon={<Users className="w-3.5 h-3.5" />}
+          title={isMultiplayer && isHost ? 'Send everyone to the lobby' : 'Back to the lobby'}
+          body={isMultiplayer ? 'Keeps the room code' : 'Change the bot setup'}
+          onClick={() => {
+            playClickSound()
+            setConfirmAction('lobby')
+          }}
+        />
+
+        <MenuRow
+          tone="danger"
+          icon={<LogOut className="w-3.5 h-3.5" />}
+          title="Leave the match"
+          body="Back to mode select"
+          onClick={() => {
+            playClickSound()
+            setConfirmAction('exit')
+          }}
+        />
       </div>
-    </div>
+    </Modal>
   )
 }

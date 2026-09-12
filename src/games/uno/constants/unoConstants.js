@@ -58,12 +58,12 @@ export const COLOR_CONFIG = {
   },
   [CARD_COLORS.WILD]: {
     name: 'Wild',
-    bg: 'bg-zinc-900',
-    border: 'border-zinc-700',
+    bg: 'bg-felt',
+    border: 'border-edge-lit',
     ring: 'ring-purple-500',
-    text: 'text-zinc-200',
+    text: 'text-ink',
     badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    gradient: 'from-zinc-900 via-purple-900/50 to-zinc-900',
+    gradient: 'from-felt via-purple-900/50 to-felt',
     hex: '#8b5cf6',
   },
 }
@@ -113,9 +113,9 @@ export function getRankBadge(rank) {
         shortLabel: `${rank}th`,
         medal: '🏅',
         title: `${rank}th Place`,
-        text: 'text-zinc-400',
-        badge: 'bg-zinc-800 text-zinc-300 border-zinc-700',
-        ring: 'ring-zinc-600',
+        text: 'text-ink-muted',
+        badge: 'bg-felt-high text-ink border-edge-lit',
+        ring: 'ring-edge-lit',
       }
   }
 }

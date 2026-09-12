@@ -1,12 +1,23 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Play, Users, Bot, Sparkles } from 'lucide-react'
+import { Play, Users, Bot, BookOpen } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
+import Screen, { ScreenHeader, BackLink } from '../../../components/ui/Screen'
+import Surface from '../../../components/ui/Surface'
+import Button from '../../../components/ui/Button'
+import Choice from '../../../components/ui/Choice'
+import Label from '../../../components/ui/Label'
+import Pill from '../../../components/ui/Pill'
+import TextInput from '../../../components/ui/TextInput'
+import Toggle from '../../../components/ui/Toggle'
+import { Avatar } from '../../../components/ui/PlayerRow'
 
 const BOT_PRESETS = [
-  { name: 'Gizmo', avatar: '🤖', color: 'border-blue-500/50 bg-blue-500/10' },
-  { name: 'Blaze', avatar: '🦊', color: 'border-amber-500/50 bg-amber-500/10' },
-  { name: 'Echo', avatar: '🐼', color: 'border-emerald-500/50 bg-emerald-500/10' },
+  { name: 'Gizmo', avatar: '🤖' },
+  { name: 'Blaze', avatar: '🦊' },
+  { name: 'Echo', avatar: '🐼' },
 ]
+
+const TABLE_SHAPE = { 1: 'Head to head', 2: 'Three up', 3: 'Full table' }
 
 export default function UnoLobby({ onStartGame, onBackToMenu, onOpenRules }) {
   const [playerName, setPlayerName] = useState('Player 1')
@@ -33,197 +44,152 @@ export default function UnoLobby({ onStartGame, onBackToMenu, onOpenRules }) {
       hand: [],
     }))
 
-    onStartGame({
-      players: [humanPlayer, ...botPlayers],
-      enableStacking,
-    })
+    onStartGame({ players: [humanPlayer, ...botPlayers], enableStacking })
   }
 
   return (
-    <div className="w-full max-w-md mx-auto px-5 py-4 flex flex-col justify-between min-h-[80vh] select-none animate-fadeIn">
-      {/* Header */}
-      <div className="pt-2 pb-4 text-center relative">
-        {onBackToMenu && (
-          <button
-            type="button"
+    <Screen>
+      {onBackToMenu && (
+        <div className="pb-2">
+          <BackLink
             onClick={() => {
               playClickSound()
               onBackToMenu()
             }}
-            className="absolute left-0 top-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Games</span>
-          </button>
-        )}
+            Modes
+          </BackLink>
+        </div>
+      )}
 
-        {/* Uno Badge */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-400 mb-2">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Card Arena</span>
+      <ScreenHeader
+        eyebrow={<Pill tone="uno">Solo</Pill>}
+        title="Play the bots"
+        subtitle="Deal yourself in against one to three of them."
+        className="pb-6"
+      />
+
+      <form onSubmit={handleStart} className="space-y-5">
+        <div className="space-y-2">
+          <Label as="label" htmlFor="uno-name">
+            Your name
+          </Label>
+          <TextInput
+            id="uno-name"
+            type="text"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            maxLength={15}
+            placeholder="What should we call you?"
+          />
         </div>
 
-        <h1 className="text-3xl font-black tracking-tight text-white">
-          UNO Battle
-        </h1>
-        <p className="text-xs text-zinc-400 mt-1">
-          Challenge smart bots in the classic card game
-        </p>
-      </div>
-
-      {/* Form */}
-      <form onSubmit={handleStart} className="space-y-6 flex-1 flex flex-col justify-between">
-        <div className="space-y-5">
-          {/* Your Name */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-              Your Name
-            </label>
-            <input
-              type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={15}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white font-medium focus:outline-none focus:border-red-500 transition"
-              placeholder="Enter your name"
-            />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Opponents</Label>
+            <span className="font-mono text-nano text-ink-faint">{botCount + 1} at the table</span>
           </div>
 
-          {/* Opponent Bots Selection */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-                Opponents
-              </label>
-              <span className="text-xs text-zinc-400">
-                {botCount + 1} Players Total
-              </span>
-            </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[1, 2, 3].map((count) => (
+              <Choice
+                key={count}
+                tone="uno"
+                radius="object"
+                selected={botCount === count}
+                onClick={() => {
+                  playClickSound()
+                  setBotCount(count)
+                }}
+                className="flex-col gap-0.5 py-3"
+              >
+                <span className="flex items-center gap-1 text-sm font-bold">
+                  <Bot className="w-4 h-4" />
+                  {count}
+                </span>
+                <span className="text-nano opacity-70">{TABLE_SHAPE[count]}</span>
+              </Choice>
+            ))}
+          </div>
+        </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((count) => {
-                const isSelected = botCount === count
-                return (
-                  <button
-                    key={count}
-                    type="button"
-                    onClick={() => {
-                      playClickSound()
-                      setBotCount(count)
-                    }}
-                    className={`py-3.5 px-2 rounded-2xl border flex flex-col items-center gap-1 transition active:scale-95 cursor-pointer ${
-                      isSelected
-                        ? 'bg-red-600/20 border-red-500 text-white shadow-lg shadow-red-950/40'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <Bot className="w-4 h-4" />
-                      <span className="text-sm font-bold">{count} Bot{count > 1 ? 's' : ''}</span>
-                    </div>
-                    <span className="text-[10px] text-zinc-400">
-                      {count === 1 ? '1v1 Duel' : count === 2 ? '3-Player' : 'Full Table'}
-                    </span>
-                  </button>
-                )
-              })}
+        <Surface radius="object" className="p-3.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Avatar size="sm">🔥</Avatar>
+            <div className="min-w-0">
+              <div className="text-mini font-bold text-ink leading-tight">Stacking</div>
+              <div className="text-nano text-ink-muted">
+                Answer a +2 with a +2, or a +4 with a +4
+              </div>
             </div>
           </div>
 
-          {/* House Rules: Card Stacking Toggle */}
-          <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center text-sm">
-                🔥
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white leading-tight">
-                  Card Stacking (+2 / +4)
+          <Toggle
+            checked={enableStacking}
+            label="Allow card stacking"
+            onChange={() => {
+              playClickSound()
+              setEnableStacking(!enableStacking)
+            }}
+          />
+        </Surface>
+
+        <Surface inset radius="object" className="p-4 space-y-2.5">
+          <Label className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            At the table
+          </Label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 rounded-well bg-felt border border-edge shadow-lift-1 flex items-center gap-2.5">
+              <span className="text-lg">😎</span>
+              <div className="min-w-0">
+                <div className="text-mini font-bold text-ink leading-tight truncate">
+                  {playerName || 'You'}
                 </div>
-                <div className="text-[10px] text-zinc-400">
-                  Counter a +2 with another +2, or +4 with +4
-                </div>
+                <span className="text-nano font-semibold text-ok">You</span>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                playClickSound()
-                setEnableStacking(!enableStacking)
-              }}
-              className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                enableStacking ? 'bg-emerald-500' : 'bg-zinc-700'
-              }`}
-            >
+            {BOT_PRESETS.slice(0, botCount).map((bot) => (
               <div
-                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform absolute top-0.5 left-0.5 ${
-                  enableStacking ? 'translate-x-6' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Table Preview */}
-          <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400">
-              <Users className="w-3.5 h-3.5 text-red-400" />
-              <span>Table Lineup</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-2.5 rounded-xl bg-zinc-800/50 border border-zinc-700/50 flex items-center gap-2.5">
-                <span className="text-lg">😎</span>
-                <div>
-                  <div className="text-xs font-bold text-white leading-tight">
-                    {playerName || 'You'}
+                key={bot.name}
+                className="p-2.5 rounded-well bg-felt border border-edge shadow-lift-1 flex items-center gap-2.5"
+              >
+                <span className="text-lg">{bot.avatar}</span>
+                <div className="min-w-0">
+                  <div className="text-mini font-bold text-ink leading-tight truncate">
+                    {bot.name}
                   </div>
-                  <span className="text-[10px] text-emerald-400 font-semibold">Human</span>
+                  <span className="text-nano font-medium text-ink-faint">Bot</span>
                 </div>
               </div>
-
-              {BOT_PRESETS.slice(0, botCount).map((bot) => (
-                <div
-                  key={bot.name}
-                  className={`p-2.5 rounded-xl border flex items-center gap-2.5 ${bot.color}`}
-                >
-                  <span className="text-lg">{bot.avatar}</span>
-                  <div>
-                    <div className="text-xs font-bold text-white leading-tight">
-                      {bot.name}
-                    </div>
-                    <span className="text-[10px] text-zinc-400 font-medium">AI Bot</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-        </div>
+        </Surface>
 
-        {/* Action Buttons */}
-        <div className="space-y-3 pt-4">
-          <button
-            type="submit"
-            className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-red-600 via-amber-500 to-emerald-600 hover:brightness-110 active:brightness-95 text-white shadow-lg shadow-red-950/40 flex items-center justify-center gap-2 transition cursor-pointer"
-          >
+        <div className="space-y-2 pt-2">
+          <Button type="submit" tone="uno" fullWidth>
             <Play className="w-4 h-4 fill-current" />
-            <span>Deal & Start Game</span>
-          </button>
+            Deal the cards
+          </Button>
 
           {onOpenRules && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="md"
+              fullWidth
               onClick={() => {
                 playClickSound()
                 onOpenRules()
               }}
-              className="w-full py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
             >
-              📖 View Uno Rules
-            </button>
+              <BookOpen className="w-3.5 h-3.5" />
+              How to play
+            </Button>
           )}
         </div>
       </form>
-    </div>
+    </Screen>
   )
 }

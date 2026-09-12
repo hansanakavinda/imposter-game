@@ -36,7 +36,7 @@ export default function UnoFlyingCardsLayer({ flyingCards }) {
                   size="md"
                   isPlayable={false}
                 />
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-zinc-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-0.5 whitespace-nowrap animate-bounce">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-table font-bold text-nano px-2 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-0.5 whitespace-nowrap animate-bounce">
                   <span>✨ DRAW</span>
                 </div>
               </div>

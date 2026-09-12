@@ -40,7 +40,10 @@ export default function Button({
       onClick={onClick}
       className={cx(
         'inline-flex items-center justify-center gap-2 transition cursor-pointer',
-        'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none',
+        // A disabled button is an unlit object, not a dimmed lit one -- a
+        // tone fill at 40% opacity still reads as pressable.
+        'disabled:cursor-not-allowed disabled:bg-felt disabled:text-ink-faint',
+        'disabled:border-edge disabled:shadow-lift-0 disabled:brightness-100',
         fullWidth && 'w-full',
         SIZE[size],
         RADIUS[radius],

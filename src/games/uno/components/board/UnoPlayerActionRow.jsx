@@ -26,12 +26,12 @@ export default function UnoPlayerActionRow({
                 {myPlayer.name} (You)
               </span>
               {handCards.length === 1 && (hasCalledUnoThisRound || unoCalledPlayers?.has(myPlayer?.id)) && (
-                <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[8px] font-black tracking-wider shadow-sm">
+                <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-nano font-bold tracking-wider shadow-sm">
                   UNO!
                 </span>
               )}
             </div>
-            <span className="text-[10px] text-zinc-400">
+            <span className="text-nano text-ink-muted">
               {handCards.length} card{handCards.length !== 1 ? 's' : ''} left
             </span>
           </div>
@@ -51,7 +51,7 @@ export default function UnoPlayerActionRow({
             disabled={hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id))}
             className={`px-3 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider border flex items-center gap-1.5 transition select-none ${
               (hasCalledUnoThisRound || (unoCalledPlayers && unoCalledPlayers.has(myPlayer?.id)))
-                ? 'bg-zinc-800/90 border-emerald-500/40 text-emerald-300 opacity-90 cursor-default'
+                ? 'bg-felt-high border-emerald-500/40 text-emerald-300 opacity-90 cursor-default'
                 : 'bg-red-700 hover:bg-red-600 active:scale-95 text-white border-red-500/50 shadow-sm cursor-pointer'
             }`}
             title={
@@ -82,7 +82,7 @@ export default function UnoPlayerActionRow({
               playClickSound()
               onPassTurn()
             }}
-            className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold border border-zinc-700 flex items-center gap-1 cursor-pointer transition active:scale-95"
+            className="px-3 py-1.5 rounded-xl bg-felt-high hover:bg-felt-high text-white text-xs font-bold border border-edge-lit flex items-center gap-1 cursor-pointer transition active:scale-95"
           >
             <span>Pass Turn</span>
             <ArrowRight className="w-3.5 h-3.5" />

@@ -164,7 +164,7 @@ export default function TankControls({
         className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
       >
         {/* Subtle Idle Guide Label */}
-        <div className="absolute top-2 left-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-cyan-400/25 pointer-events-none select-none">
+        <div className="absolute top-2 left-4 flex items-center gap-1.5 text-nano font-bold uppercase tracking-widest text-cyan-400/25 pointer-events-none select-none">
           <Compass className="w-3.5 h-3.5" />
           <span>Top Half: Touch & Drag to Move</span>
         </div>
@@ -181,7 +181,7 @@ export default function TankControls({
             }}
           >
             {/* Outer Base Ring */}
-            <div className="relative w-28 h-28 rounded-full border border-cyan-400/40 bg-zinc-950/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+            <div className="relative w-28 h-28 rounded-full border border-cyan-400/40 bg-well/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.15)]">
               {/* Center Rest Guide */}
               <div className="w-2 h-2 rounded-full bg-cyan-400/30" />
 
@@ -202,7 +202,7 @@ export default function TankControls({
 
       {/* Subtle Halfway Divider Indicator */}
       {isTouchDevice && (
-        <div className="w-full h-px border-b border-dashed border-zinc-800/30 pointer-events-none" />
+        <div className="w-full h-px border-b border-dashed border-edge/50 pointer-events-none" />
       )}
 
       {/* ------------------------------------------------------------- */}
@@ -214,7 +214,7 @@ export default function TankControls({
         className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
       >
         {/* Subtle Idle Guide Label */}
-        <div className="absolute bottom-3 right-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400/25 pointer-events-none select-none">
+        <div className="absolute bottom-3 right-4 flex items-center gap-1.5 text-nano font-bold uppercase tracking-widest text-amber-400/25 pointer-events-none select-none">
           <Crosshair className="w-3.5 h-3.5" />
           <span>Bottom Half: Touch & Aim to Fire</span>
         </div>
@@ -231,7 +231,7 @@ export default function TankControls({
             }}
           >
             {/* Outer Base Ring */}
-            <div className="relative w-28 h-28 rounded-full border border-amber-400/40 bg-zinc-950/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+            <div className="relative w-28 h-28 rounded-full border border-amber-400/40 bg-well/20 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.15)]">
               {/* Direction Indicator on Outer Rim */}
               {aimVisual.knobX !== 0 || aimVisual.knobY !== 0 ? (
                 <div
@@ -265,7 +265,7 @@ export default function TankControls({
       {/* Desktop hint: the canvas handles aiming directly here. */}
       {!isTouchDevice && (
         <div className="flex-1 flex items-end justify-center pb-3 pointer-events-none">
-          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500/40 select-none">
+          <span className="text-nano font-bold uppercase tracking-widest text-ink-faint/50 select-none">
             WASD to drive · Mouse to aim · Click or Space to fire{is2v2 ? ' · E to ping' : ''}
           </span>
         </div>

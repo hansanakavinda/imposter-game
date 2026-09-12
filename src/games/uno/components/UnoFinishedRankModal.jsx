@@ -1,8 +1,12 @@
 import React, { useEffect } from 'react'
 import confetti from 'canvas-confetti'
-import { Eye, Sparkles } from 'lucide-react'
+import { Eye } from 'lucide-react'
 import { getRankBadge } from '../constants/unoConstants'
 import { playVictorySound, playClickSound } from '../../../utils/sound'
+import Modal from '../../../components/ui/Modal'
+import Button from '../../../components/ui/Button'
+import Label from '../../../components/ui/Label'
+import Surface from '../../../components/ui/Surface'
 
 export default function UnoFinishedRankModal({
   isOpen,
@@ -17,18 +21,12 @@ export default function UnoFinishedRankModal({
     if (isOpen) {
       playVictorySound()
       try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        })
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
       } catch {
         // ignore
       }
     }
   }, [isOpen])
-
-  if (!isOpen) return null
 
   const handleSpectate = () => {
     playClickSound()
@@ -36,63 +34,48 @@ export default function UnoFinishedRankModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
-      <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl text-center space-y-5 animate-scaleUp">
-        {/* Glow & Medal Icon */}
-        <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl animate-pulse" />
-          <div className="relative w-20 h-20 rounded-3xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-4xl shadow-lg">
-            {rankInfo.medal}
-          </div>
+    <Modal
+      open={isOpen}
+      dismissible={false}
+      size="sm"
+      className="text-center"
+      footer={
+        <Button tone="uno" fullWidth onClick={handleSpectate}>
+          <Eye className="w-4 h-4" />
+          Watch the rest
+        </Button>
+      }
+    >
+      <div className="space-y-5 pt-1">
+        <div className="mx-auto w-20 h-20 rounded-object bg-well border border-edge shadow-sink flex items-center justify-center text-4xl">
+          {rankInfo.medal}
         </div>
 
-        {/* Heading & Rank Info */}
         <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Hand Cleared!</span>
-          </div>
-
-          <h2 className="text-2xl font-black text-white tracking-tight">
-            {playerName === 'You' ? 'Congratulations!' : `${playerName} Finished!`}
+          <Label className="text-uno">Hand cleared</Label>
+          <h2 className="font-display text-3xl leading-none text-ink">
+            {playerName === 'You' ? "That's your hand gone" : `${playerName} is out`}
           </h2>
-
-          <div className="text-lg font-black text-amber-400 pt-0.5">
-            {rankInfo.medal} {rankInfo.label}
-          </div>
-
-          <p className="text-xs text-zinc-300 leading-relaxed max-w-xs mx-auto pt-1">
+          <div className="font-display text-lg text-uno pt-0.5">{rankInfo.label}</div>
+          <p className="text-mini text-ink-muted leading-relaxed max-w-xs mx-auto pt-1">
             {rank === 1
-              ? 'Incredible job! You emptied all your cards first and secured 1st Place!'
-              : `Awesome game! You cleared your hand and earned ${rankInfo.label}!`}
+              ? 'First to empty your hand. Nothing left to play.'
+              : `You cleared your hand and finished ${rankInfo.label}.`}
           </p>
         </div>
 
-        {/* Ongoing Match Notice */}
-        <div className="p-3.5 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 text-left space-y-1">
-          <div className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
-            <Eye className="w-3.5 h-3.5 text-blue-400" />
-            <span>Spectator Mode Activated</span>
-          </div>
-          <p className="text-[11px] text-zinc-400 leading-relaxed">
+        <Surface inset radius="object" className="p-3.5 text-left space-y-1">
+          <Label className="flex items-center gap-1.5">
+            <Eye className="w-3.5 h-3.5" />
+            You&apos;re watching now
+          </Label>
+          <p className="text-micro text-ink-muted leading-relaxed">
             {activeRemaining > 1
-              ? `${activeRemaining} players are still competing for remaining places. You can spectate the match live!`
-              : 'The final 2 players are finishing up now!'}
+              ? `${activeRemaining} players are still going for the remaining places.`
+              : 'The last two are finishing up.'}
           </p>
-        </div>
-
-        {/* Action Button */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={handleSpectate}
-            className="w-full py-3.5 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-lg"
-          >
-            <Eye className="w-4 h-4 text-zinc-950" />
-            <span>Spectate Game</span>
-          </button>
-        </div>
+        </Surface>
       </div>
-    </div>
+    </Modal>
   )
 }

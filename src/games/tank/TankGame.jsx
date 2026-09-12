@@ -1015,7 +1015,7 @@ export default function TankGame({
     : myTank?.cooldownMs || myTankConfig.cooldownMs
 
   return (
-    <div className="w-full flex flex-col items-center justify-center select-none">
+    <div className="w-full flex-1 flex flex-col items-center select-none">
       {/* 1. Lobby Phase */}
       {gamePhase === 'lobby' && (
         <TankLobby

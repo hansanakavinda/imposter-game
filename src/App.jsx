@@ -95,7 +95,6 @@ export default function App() {
 
         {selectedGame === 'uno' && (
           <UnoGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}

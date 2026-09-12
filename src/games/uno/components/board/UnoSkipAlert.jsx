@@ -11,11 +11,11 @@ export default function UnoSkipAlert({ skippedInfo, isMyTurnSkipped, activePlaye
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-red-200 font-black text-xs uppercase tracking-wider">
+              <span className="text-red-200 font-bold text-xs uppercase tracking-wider">
                 Turn Skipped!
               </span>
               {skippedInfo.cardsDrawn > 0 && (
-                <span className="px-1.5 py-0.2 rounded bg-red-500 text-white font-black text-[10px]">
+                <span className="px-1.5 py-0.5 rounded bg-red-500 text-white font-bold text-nano">
                   +{skippedInfo.cardsDrawn} CARDS
                 </span>
               )}
@@ -36,7 +36,7 @@ export default function UnoSkipAlert({ skippedInfo, isMyTurnSkipped, activePlaye
           </div>
         </div>
       ) : (
-        <div className="w-full max-w-lg mx-auto px-3 py-1.5 rounded-xl bg-zinc-900/95 border border-red-500/50 text-xs font-semibold text-zinc-200 shadow-md flex items-center gap-2">
+        <div className="w-full max-w-lg mx-auto px-3 py-1.5 rounded-xl bg-felt border border-red-500/50 text-xs font-semibold text-ink shadow-md flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-xs flex-shrink-0">
             🚫
           </span>
