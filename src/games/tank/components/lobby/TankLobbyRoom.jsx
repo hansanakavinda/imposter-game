@@ -1,8 +1,10 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Copy, Check, Play, ArrowLeft, Share2 } from 'lucide-react'
 import { MODES, DEFAULT_TANK_TYPE } from '../../constants/tankConstants'
 import { playClickSound } from '../../../../utils/sound'
 import TankSelector from './TankSelector'
+import useCopyFeedback from '../../../../hooks/useCopyFeedback'
+import { buildRoomLink } from '../../../../services/peerConfig'
 import TeamRosterColumn from './TeamRosterColumn'
 
 // The in-room screen: roster, readiness and launch. Was the second half of
@@ -21,19 +23,18 @@ export default function TankLobbyRoom({
   onStartGame,
   onLeaveRoom,
 }) {
-  const [copied, setCopied] = useState(false)
   const currentModeConfig = MODES[mode] || MODES['1v1']
+  const { copied, copy } = useCopyFeedback()
 
   const handleCopyCode = () => {
     playClickSound()
-    navigator.clipboard.writeText(roomCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    copy(roomCode)
   }
 
+  // Web Share where it exists -- only Tank offers it -- falling back to copy.
   const handleShareLink = () => {
     playClickSound()
-    const url = `${window.location.origin}${window.location.pathname}?game=tank&room=${roomCode}`
+    const url = buildRoomLink('tank', roomCode)
     if (navigator.share) {
       navigator.share({
         title: 'Join my Tank Arena Battle!',
@@ -41,9 +42,7 @@ export default function TankLobbyRoom({
         url,
       }).catch(() => {})
     } else {
-      navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      copy(url)
     }
   }
 

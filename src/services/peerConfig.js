@@ -131,3 +131,15 @@ export function generateRoomCode(length = 4) {
 export function createPeerIdFormatter(prefix) {
   return (roomCode) => `${prefix}${String(roomCode).trim().toLowerCase()}`
 }
+
+/**
+ * A shareable deep link into a room.
+ *
+ * App.jsx parses exactly `?game=` and `?room=`, so the builder belongs beside
+ * the room codes rather than in either game -- both lobbies were composing this
+ * URL by hand, differing only in the game id.
+ */
+export function buildRoomLink(gameId, roomCode) {
+  const { origin, pathname } = window.location
+  return `${origin}${pathname}?game=${gameId}&room=${roomCode}`
+}

@@ -40,7 +40,8 @@ DOM and `process` globals resolve.
 src/
   App.jsx                 state-based router (no react-router); ?game= / ?room= deep links
   components/             HUB-ONLY shared UI (Navbar, GameHub). Nothing game-specific.
-  services/               cross-game infrastructure (peerConfig.js: ICE/TURN + room codes)
+  services/               cross-game infrastructure (peerConfig.js: ICE/TURN + room codes + share links)
+  hooks/                  HUB-ONLY shared React hooks (useCopyFeedback)
   utils/sound.js          Web Audio synth shared by all three games
   data/games.js           hub card metadata
   games/<game>/
