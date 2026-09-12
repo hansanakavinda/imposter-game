@@ -1,5 +1,44 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Design tokens. Tailwind v4 is configured CSS-first -- there is no
+   tailwind.config.js and one must not be created.
+
+   These are derived from what the app already uses rather than invented: the
+   surface ramp is the zinc ladder every screen reaches for by hand, and each
+   accent already has exactly one meaning. Reference Tailwind's own palette
+   variables instead of re-typing hexes, so nothing drifts.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* Surfaces */
+  --color-surface:        var(--color-zinc-950);
+  --color-surface-raised: var(--color-zinc-900);
+  --color-surface-inset:  var(--color-zinc-800);
+  --color-edge:           var(--color-zinc-800);
+  --color-edge-strong:    var(--color-zinc-700);
+  --color-ink:            #f0f6fc;                /* already the body colour below */
+  --color-ink-muted:      var(--color-zinc-400);
+  --color-ink-faint:      var(--color-zinc-500);
+
+  /* Semantic accents */
+  --color-turn:      var(--color-amber-500);      /* active turn / your turn */
+  --color-next:      var(--color-blue-500);       /* the NEXT badge */
+  --color-ok:        var(--color-emerald-500);    /* ready, connected, shield */
+  --color-danger:    var(--color-red-500);        /* skipped, 1 HP, disconnected */
+  --color-team-blue: #06b6d4;                     /* = TEAMS.blue.color, tankConstants.js */
+  --color-team-red:  #f43f5e;                     /* = TEAMS.red.color,  tankConstants.js */
+
+  /* Used at UnoBoard.jsx (direction arrows) but defined nowhere until now,
+     so those arrows have never actually spun. */
+  --animate-spin-slow: spin-slow 3s linear infinite;
+
+  @keyframes spin-slow {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -49,4 +88,13 @@
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 9999px;
+}
+
+/* Applied at UnoBoard.jsx and UnoGameOverModal.jsx but never defined, so those
+   two scroll containers have always shown a scrollbar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
