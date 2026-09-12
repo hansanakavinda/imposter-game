@@ -11,6 +11,15 @@ import drawPings from './drawPings'
 import drawBushes from './drawBushes'
 import drawHud from './drawHud'
 import { getTankSprite } from './tankSprites'
+import { getHpTier, HP_TIERS } from '../utils/tankHud'
+
+// Canvas takes colour strings, not classes, so the tier->hex mapping lives here
+// while the HUD bar keeps its own tier->Tailwind mapping.
+const HP_TIER_HEX = {
+  [HP_TIERS.OK]: '#22c55e',
+  [HP_TIERS.LOW]: '#eab308',
+  [HP_TIERS.CRITICAL]: '#ef4444',
+}
 
 /**
  * Draw one frame of the arena.
@@ -205,13 +214,11 @@ export default function drawScene(ctx, scene, { now, elapsed }) {
         ctx.roundRect(segX, barDistY - segWidth / 2, segHeight, segWidth, 1.5)
 
         if (isFilled) {
-          let segColor = '#22c55e' // Green (3 HP)
-          if (currentHp === 2) segColor = '#eab308' // Yellow (2 HP)
-          if (currentHp === 1) segColor = '#ef4444' // Red (1 HP)
+          const segColor = HP_TIER_HEX[getHpTier(currentHp)]
 
           ctx.fillStyle = segColor
           ctx.shadowColor = segColor
-          ctx.shadowBlur = currentHp === 1 ? 6 : 2
+          ctx.shadowBlur = getHpTier(currentHp) === HP_TIERS.CRITICAL ? 6 : 2
           ctx.fill()
           ctx.shadowBlur = 0
         } else {

@@ -11,6 +11,15 @@ import {
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
 import { WEAPON_TYPES, TANK_TYPES, DEFAULT_TANK_TYPE } from '../constants/tankConstants'
+import { getHpTier, HP_TIERS } from '../utils/tankHud'
+
+// Tier -> Tailwind. The canvas keeps its own tier->hex mapping; only the
+// thresholds are shared.
+const HP_TIER_CLASS = {
+  [HP_TIERS.OK]: 'bg-emerald-400',
+  [HP_TIERS.LOW]: 'bg-amber-400',
+  [HP_TIERS.CRITICAL]: 'bg-rose-500 shadow-xs shadow-rose-500/50',
+}
 
 /**
  * The top status bar: health, tank class, weapon, shield, and the utility
@@ -45,18 +54,14 @@ export default function TankHudBar({
         <div className="flex items-center gap-2">
           {/* Active Health Indicator */}
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-            <Heart className={`w-3.5 h-3.5 ${hp === 1 ? 'text-rose-500 fill-rose-500 animate-pulse' : 'text-rose-400 fill-rose-400'}`} />
+            <Heart className={`w-3.5 h-3.5 ${getHpTier(hp) === HP_TIERS.CRITICAL ? 'text-rose-500 fill-rose-500 animate-pulse' : 'text-rose-400 fill-rose-400'}`} />
             <div className="flex items-center gap-1">
               {Array.from({ length: maxHp }).map((_, idx) => (
                 <div
                   key={idx}
                   className={`w-3 h-2 rounded-xs transition-all duration-300 ${
                     idx < hp
-                      ? hp === 1
-                        ? 'bg-rose-500 shadow-xs shadow-rose-500/50'
-                        : hp === 2
-                        ? 'bg-amber-400'
-                        : 'bg-emerald-400'
+                      ? HP_TIER_CLASS[getHpTier(hp)]
                       : 'bg-zinc-800 border border-zinc-700/50'
                   }`}
                 />
