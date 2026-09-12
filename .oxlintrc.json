@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "oxc", "unicorn"],
+  "env": {
+    "builtin": true,
+    "browser": true,
+    "es2024": true,
+    "node": true
+  },
   "categories": {
     "correctness": "error",
     "suspicious": "warn",
@@ -15,6 +21,7 @@
     "react/memo-dependencies": "warn",
     "react/only-export-components": ["warn", { "allowConstantExport": true }],
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-undef": "error",
     "eqeqeq": ["warn", "smart"],
     "no-console": ["warn", { "allow": ["warn", "error"] }],
 
