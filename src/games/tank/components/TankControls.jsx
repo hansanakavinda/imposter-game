@@ -36,6 +36,24 @@ export default function TankControls({
   const currentWeapon = WEAPON_TYPES[activeWeapon] || WEAPON_TYPES.STANDARD
   const currentTankCfg = TANK_TYPES[tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
 
+  /**
+   * The two joystick zones cover the whole arena, so on a desktop they would swallow
+   * every pointer event before it reached the canvas underneath - which is exactly
+   * what used to disable mouse aiming. Mount them only where there is a touch screen.
+   */
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return true
+    return window.matchMedia('(pointer: coarse)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const query = window.matchMedia('(pointer: coarse)')
+    const handleChange = (e) => setIsTouchDevice(e.matches)
+    query.addEventListener('change', handleChange)
+    return () => query.removeEventListener('change', handleChange)
+  }, [])
+
   // Ref callbacks to avoid stale closures
   const onFireRef = useRef(onFire)
   const onAimChangeRef = useRef(onAimChange)
@@ -449,8 +467,10 @@ export default function TankControls({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* Top Half: Dynamic Movement Touch Zone (Draggable Anywhere in Top Half) */}
+      {/* Touch zones. Omitted on pointer-precise devices so the canvas below */}
+      {/* receives mouse aim, click-to-fire and right-click ping directly.    */}
       {/* ------------------------------------------------------------- */}
+      {isTouchDevice && (
       <div
         ref={topZoneRef}
         onPointerDown={handleMovePointerDown}
@@ -494,13 +514,17 @@ export default function TankControls({
           </div>
         )}
       </div>
+      )}
 
       {/* Subtle Halfway Divider Indicator */}
-      <div className="w-full h-px border-b border-dashed border-zinc-800/30 pointer-events-none" />
+      {isTouchDevice && (
+        <div className="w-full h-px border-b border-dashed border-zinc-800/30 pointer-events-none" />
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* Bottom Half: Dynamic Aim & Shoot Touch Zone (Draggable Anywhere in Bottom Half) */}
       {/* ------------------------------------------------------------- */}
+      {isTouchDevice && (
       <div
         ref={bottomZoneRef}
         onPointerDown={handleAimPointerDown}
@@ -556,6 +580,16 @@ export default function TankControls({
           </div>
         )}
       </div>
+      )}
+
+      {/* Desktop hint: the canvas handles aiming directly here. */}
+      {!isTouchDevice && (
+        <div className="flex-1 flex items-end justify-center pb-3 pointer-events-none">
+          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500/40 select-none">
+            WASD to drive · Mouse to aim · Click or Space to fire{is2v2 ? ' · E to ping' : ''}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
