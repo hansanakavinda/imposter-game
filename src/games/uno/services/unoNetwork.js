@@ -131,26 +131,6 @@ export function initHostPeer({
         console.warn('[Host] sendTo: no active connection for peer:', clientPeerId)
       }
     },
-    isConnectionAlive: (clientPeerId) => {
-      const conn = connections.get(clientPeerId)
-      if (!conn || !conn.open) return false
-      const pc = conn.peerConnection
-      if (pc) {
-        const state = pc.connectionState
-        const iceState = pc.iceConnectionState
-        if (
-          state === 'disconnected' ||
-          state === 'failed' ||
-          state === 'closed' ||
-          iceState === 'disconnected' ||
-          iceState === 'failed' ||
-          iceState === 'closed'
-        ) {
-          return false
-        }
-      }
-      return true
-    },
     checkPeerResponsive: (clientPeerId, timeoutMs = 1200) => {
       const conn = connections.get(clientPeerId)
       if (!conn || !conn.open) return Promise.resolve(false)

@@ -147,14 +147,6 @@ export class TankNetwork {
     })
   }
 
-  updateCallbacks({ onStatusChange, onClientJoin, onPlayerLeave, onMessage, onError } = {}) {
-    if (onStatusChange) this.onStatusChange = onStatusChange
-    if (onClientJoin) this.onClientJoin = onClientJoin
-    if (onPlayerLeave) this.onPlayerLeave = onPlayerLeave
-    if (onMessage) this.onMessage = onMessage
-    if (onError) this.onError = onError
-  }
-
   handleIncomingConnection(conn) {
     this.connections.set(conn.peer, conn)
 
@@ -211,17 +203,6 @@ export class TankNetwork {
         this.hostConnection.send(message)
       } catch (e) {
         console.warn('[TankNetwork] sendToHost error:', e)
-      }
-    }
-  }
-
-  sendToPeer(peerId, message) {
-    const conn = this.connections.get(peerId)
-    if (conn && (conn.open || conn._open)) {
-      try {
-        conn.send(message)
-      } catch (e) {
-        console.warn('[TankNetwork] sendToPeer error:', e)
       }
     }
   }

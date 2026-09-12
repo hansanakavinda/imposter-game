@@ -225,7 +225,7 @@ export default function TankLobby({
         </div>
 
         {/* Tank Selector on Landing */}
-        {renderTankSelector(true)}
+        {renderTankSelector()}
 
         {/* Mode Selector */}
         <div className="w-full bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 mb-4 shadow-xl space-y-3">
@@ -399,7 +399,7 @@ export default function TankLobby({
       </div>
 
       {/* Tank Selector Inside Room */}
-      {renderTankSelector(false)}
+      {renderTankSelector()}
 
       {/* Team Roster Layout */}
       <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">

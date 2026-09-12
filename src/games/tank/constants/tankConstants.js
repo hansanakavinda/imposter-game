@@ -15,7 +15,6 @@ export const TANK_MAX_HP = 3
 
 export const BULLET_RADIUS = 3.5
 export const BULLET_SPEED = 5.2
-export const BULLET_MAX_BOUNCES = 0
 export const BULLET_LIFETIME_MS = 6500
 
 export const TARGET_SCORE_DEFAULT = 3

@@ -137,7 +137,6 @@ export default function UnoBoard({
   const hasInitializedHandRef = useRef(false)
   const drawPileRef = useRef(null)
   const handTrayRef = useRef(null)
-  const turnTrackRef = useRef(null)
   const activeNodeRef = useRef(null)
 
   // Timer ref to clear "NEW" badges after highlight duration
@@ -431,7 +430,7 @@ export default function UnoBoard({
         </div>
 
         {/* Players Turn Flow Row with Direction Arrows */}
-        <div ref={turnTrackRef} className="w-full overflow-x-auto scrollbar-none pt-3.5 pb-2 px-0.5">
+        <div className="w-full overflow-x-auto scrollbar-none pt-3.5 pb-2 px-0.5">
           <div className="flex items-center justify-center gap-1 sm:gap-1.5 min-w-max mx-auto">
             {players.map((p, idx) => {
               const pRank =

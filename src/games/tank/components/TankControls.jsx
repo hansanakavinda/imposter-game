@@ -76,7 +76,6 @@ export default function TankControls({
   // -------------------------------------------------------------
   // Top Zone: Floating Movement Joystick State & Handlers
   // -------------------------------------------------------------
-  const topZoneRef = useRef(null)
   const movePointerIdRef = useRef(null)
   const moveOriginRef = useRef({ x: 0, y: 0 })
   const [moveVisual, setMoveVisual] = useState({
@@ -85,7 +84,6 @@ export default function TankControls({
     y: 0,
     knobX: 0,
     knobY: 0,
-    angle: 0,
   })
 
   const handleMovePointerDown = (e) => {
@@ -142,7 +140,7 @@ export default function TankControls({
     const knobX = Math.cos(angle) * clampedDist
     const knobY = Math.sin(angle) * clampedDist
 
-    setMoveVisual((prev) => ({ ...prev, knobX, knobY, angle }))
+    setMoveVisual((prev) => ({ ...prev, knobX, knobY }))
 
     // Calculate world movement angle
     // In portrait mode, UP on screen (-PI/2) maps to 0 (heading towards +x in world)
@@ -189,7 +187,6 @@ export default function TankControls({
   // -------------------------------------------------------------
   // Bottom Zone: Floating Aim & Shoot Joystick State & Handlers
   // -------------------------------------------------------------
-  const bottomZoneRef = useRef(null)
   const aimPointerIdRef = useRef(null)
   const aimOriginRef = useRef({ x: 0, y: 0, time: 0 })
   const aimFireTimerRef = useRef(null)
@@ -488,7 +485,6 @@ export default function TankControls({
       {/* ------------------------------------------------------------- */}
       {isTouchDevice && (
       <div
-        ref={topZoneRef}
         onPointerDown={handleMovePointerDown}
         onPointerMove={handleMovePointerMove}
         onPointerUp={handleMovePointerUp}
@@ -542,7 +538,6 @@ export default function TankControls({
       {/* ------------------------------------------------------------- */}
       {isTouchDevice && (
       <div
-        ref={bottomZoneRef}
         onPointerDown={handleAimPointerDown}
         onPointerMove={handleAimPointerMove}
         onPointerUp={handleAimPointerUp}
