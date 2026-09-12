@@ -7,7 +7,7 @@ import RulesModal from './components/RulesModal'
 import { getRandomWordPair } from './data/words'
 import { assignPlayerThemes, shuffleArray } from './data/cardThemes'
 
-export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules, onInGameChange }) {
+export default function ImposterGame({ isRulesOpen, onCloseRules, onInGameChange }) {
   // Navigation & Screen State
   const [currentScreen, setCurrentScreen] = useState('setup') // 'setup' | 'pass' | 'discussion' | 'reveal'
   const [internalRulesOpen, setInternalRulesOpen] = useState(false)
@@ -107,9 +107,9 @@ export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules, 
   const handleCloseRules = onCloseRules || (() => setInternalRulesOpen(false))
 
   return (
-    <div className="w-full flex-1 flex flex-col justify-center py-2">
+    <div className="w-full flex-1 flex flex-col">
       {currentScreen === 'setup' && (
-        <SetupScreen onStartGame={handleStartGame} onBackToMenu={onBackToMenu} />
+        <SetupScreen onStartGame={handleStartGame} />
       )}
 
       {currentScreen === 'pass' && (
@@ -138,7 +138,6 @@ export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules, 
           gameData={gameData}
           onPlayAgain={handlePlayAgain}
           onNewSetup={handleResetToSetup}
-          onBackToMenu={onBackToMenu}
         />
       )}
 

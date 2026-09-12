@@ -10,7 +10,6 @@ export default function UnoMultiplayerLobby({
   onJoinRoom,
   onStartGame,
   onLeaveRoom,
-  onBackToMenu,
   onBackToModeSelect,
   roomState, // { isInRoom, isHost, roomCode, players, maxPlayers, isConnecting, error }
 }) {
@@ -29,7 +28,6 @@ export default function UnoMultiplayerLobby({
       initialRoomCode={initialRoomCode}
       onCreateRoom={onCreateRoom}
       onJoinRoom={onJoinRoom}
-      onBackToMenu={onBackToMenu}
       onBackToModeSelect={onBackToModeSelect}
       roomState={roomState}
     />

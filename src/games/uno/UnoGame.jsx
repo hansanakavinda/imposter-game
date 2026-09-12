@@ -69,7 +69,6 @@ const clearUrlRoomCode = () => {
 }
 
 export default function UnoGame({
-  onBackToMenu,
   isRulesOpen,
   onCloseRules,
   initialRoomCode = '',
@@ -1499,7 +1498,7 @@ export default function UnoGame({
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col justify-center">
+    <div className="w-full flex-1 flex flex-col">
       {/* 1. Mode Select Screen */}
       {screen === 'mode_select' && (
         <UnoModeSelect
@@ -1507,7 +1506,6 @@ export default function UnoGame({
             if (mode === 'ai') setScreen('ai_lobby')
             if (mode === 'multiplayer') setScreen('mp_lobby')
           }}
-          onBackToMenu={onBackToMenu}
           onOpenRules={() => setInternalRulesOpen(true)}
         />
       )}
@@ -1561,7 +1559,6 @@ export default function UnoGame({
           myPlayerId={0}
           onPlayAgain={handlePlayAgainAi}
           onResetToLobby={() => setScreen('ai_lobby')}
-          onBackToMenu={onBackToMenu}
         />
       )}
 
@@ -1573,7 +1570,6 @@ export default function UnoGame({
           onJoinRoom={handleJoinRoom}
           onStartGame={handleHostStartGame}
           onLeaveRoom={handleLeaveMpRoom}
-          onBackToMenu={onBackToMenu}
           onBackToModeSelect={() => setScreen('mode_select')}
           roomState={{ ...mpRoomState, stackingEnabled: mpStackingEnabled }}
         />
@@ -1624,7 +1620,6 @@ export default function UnoGame({
           myPlayerId={myPlayerId}
           onPlayAgain={mpRoomState.isHost ? handleHostStartGame : undefined}
           onResetToLobby={handleUniversalReturnToLobby}
-          onBackToMenu={onBackToMenu}
         />
       )}
 

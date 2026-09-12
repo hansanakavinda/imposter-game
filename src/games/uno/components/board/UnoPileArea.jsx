@@ -21,8 +21,8 @@ export default function UnoPileArea({
       <div ref={drawPileRef} className="flex flex-col items-center">
         <div className="relative group">
           {/* Stack effect */}
-          <div className="absolute inset-0 bg-zinc-900 rounded-xl translate-x-1.5 translate-y-1.5 border border-zinc-800 pointer-events-none" />
-          <div className="absolute inset-0 bg-zinc-950 rounded-xl translate-x-0.5 translate-y-0.5 border border-zinc-800 pointer-events-none" />
+          <div className="absolute inset-0 bg-felt rounded-xl translate-x-1.5 translate-y-1.5 border border-edge pointer-events-none" />
+          <div className="absolute inset-0 bg-well rounded-xl translate-x-0.5 translate-y-0.5 border border-edge pointer-events-none" />
 
           <UnoCard
             isBack
@@ -38,12 +38,12 @@ export default function UnoPileArea({
           />
         </div>
         <span
-          className={`text-[11px] font-semibold mt-2 ${
+          className={`text-micro font-semibold mt-2 ${
             pendingDrawCount > 0 && isCurrentTurnForMe
-              ? 'text-red-400 font-black animate-pulse'
+              ? 'text-red-400 font-bold animate-pulse'
               : hasDrawnCardThisTurn && isCurrentTurnForMe
               ? 'text-amber-400 font-medium'
-              : 'text-zinc-400'
+              : 'text-ink-muted'
           }`}
         >
           {pendingDrawCount > 0
@@ -67,13 +67,13 @@ export default function UnoPileArea({
           />
 
           {/* Stack effect representing underneath cards */}
-          <div className="absolute inset-0 bg-zinc-800/90 rounded-xl rotate-6 translate-x-1.5 translate-y-1 border border-white/20 shadow-md pointer-events-none" />
-          <div className="absolute inset-0 bg-zinc-700/90 rounded-xl -rotate-4 -translate-x-1 translate-y-0.5 border border-white/20 shadow-md pointer-events-none" />
+          <div className="absolute inset-0 bg-felt-high rounded-xl rotate-6 translate-x-1.5 translate-y-1 border border-white/20 shadow-md pointer-events-none" />
+          <div className="absolute inset-0 bg-felt-high rounded-xl -rotate-4 -translate-x-1 translate-y-0.5 border border-white/20 shadow-md pointer-events-none" />
 
           {/* Floating Active Color Badge when top card is Wild */}
           {topCard?.color === CARD_COLORS.WILD && (
             <div
-              className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
+              className={`absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-nano font-bold uppercase tracking-wider text-white shadow-lg border flex items-center gap-1 whitespace-nowrap ${activeColorConfig.bg} ${activeColorConfig.border}`}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
               <span>Declared: {activeColorConfig.name}</span>
@@ -91,9 +91,9 @@ export default function UnoPileArea({
         </div>
 
         {/* Discard Pile label with active color */}
-        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-semibold text-zinc-400">
+        <div className="flex items-center gap-1.5 mt-2 text-micro font-semibold text-ink-muted">
           <span>Discard Pile</span>
-          <span className="text-zinc-600">•</span>
+          <span className="text-ink-faint">•</span>
           <span
             className="font-bold flex items-center gap-1"
             style={{ color: activeColorConfig.hex || '#ef4444' }}

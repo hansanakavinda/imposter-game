@@ -39,7 +39,7 @@ export default function UnoHandTray({
             >
               {/* Bouncing "NEW" pill badge above freshly drawn cards */}
               {isNewlyDrawn && !isFlying && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-zinc-950 font-black text-[8px] sm:text-[9px] uppercase tracking-wider shadow-lg border border-amber-300 flex items-center gap-0.5 animate-bounce pointer-events-none whitespace-nowrap">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-table font-bold text-nano sm:text-nano uppercase tracking-wider shadow-lg border border-amber-300 flex items-center gap-0.5 animate-bounce pointer-events-none whitespace-nowrap">
                   <span>✨</span>
                   <span>NEW</span>
                 </div>

@@ -250,7 +250,7 @@ export default function UnoBoard({
       </div>
 
       {/* 3. Bottom Section: Player Hand & Controls */}
-      <div className="w-full pb-2 pt-3 border-t border-zinc-900 space-y-2">
+      <div className="w-full pb-2 pt-3 border-t border-edge space-y-2">
         {/* Turn Bar & Status */}
         <UnoPlayerActionRow
           myPlayer={myPlayer}

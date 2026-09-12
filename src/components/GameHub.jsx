@@ -1,70 +1,124 @@
 import React from 'react'
-import { Sparkles, HelpCircle } from 'lucide-react'
+import { BookOpen } from 'lucide-react'
 import { GAMES } from '../data/games'
 import { playClickSound } from '../utils/sound'
+import IconButton from './ui/IconButton'
+import { FOCUS, cx } from './ui/tokens'
+
+/**
+ * Three objects on a lit table.
+ *
+ * One centred column at every width -- the same design on a phone and on a
+ * desktop. A phone-first app that rearranges itself into a three-up marketing
+ * grid on desktop is describing itself rather than being itself.
+ *
+ * Each card finally renders the metadata games.js has always carried and the
+ * old emoji-and-title tile never showed.
+ */
+const INK = {
+  imposter: {
+    badge: 'text-imposter',
+    disc: 'ring-imposter/40',
+    hover: 'hover:border-imposter/40',
+  },
+  uno: {
+    badge: 'text-uno',
+    disc: 'ring-uno/40',
+    hover: 'hover:border-uno/40',
+  },
+  tank: {
+    badge: 'text-tank',
+    disc: 'ring-tank/40',
+    hover: 'hover:border-tank/40',
+  },
+}
 
 export default function GameHub({ onSelectGame, onOpenRulesForGame }) {
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 py-6 md:py-12 flex flex-col items-center justify-center my-auto select-none">
-      {/* Hero Banner */}
-      <div className="text-center mb-6 md:mb-10 space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-xs font-semibold text-zinc-300 backdrop-blur-md shadow-inner">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Party Arcade</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight text-white">
-          Choose Your Game
+    <div className="relative z-10 w-full max-w-xl mx-auto px-5 pt-3 pb-10 select-none">
+      <header className="mb-7 space-y-1.5">
+        <h1 className="font-display text-4xl sm:text-5xl leading-[0.95] text-ink">
+          What are we playing?
         </h1>
-      </div>
+        <p className="text-sm text-ink-muted">
+          Three games. Everyone plays on their own phone.
+        </p>
+      </header>
 
-      {/* Simplified Square Game Tiles (Game Name + Icon Only) */}
-      <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 w-full max-w-xs sm:max-w-2xl mx-auto">
-        {GAMES.map((game) => (
-          // The rules button cannot nest inside the tile button, so the tile is
-          // wrapped and the rules affordance sits alongside it.
-          <div key={game.id} className="relative w-[calc(50%-0.6rem)] sm:w-48">
-            <button
-              type="button"
-              onClick={() => {
-                playClickSound()
-                onSelectGame(game.id)
-              }}
-              className={`group relative w-full aspect-square rounded-3xl bg-zinc-900/90 border border-zinc-800/90 hover:border-zinc-700/80 p-4 sm:p-6 flex flex-col items-center justify-center gap-2.5 sm:gap-4 overflow-hidden transition-all duration-300 hover:-translate-y-1.5 active:scale-95 shadow-xl hover:shadow-2xl select-none cursor-pointer ${game.borderGlow}`}
-              aria-label={game.title}
+      <div className="space-y-3.5">
+        {GAMES.map((game, index) => {
+          const ink = INK[game.ink]
+
+          return (
+            // The rules action cannot nest inside the card button, so it sits
+            // alongside it rather than within it.
+            <div
+              key={game.id}
+              className="relative animate-rise"
+              style={{ animationDelay: `${index * 40}ms` }}
             >
-              {/* Ambient background glow accent */}
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${game.gradient} opacity-40 group-hover:opacity-80 group-active:opacity-90 transition-opacity duration-300 pointer-events-none`}
-              />
-
-              {/* Icon */}
-              <span className="relative text-5xl sm:text-6xl md:text-7xl filter drop-shadow-md group-hover:scale-110 group-active:scale-110 transition-transform duration-300">
-                {game.emoji}
-              </span>
-
-              {/* Game Name */}
-              <span className="relative text-base sm:text-lg md:text-2xl font-extrabold text-white tracking-tight group-hover:text-zinc-100 transition-colors">
-                {game.title}
-              </span>
-            </button>
-
-            {onOpenRulesForGame && (
               <button
                 type="button"
                 onClick={() => {
                   playClickSound()
-                  onOpenRulesForGame(game.id)
+                  onSelectGame(game.id)
                 }}
-                className="absolute top-2 right-2 z-10 p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800/80 transition active:scale-95 cursor-pointer"
-                title={`How to play ${game.title}`}
-                aria-label={`How to play ${game.title}`}
+                className={cx(
+                  'group w-full text-left flex items-center gap-5 p-5 pr-14',
+                  'bg-felt border border-edge rounded-slab shadow-lift-1',
+                  'transition duration-200 cursor-pointer',
+                  'hover:-translate-y-0.5 hover:bg-felt-high hover:shadow-lift-2',
+                  'active:translate-y-0 active:scale-[0.99] active:shadow-lift-0',
+                  ink.hover,
+                  FOCUS
+                )}
               >
-                <HelpCircle className="w-4 h-4" />
+                <span
+                  className={cx(
+                    'shrink-0 w-16 h-16 rounded-object bg-well shadow-sink ring-1',
+                    'flex items-center justify-center text-4xl',
+                    'transition duration-200 group-hover:scale-105',
+                    ink.disc
+                  )}
+                  aria-hidden="true"
+                >
+                  {game.emoji}
+                </span>
+
+                <span className="min-w-0 flex-1 block space-y-1">
+                  <span className={cx('block text-micro font-bold uppercase', ink.badge)}>
+                    {game.badge}
+                  </span>
+                  <span className="block font-display text-2xl leading-none text-ink">
+                    {game.title}
+                  </span>
+                  <span className="block text-mini text-ink-muted truncate">{game.tagline}</span>
+                  <span className="block pt-0.5 font-mono text-nano text-ink-faint">
+                    {game.playerCount} · {game.duration}
+                  </span>
+                </span>
               </button>
-            )}
-          </div>
-        ))}
+
+              {onOpenRulesForGame && (
+                <IconButton
+                  label={`How to play ${game.title}`}
+                  onClick={() => {
+                    playClickSound()
+                    onOpenRulesForGame(game.id)
+                  }}
+                  className="absolute top-3 right-3 z-10"
+                >
+                  <BookOpen className="w-4 h-4" />
+                </IconButton>
+              )}
+            </div>
+          )
+        })}
       </div>
+
+      <p className="mt-7 text-center font-mono text-nano text-ink-faint">
+        Peer-to-peer · no app, no account, no sign-in
+      </p>
     </div>
   )
 }

@@ -19,7 +19,7 @@ export default function UnoTopBar({
       {/* Room / Mode Info */}
       <div className="flex items-center gap-2">
         {isMultiplayer && roomCode ? (
-          <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1.5 shadow-sm">
+          <span className="px-2.5 py-1 rounded-xl bg-felt border border-edge text-micro font-mono font-bold text-amber-400 flex items-center gap-1.5 shadow-sm">
             <span
               className={`w-2 h-2 rounded-full ${
                 isHost || connectionStatus === 'connected'
@@ -32,7 +32,7 @@ export default function UnoTopBar({
             <span>Room {roomCode}</span>
           </span>
         ) : (
-          <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400 flex items-center gap-1 shadow-sm">
+          <span className="px-2.5 py-1 rounded-xl bg-felt border border-edge text-micro font-bold text-ink-muted flex items-center gap-1 shadow-sm">
             <span>🤖</span>
             <span>Solo vs Bots</span>
           </span>
@@ -41,7 +41,7 @@ export default function UnoTopBar({
 
       {/* Central Turn Direction Pill (Single Source of Truth) */}
       <div
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-sm transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-micro font-bold border shadow-sm transition-colors ${
           direction === 1
             ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
             : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
@@ -69,7 +69,7 @@ export default function UnoTopBar({
             onClick={onSync}
             disabled={isSyncing}
             title="Sync game state with host"
-            className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm disabled:opacity-50"
+            className="px-2.5 py-1 rounded-xl bg-felt hover:bg-felt-high border border-edge text-ink hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm disabled:opacity-50"
           >
             <RotateCw
               className={`w-3.5 h-3.5 ${
@@ -87,9 +87,9 @@ export default function UnoTopBar({
             onOpenMenu()
           }}
           title="Game settings, rules, and exit options"
-          className="px-2.5 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+          className="px-2.5 py-1 rounded-xl bg-felt hover:bg-felt-high border border-edge text-ink hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
         >
-          <Settings className="w-3.5 h-3.5 text-zinc-400" />
+          <Settings className="w-3.5 h-3.5 text-ink-muted" />
           <span>Menu</span>
         </button>
       </div>

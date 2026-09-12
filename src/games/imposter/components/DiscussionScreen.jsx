@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Play, Pause, RotateCcw } from 'lucide-react'
 import { playClickSound, playTickSound } from '../../../utils/sound'
+import Screen from '../../../components/ui/Screen'
+import Button from '../../../components/ui/Button'
+import IconButton from '../../../components/ui/IconButton'
+import Label from '../../../components/ui/Label'
+import Modal from '../../../components/ui/Modal'
+import Pill from '../../../components/ui/Pill'
 
 export default function DiscussionScreen({
   players,
@@ -58,97 +64,89 @@ export default function DiscussionScreen({
   const startingPlayer = players[startingPlayerIndex] || players[0]
 
   return (
-    <div className="w-full max-w-sm mx-auto px-5 py-6 flex flex-col justify-between min-h-[80vh] select-none animate-fadeIn text-center">
-      {/* Starting Speaker Banner */}
-      <div className="pt-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
-          <span>{gameData.categoryIcon}</span>
-          <span>{gameData.categoryName}</span>
-        </div>
+    <Screen width="sm" className="text-center">
+      <div>
+        <Pill>
+          <span aria-hidden="true">{gameData.categoryIcon}</span>
+          {gameData.categoryName}
+        </Pill>
 
-        <div className="mt-8 space-y-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 block">
-            First Speaker
-          </span>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">
-            {startingPlayer.name}
-          </h2>
-          <p className="text-xs text-zinc-400 pt-1">
-            Give one clue, then take turns
-          </p>
+        <div className="mt-8 space-y-1.5">
+          <Label>First speaker</Label>
+          <h2 className="font-display text-3xl leading-none text-ink">{startingPlayer.name}</h2>
+          <p className="text-mini text-ink-muted pt-1">Give one clue, then take turns.</p>
         </div>
       </div>
 
-      {/* Timer Section (If enabled) */}
       {timerDuration > 0 && (
-        <div className="my-auto py-8 space-y-4">
+        <div className="py-10 space-y-4">
           <div
             onClick={toggleTimer}
-            className={`text-6xl font-black font-mono tracking-tight cursor-pointer transition ${
-              timeLeft === 0 ? 'text-rose-500' : 'text-white'
+            className={`font-mono text-6xl font-medium cursor-pointer transition ${
+              timeLeft === 0 ? 'text-danger' : 'text-ink'
             }`}
           >
             {formatTime(timeLeft)}
           </div>
 
-          <div className="flex items-center justify-center gap-3">
-            <button
+          <div className="flex items-center justify-center gap-2">
+            <IconButton
+              label={isRunning ? 'Pause timer' : 'Start timer'}
               onClick={toggleTimer}
-              className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white transition active:scale-95"
+              className="bg-felt border border-edge shadow-lift-1 p-3"
             >
               {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-            </button>
-            <button
+            </IconButton>
+            <IconButton
+              label="Reset timer"
               onClick={resetTimer}
-              className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition active:scale-95"
+              className="bg-felt border border-edge shadow-lift-1 p-3"
             >
               <RotateCcw className="w-4 h-4" />
-            </button>
+            </IconButton>
           </div>
         </div>
       )}
 
-      {/* Primary Action */}
       <div className="pt-6">
-        <button
+        <Button
+          tone="imposter"
+          fullWidth
           onClick={() => {
             playClickSound()
             setConfirmReveal(true)
           }}
-          className="w-full py-4 rounded-2xl font-bold text-sm text-zinc-950 bg-white hover:bg-zinc-200 transition shadow-lg active:scale-[0.98]"
         >
-          Reveal Imposter
-        </button>
+          Reveal the imposter
+        </Button>
       </div>
 
-      {/* Minimal Confirm Dialog */}
-      {confirmReveal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-xs w-full p-6 space-y-4 text-center">
-            <h3 className="text-lg font-bold text-white">Reveal Results?</h3>
-            <p className="text-xs text-zinc-400">
-              Make sure everyone has voted on who they think the imposter is.
-            </p>
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                onClick={() => setConfirmReveal(false)}
-                className="py-2.5 rounded-xl text-xs font-semibold text-zinc-400 bg-zinc-800 hover:text-white transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  playClickSound()
-                  onRevealImposters(null)
-                }}
-                className="py-2.5 rounded-xl text-xs font-semibold text-zinc-950 bg-white hover:bg-zinc-200 transition"
-              >
-                Reveal
-              </button>
-            </div>
+      <Modal
+        open={confirmReveal}
+        onClose={() => setConfirmReveal(false)}
+        title="Reveal results?"
+        size="xs"
+        footer={
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" onClick={() => setConfirmReveal(false)}>
+              Keep talking
+            </Button>
+            <Button
+              tone="imposter"
+              onClick={() => {
+                playClickSound()
+                onRevealImposters(null)
+              }}
+            >
+              Reveal
+            </Button>
           </div>
-        </div>
-      )}
-    </div>
+        }
+      >
+        <p className="text-mini text-ink-muted">
+          Make sure everyone has voted on who they think the imposter is. This ends the round.
+        </p>
+      </Modal>
+    </Screen>
   )
 }

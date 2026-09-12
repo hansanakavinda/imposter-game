@@ -5,7 +5,6 @@ import ImposterGame from './games/imposter/ImposterGame'
 import UnoGame from './games/uno/UnoGame'
 import TankGame from './games/tank/TankGame'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
-import './App.css'
 
 export default function App() {
   // Check if URL has ?room=... or ?game=... or sessionStorage active room
@@ -66,7 +65,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col justify-between selection:bg-zinc-700 selection:text-white">
+    <div className="table-lamp min-h-dvh bg-table text-ink flex flex-col selection:bg-lamp/25 selection:text-ink">
       {/* Global Navigation Bar */}
       <Navbar
         soundOn={soundOn}
@@ -78,7 +77,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col justify-center py-2">
+      <main className="relative z-10 flex-1 flex flex-col justify-start pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {selectedGame === null && (
           <GameHub
             onSelectGame={(gameId) => setSelectedGame(gameId)}
@@ -88,7 +87,6 @@ export default function App() {
 
         {selectedGame === 'imposter' && (
           <ImposterGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
@@ -97,7 +95,6 @@ export default function App() {
 
         {selectedGame === 'uno' && (
           <UnoGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
@@ -107,7 +104,6 @@ export default function App() {
 
         {selectedGame === 'tank' && (
           <TankGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}

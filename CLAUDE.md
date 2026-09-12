@@ -39,7 +39,8 @@ DOM and `process` globals resolve.
 ```
 src/
   App.jsx                 state-based router (no react-router); ?game= / ?room= deep links
-  components/             HUB-ONLY shared UI (Navbar, GameHub). Nothing game-specific.
+  components/             hub UI (Navbar, GameHub). Nothing game-specific.
+  components/ui/          the design system: Button, Modal, Screen, Pill, inputs, roster
   services/               cross-game infrastructure (peerConfig.js: ICE/TURN + room codes + share links)
   hooks/                  HUB-ONLY shared React hooks (useCopyFeedback)
   utils/sound.js          Web Audio synth shared by all three games
@@ -58,12 +59,50 @@ Rules of thumb:
 
 - A game's code lives under `src/games/<game>/`. If it is only used by one game, it does
   not belong in `src/components/`, `src/data/` or `src/utils/`.
+- `components/ui/` is the exception, and the only one: it holds cross-game *presentation*
+  primitives that know nothing about any game. Per-game colour reaches them as a `tone`
+  prop (`imposter` / `uno` / `tank`), never as a literal class string. Build a screen out
+  of these rather than writing a new class string — the app previously had 856 `className`
+  attributes spelling out 576 distinct strings, which is how eight different modal panels
+  and three incompatible primary buttons happened.
 - `engine/` must stay free of React and of side effects. Engine functions mutate or
   return state and report what happened as an `events` array; the caller turns those
   into sound, broadcasts, modals and timers. That is what keeps them unit-testable.
   - UNO: `(game, ...args) => { ok, reason?, events }`, mutating `game` in place.
   - Tank: `stepWorld(world, inputs) => { world, events }`, returning a new world.
 - When a file passes ~400 lines, that is the signal to split it, not a target to beat.
+
+## Design system
+
+The visual language is **"Table"**: a game night table under a single lamp. Every token
+lives in the `@theme` block of `src/index.css` — there is no `tailwind.config.js` and one
+must not be created.
+
+The rule that makes it hold together is that **there is exactly one light source, at the
+top of the viewport, and every surface obeys it**:
+
+- one background, `bg-table`. Never black, never a neutral grey, never a second value.
+- raised things use `shadow-lift-1` / `-2` / `-3`; each carries a warm inset highlight on
+  its top edge. Pressed-in things (inputs, code cells, the emoji discs) use `shadow-sink`.
+- pressing an object pushes it into the table: `active:scale-[0.98] active:shadow-lift-0`.
+- the lamp itself is `.table-lamp` on the app root. It does not move and does not animate.
+
+The shell is deliberately almost colourless. **The only saturated colour in the app comes
+from the three game inks** (`imposter` / `uno` / `tank`) plus the semantic `ok` / `danger`
+/ `turn`. No gradients — the red-to-amber-to-emerald and cyan-to-blue buttons the three
+games each had were the most generic thing in the repo.
+
+Three typefaces, three jobs: `font-display` (Bricolage Grotesque, **one weight**) for
+headings and game names, `font-sans` (Hanken Grotesk) for everything else, `font-mono`
+(DM Mono) for room codes, timers, counts, HP and scores. `font-black` and `font-extrabold`
+are not used. Radii are `rounded-well` / `-object` / `-slab`, and nothing else.
+
+The sub-14px range is `text-nano` (10px) / `text-micro` (11px) / `text-mini` (12px). 10px
+is the floor. Do not reach for an arbitrary `text-[9px]`; there used to be 118 of those.
+
+**Nothing in the toolchain catches an undefined Tailwind class** — `no-undef` covers JS
+identifiers, not class strings, and three undefined utilities shipped that way before.
+After touching styles, check the diff's new utilities against the `@theme` block by hand.
 
 ## The rule that matters most: host authority
 

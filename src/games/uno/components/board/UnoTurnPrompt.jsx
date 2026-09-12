@@ -20,10 +20,10 @@ export default function UnoTurnPrompt({
     <div
       className={`py-1.5 px-3 rounded-xl text-center text-xs font-bold transition-all ${
         isSpectating
-          ? 'bg-zinc-900 text-zinc-300 border border-zinc-800/80 flex items-center justify-center gap-2'
+          ? 'bg-felt text-ink border border-edge flex items-center justify-center gap-2'
           : isCurrentTurnForMe
           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-          : 'bg-zinc-900 text-zinc-400 border border-zinc-800/80'
+          : 'bg-felt text-ink-muted border border-edge'
       }`}
     >
       {isSpectating ? (

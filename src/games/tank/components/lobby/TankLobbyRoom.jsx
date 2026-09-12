@@ -1,14 +1,18 @@
 import React from 'react'
-import { Copy, Check, Play, ArrowLeft, Share2 } from 'lucide-react'
+import { Check, Play, ArrowLeft, Share2 } from 'lucide-react'
 import { MODES, DEFAULT_TANK_TYPE } from '../../constants/tankConstants'
 import { playClickSound } from '../../../../utils/sound'
-import TankSelector from './TankSelector'
 import useCopyFeedback from '../../../../hooks/useCopyFeedback'
 import { buildRoomLink } from '../../../../services/peerConfig'
+import Screen from '../../../../components/ui/Screen'
+import Surface from '../../../../components/ui/Surface'
+import Button from '../../../../components/ui/Button'
+import IconButton from '../../../../components/ui/IconButton'
+import CodeDisplay from '../../../../components/ui/CodeDisplay'
+import TankSelector from './TankSelector'
 import TeamRosterColumn from './TeamRosterColumn'
 
-// The in-room screen: roster, readiness and launch. Was the second half of
-// TankLobby.jsx, reached past an early return.
+// The in-room screen: roster, readiness and launch.
 export default function TankLobbyRoom({
   mode,
   roomCode,
@@ -36,17 +40,18 @@ export default function TankLobbyRoom({
     playClickSound()
     const url = buildRoomLink('tank', roomCode)
     if (navigator.share) {
-      navigator.share({
-        title: 'Join my Tank Arena Battle!',
-        text: `Join my ${mode.toUpperCase()} Tank Arena game with code: ${roomCode}`,
-        url,
-      }).catch(() => {})
+      navigator
+        .share({
+          title: 'Join my Tank Arena game',
+          text: `Join my ${currentModeConfig.label} game. Room code: ${roomCode}`,
+          url,
+        })
+        .catch(() => {})
     } else {
       copy(url)
     }
   }
 
-  // Inside Room Lobby
   const myPlayer = players.find(
     (p) => (myPeerId && p.peerId === myPeerId) || p.slotId === mySlotId
   )
@@ -63,161 +68,134 @@ export default function TankLobbyRoom({
   const readyCount = players.filter((p) => p.isReady).length
   const allReady = filledCount >= 2 && hasBothTeams && readyCount === filledCount
 
+  const startLabel = () => {
+    if (allReady) return 'Start the match'
+    if (filledCount < 2) return `Waiting for players (${filledCount}/2)`
+    if (!hasBothTeams) return 'Both teams need a player'
+    return `Waiting for ready (${readyCount}/${filledCount})`
+  }
+
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-4 flex flex-col items-center justify-center select-none animate-fadeIn">
-      {/* Room Header Card */}
-      <div className="w-full bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 mb-4 shadow-xl">
-        <div className="flex items-center justify-between">
+    <Screen width="xl" className="items-center">
+      <div className="w-full space-y-3">
+        <Surface className="p-4 space-y-3">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🚜</span>
-              <h2 className="text-lg font-black text-white tracking-tight">
-                {currentModeConfig.label} Lobby
-              </h2>
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              {filledCount} of {totalRequired} Commanders Connected
+            <h2 className="font-display text-xl leading-none text-ink">
+              {currentModeConfig.label} lobby
+            </h2>
+            <p className="text-mini text-ink-muted">
+              {filledCount} of {totalRequired} players connected
             </p>
           </div>
 
-          {/* Room Code Badge */}
-          <div className="flex items-center gap-1.5">
-            <div className="bg-zinc-950 border border-zinc-800 px-3 py-1.5 rounded-xl text-center">
-              <span className="text-[9px] block text-zinc-500 uppercase font-bold tracking-wider">
-                ROOM CODE
-              </span>
-              <span className="font-mono font-black text-base tracking-widest text-cyan-400">
-                {roomCode}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer"
-              title="Copy Code"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
+          <div className="flex items-stretch gap-2">
+            <CodeDisplay
+              code={roomCode}
+              tone="tank"
+              copied={copied}
+              onCopy={handleCopyCode}
+              className="flex-1"
+            />
+            <IconButton
+              label="Share a join link"
               onClick={handleShareLink}
-              className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer"
-              title="Share Link"
+              radius="object"
+              className="px-3 bg-well border border-edge shadow-sink"
             >
               <Share2 className="w-4 h-4" />
-            </button>
+            </IconButton>
           </div>
+        </Surface>
+
+        <TankSelector selectedTank={selectedTank} onSelectTank={onSelectTank} />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <TeamRosterColumn
+            team="blue"
+            slots={blueSlots}
+            players={players}
+            mySlotId={mySlotId}
+            myPeerId={myPeerId}
+            onSelectSlot={onSelectSlot}
+          />
+
+          <TeamRosterColumn
+            team="red"
+            slots={redSlots}
+            players={players}
+            mySlotId={mySlotId}
+            myPeerId={myPeerId}
+            onSelectSlot={onSelectSlot}
+          />
         </div>
-      </div>
 
-      {/* Tank Selector Inside Room */}
-      <TankSelector selectedTank={selectedTank} onSelectTank={onSelectTank} />
-
-      {/* Team Roster Layout */}
-      <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <TeamRosterColumn
-          team="blue"
-          slots={blueSlots}
-          players={players}
-          mySlotId={mySlotId}
-          myPeerId={myPeerId}
-          onSelectSlot={onSelectSlot}
-        />
-
-        <TeamRosterColumn
-          team="red"
-          slots={redSlots}
-          players={players}
-          mySlotId={mySlotId}
-          myPeerId={myPeerId}
-          onSelectSlot={onSelectSlot}
-        />
-      </div>
-
-      {/* Status & Match Launch Controls */}
-      <div className="w-full space-y-2.5">
-        {/* Waiting Status Helper */}
         {(!hasBothTeams || filledCount < 2) && (
-          <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 text-center space-y-1">
-            <p className="text-xs text-amber-400 font-bold">
+          <Surface inset radius="object" className="p-3 text-center space-y-1">
+            <p className="text-mini font-bold text-turn">
               {!hasBothTeams && filledCount >= 2
-                ? 'Both Blue and Red bases require at least 1 commander to start battle!'
-                : `Waiting for commander${totalRequired - filledCount > 1 ? 's' : ''} to join...`}
+                ? 'Blue and Red each need at least one player.'
+                : `Waiting for ${totalRequired - filledCount} more player${
+                    totalRequired - filledCount > 1 ? 's' : ''
+                  }.`}
             </p>
-            <p className="text-[11px] text-zinc-400">
-              Share room code <strong className="font-mono text-cyan-400 font-bold">{roomCode}</strong> or click Share Link above to invite!
+            <p className="text-micro text-ink-muted">
+              Read out <strong className="font-mono font-medium text-tank">{roomCode}</strong>, or
+              send a join link.
             </p>
-          </div>
+          </Surface>
         )}
 
         <div className="flex flex-col sm:flex-row gap-2.5">
-          {/* Ready Toggle */}
-          <button
-            type="button"
+          <Button
+            variant={isMyReady ? 'primary' : 'secondary'}
+            tone="ok"
+            className="flex-1"
             onClick={() => {
               playClickSound()
               onToggleReady()
             }}
-            className={`flex-1 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 ${
-              isMyReady
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-700/30'
-                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
-            }`}
           >
             <Check className="w-4 h-4" />
-            <span>{isMyReady ? 'Ready for Battle!' : 'Set as Ready'}</span>
-          </button>
+            {isMyReady ? "You're ready" : 'Ready up'}
+          </Button>
 
-          {/* Host Action Buttons / Client Status */}
           {isHost ? (
-            <button
-              type="button"
+            <Button
+              tone="tank"
+              className="flex-1"
+              disabled={!allReady}
               onClick={() => {
                 playClickSound()
                 onStartGame()
               }}
-              disabled={!allReady}
-              className={`flex-1 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 ${
-                allReady
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white shadow-lg shadow-emerald-900/40 cursor-pointer animate-pulse'
-                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-              }`}
             >
               <Play className="w-4 h-4 fill-current" />
-              <span>
-                {allReady
-                  ? 'START BATTLE!'
-                  : filledCount < 2
-                  ? `WAITING FOR PLAYERS (${filledCount}/2)`
-                  : !hasBothTeams
-                  ? 'NEED BOTH BLUE & RED PLAYERS'
-                  : `WAITING FOR READY (${readyCount}/${filledCount})`}
-              </span>
-            </button>
+              {startLabel()}
+            </Button>
           ) : (
-            <div className="flex-1 py-3.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center flex items-center justify-center">
-              <span className="text-xs font-semibold text-zinc-400">
+            <div className="flex-1 py-3.5 px-4 rounded-object bg-well border border-edge shadow-sink text-center">
+              <span className="text-mini font-semibold text-ink-muted">
                 {allReady
-                  ? 'Host is ready to start battle...'
-                  : `Waiting for commanders to ready up (${readyCount}/${filledCount})...`}
+                  ? 'Waiting for the host to start…'
+                  : `Waiting for everyone to ready up (${readyCount}/${filledCount})`}
               </span>
             </div>
           )}
         </div>
 
-        {/* Leave Room Button */}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="md"
+          fullWidth
           onClick={() => {
             playClickSound()
             onLeaveRoom()
           }}
-          className="w-full py-2.5 rounded-xl text-xs font-semibold text-zinc-500 hover:text-zinc-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Leave Room</span>
-        </button>
+          Leave this room
+        </Button>
       </div>
-    </div>
+    </Screen>
   )
 }

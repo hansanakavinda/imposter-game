@@ -1,53 +1,52 @@
+/**
+ * Hub card metadata. Pure data -- the Tailwind class strings that used to live
+ * here (gradient, borderGlow, accentColor, bgAccent, and a verbatim copy of
+ * UNO's button) belong to the design system, not to a data file.
+ *
+ * `ink` names one of the three game inks in src/index.css. It is the only
+ * saturated colour each game is allowed in the shell.
+ */
 export const GAMES = [
   {
     id: 'imposter',
     title: 'Imposter',
-    badge: 'Social Deduction',
-    tagline: 'Find the spy before they figure out the secret word!',
-    description: 'A party word game of subtle clues, deception, and bluffing. One or more imposters try to blend in without knowing the secret word.',
-    playerCount: '3–20 Players',
+    badge: 'Social deduction',
+    tagline: 'Find the spy before they find the word.',
+    description:
+      'A party word game of subtle clues, deception, and bluffing. One or more imposters try to blend in without knowing the secret word.',
+    playerCount: '3–20 players',
     duration: '5–10 min',
     emoji: '🕵️',
-    gradient: 'from-rose-500/20 via-rose-900/10 to-transparent',
-    borderGlow: 'hover:border-rose-500/50 hover:shadow-rose-500/10',
-    accentColor: 'text-rose-400',
-    bgAccent: 'bg-rose-500',
-    buttonColor: 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-rose-900/40',
-    tags: ['Pass & Play', 'Party Word Game', 'Zero Setup'],
-    isPopular: true,
+    ink: 'imposter',
+    tags: ['Pass & play', 'Party word game', 'Zero setup'],
   },
   {
     id: 'uno',
     title: 'UNO',
-    badge: 'Card Classic',
-    tagline: 'Match colors and numbers, unleash action cards, and call UNO!',
-    description: 'The world’s favorite card game. Play solo against smart AI bots or online with up to 10 friends. Full standard deck rules: Skips, Reverses, Draw Twos, and Wild +4s.',
-    playerCount: '2–10 Players',
+    badge: 'Card classic',
+    tagline: 'Match colours, stack cards, call UNO.',
+    description:
+      'The world’s favorite card game. Play solo against smart AI bots or online with up to 10 friends. Full standard deck rules: Skips, Reverses, Draw Twos, and Wild +4s.',
+    playerCount: '2–10 players',
     duration: '5–15 min',
     emoji: '🃏',
-    gradient: 'from-amber-500/20 via-red-900/10 to-transparent',
-    borderGlow: 'hover:border-amber-500/50 hover:shadow-amber-500/10',
-    accentColor: 'text-amber-400',
-    bgAccent: 'bg-amber-500',
-    buttonColor: 'bg-gradient-to-r from-red-600 via-amber-500 to-emerald-600 hover:brightness-110 active:brightness-90 text-white shadow-amber-900/40',
-    tags: ['Solo vs AI Bots', 'Online Multiplayer', 'Full 108 Cards'],
-    isNew: true,
+    ink: 'uno',
+    tags: ['Solo vs AI bots', 'Online multiplayer', 'Full 108 cards'],
   },
   {
     id: 'tank',
     title: 'Tank Arena',
-    badge: 'Tactical Action',
-    tagline: '2v2 squad & 1v1 duel top-down tank battles!',
-    description: 'An open-grid battlefield with stealth bushes, steel bunkers, destructible walls, explosive barrels, and crate air drops across devices.',
-    playerCount: '2 or 4 Players',
+    badge: 'Tactical action',
+    tagline: 'Top-down duels and 2v2 squad battles.',
+    description:
+      'An open-grid battlefield with stealth bushes, steel bunkers, destructible walls, explosive barrels, and crate air drops across devices.',
+    playerCount: '2 or 4 players',
     duration: '3–8 min',
     emoji: '🚜',
-    gradient: 'from-cyan-500/20 via-blue-900/10 to-transparent',
-    borderGlow: 'hover:border-cyan-500/50 hover:shadow-cyan-500/10',
-    accentColor: 'text-cyan-400',
-    bgAccent: 'bg-cyan-500',
-    buttonColor: 'bg-gradient-to-r from-cyan-600 via-blue-500 to-indigo-600 hover:brightness-110 active:brightness-90 text-white shadow-cyan-900/40',
-    tags: ['1v1 Duel', '2v2 Squad', 'Networked P2P'],
-    isNew: true,
+    ink: 'tank',
+    tags: ['1v1 duel', '2v2 squad', 'Networked P2P'],
   },
 ]
+
+/** Used by the Navbar, which used to keep its own hardcoded copy of these. */
+export const getGame = (id) => GAMES.find((game) => game.id === id)

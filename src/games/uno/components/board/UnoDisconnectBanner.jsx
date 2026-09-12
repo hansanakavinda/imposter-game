@@ -10,7 +10,7 @@ export default function UnoDisconnectBanner({ onReconnect, onOpenMenu }) {
         <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
         <div>
           <div className="font-bold text-white text-xs leading-tight">Connection Lost</div>
-          <div className="text-[10px] text-red-300">Your hand and seat are preserved</div>
+          <div className="text-nano text-red-300">Your hand and seat are preserved</div>
         </div>
       </div>
       <div className="flex items-center gap-1.5">
@@ -21,7 +21,7 @@ export default function UnoDisconnectBanner({ onReconnect, onOpenMenu }) {
               playClickSound()
               onReconnect()
             }}
-            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-[11px] transition active:scale-95 cursor-pointer shadow-sm"
+            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-micro transition active:scale-95 cursor-pointer shadow-sm"
           >
             Reconnect
           </button>
@@ -32,7 +32,7 @@ export default function UnoDisconnectBanner({ onReconnect, onOpenMenu }) {
             playClickSound()
             onOpenMenu()
           }}
-          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold transition cursor-pointer"
+          className="px-2 py-1 rounded-lg bg-felt-high hover:bg-felt-high text-ink text-micro font-semibold transition cursor-pointer"
         >
           Menu
         </button>

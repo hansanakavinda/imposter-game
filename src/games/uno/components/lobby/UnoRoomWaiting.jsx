@@ -1,14 +1,22 @@
 import React from 'react'
-import { Users, Copy, Check, Play, Share2, Crown, Wifi } from 'lucide-react'
+import { Users, Check, Play, Share2, Crown } from 'lucide-react'
 import { playClickSound } from '../../../../utils/sound'
 import useCopyFeedback from '../../../../hooks/useCopyFeedback'
 import { buildRoomLink } from '../../../../services/peerConfig'
+import Screen, { ScreenHeader } from '../../../../components/ui/Screen'
+import Surface from '../../../../components/ui/Surface'
+import Button from '../../../../components/ui/Button'
+import Label from '../../../../components/ui/Label'
+import Pill from '../../../../components/ui/Pill'
+import PlayerRow, { Badge, Dot } from '../../../../components/ui/PlayerRow'
 
 /** The waiting room, once you are connected and before the host deals. */
 export default function UnoRoomWaiting({ roomState, onStartGame, onLeaveRoom }) {
   const isHost = roomState.isHost
   const players = roomState.players || []
+  const maxCap = roomState.maxPlayers || 4
   const canStart = isHost && players.length >= 2
+  const stacking = roomState.stackingEnabled !== false
 
   const { copied, copy: copyCode } = useCopyFeedback()
   const { copied: copiedLink, copy: copyLink } = useCopyFeedback()
@@ -19,197 +27,124 @@ export default function UnoRoomWaiting({ roomState, onStartGame, onLeaveRoom }) 
     copyLink(buildRoomLink('uno', roomState.roomCode))
   }
 
-  return (
-    <div className="w-full max-w-md mx-auto px-5 py-4 flex flex-col justify-between min-h-[80vh] select-none animate-fadeIn">
-      {/* Header */}
-      <div className="pt-2 pb-4 text-center">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-400 mb-2">
-          <Wifi className="w-3.5 h-3.5 animate-pulse" />
-          <span>Room Lobby</span>
-        </div>
-        <h2 className="text-2xl font-black text-white tracking-tight">
-          Waiting for Players
-        </h2>
-        <p className="text-xs text-zinc-400 mt-0.5">
-          Share the code or link with friends to join
-        </p>
-      </div>
+  const emptySlots = Math.max(0, maxCap - players.length)
 
-      {/* Room Code Card */}
-      <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 text-center space-y-4 shadow-xl">
+  return (
+    <Screen>
+      <ScreenHeader
+        eyebrow={<Pill tone="uno">Room open</Pill>}
+        title="Waiting for players"
+        subtitle="Read out the code, or send the link."
+        className="pb-5"
+      />
+
+      {/* The code is the thing you say out loud, so it is the largest thing here. */}
+      <Surface level={2} className="p-5 text-center space-y-4">
         <div className="space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-            Room Code
-          </span>
-          <div className="text-4xl font-black tracking-widest text-amber-400 font-mono select-all">
+          <Label>Room code</Label>
+          <div className="font-mono text-5xl font-medium tracking-[0.2em] indent-[0.2em] text-uno select-all">
             {roomState.roomCode}
           </div>
         </div>
 
         <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={handleCopyCode}
-            type="button"
-            className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Copied Code</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy Code</span>
-              </>
-            )}
-          </button>
+          <Button variant="secondary" size="sm" onClick={handleCopyCode}>
+            {copied ? <Check className="w-3.5 h-3.5 text-ok" /> : null}
+            {copied ? 'Code copied' : 'Copy code'}
+          </Button>
 
-          <button
-            onClick={handleCopyLink}
-            type="button"
-            className="px-3.5 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-          >
+          <Button variant="secondary" size="sm" onClick={handleCopyLink}>
             {copiedLink ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Link Copied!</span>
-              </>
+              <Check className="w-3.5 h-3.5 text-ok" />
             ) : (
-              <>
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Copy Invite Link</span>
-              </>
+              <Share2 className="w-3.5 h-3.5" />
             )}
-          </button>
+            {copiedLink ? 'Link copied' : 'Copy join link'}
+          </Button>
         </div>
 
-        {/* Room Rule Pill */}
-        <div className="flex items-center justify-center pt-1">
-          <span
-            className={`px-3 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
-              roomState.stackingEnabled !== false
-                ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-400'
-            }`}
-          >
-            <span>{roomState.stackingEnabled !== false ? '🔥' : '🚫'}</span>
-            <span>
-              {roomState.stackingEnabled !== false
-                ? 'Card Stacking (+2 / +4) ON'
-                : 'Card Stacking OFF'}
-            </span>
-          </span>
+        <div className="flex justify-center">
+          <Pill tone={stacking ? 'uno' : 'neutral'}>
+            <span aria-hidden="true">{stacking ? '🔥' : '🚫'}</span>
+            {stacking ? 'Stacking on' : 'Stacking off'}
+          </Pill>
         </div>
-      </div>
+      </Surface>
 
-      {/* Joined Players List */}
-      <div className="space-y-3 my-3">
-        <div className="flex items-center justify-between px-1 text-xs font-semibold text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-red-400" />
-            <span>Joined Players ({players.length}/{roomState.maxPlayers || 4})</span>
-          </div>
-          {players.length < 2 && (
-            <span className="text-amber-400/90 text-[11px]">
-              Need ≥ 2 to play
-            </span>
-          )}
+      <div className="space-y-2.5 my-4">
+        <div className="flex items-center justify-between px-0.5">
+          <Label className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            In the room · {players.length}/{maxCap}
+          </Label>
+          {players.length < 2 && <span className="text-nano text-turn">Two to start</span>}
         </div>
 
-        <div className="space-y-2 max-h-56 sm:max-h-64 overflow-y-auto pr-1 scrollbar-thin">
+        <div className="space-y-2 max-h-56 sm:max-h-64 overflow-y-auto pr-1">
           {players.map((p, idx) => (
-            <div
+            <PlayerRow
               key={p.id || idx}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3 flex items-center justify-between shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{p.avatar || '😎'}</span>
-                <div>
-                  <div className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <span>{p.name}</span>
-                    {p.isHost && (
-                      <Crown className="w-3.5 h-3.5 text-amber-400" title="Host" />
-                    )}
-                    {p.isYou && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400">
-                        You
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Ready
-                  </span>
-                </div>
-              </div>
-
-              <span className="text-xs text-zinc-400 font-medium">
-                {p.isHost ? 'Host' : 'Player'}
-              </span>
-            </div>
+              avatar={p.avatar || '😎'}
+              name={p.name}
+              badges={
+                <>
+                  {p.isHost && <Crown className="w-3.5 h-3.5 text-turn" aria-label="Host" />}
+                  {p.isYou && <Badge>You</Badge>}
+                </>
+              }
+              trailing={
+                <span className="flex items-center gap-1.5 text-nano font-semibold text-ok">
+                  <Dot tone="ok" className="w-1.5 h-1.5" />
+                  Ready
+                </span>
+              }
+            />
           ))}
 
-          {/* Empty slots placeholders */}
-          {(() => {
-            const maxCap = roomState.maxPlayers || 4
-            const emptySlots = Math.max(0, maxCap - players.length)
-            if (emptySlots === 0) return null
-            if (emptySlots <= 3) {
-              return Array.from({ length: emptySlots }).map((_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="border border-dashed border-zinc-800/80 rounded-2xl p-2.5 flex items-center justify-center text-xs text-zinc-500"
-                >
-                  <span>Waiting for friend to join...</span>
-                </div>
-              ))
-            }
-            return (
-              <div className="border border-dashed border-zinc-800/80 rounded-2xl p-3 flex items-center justify-center gap-2 text-xs text-zinc-400">
-                <Users className="w-3.5 h-3.5 text-zinc-500" />
-                <span>Waiting for up to {emptySlots} more players to join...</span>
-              </div>
-            )
-          })()}
+          {emptySlots > 0 && (
+            <div className="border border-dashed border-edge rounded-object p-3 flex items-center justify-center gap-2 text-mini text-ink-faint">
+              <Users className="w-3.5 h-3.5" />
+              <span>
+                {emptySlots === 1 ? 'Room for one more' : `Room for ${emptySlots} more`}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Action Controls */}
-      <div className="space-y-2 pt-2">
+      <div className="space-y-2 pt-1">
         {isHost ? (
-          <button
+          <Button
+            tone="uno"
+            fullWidth
+            disabled={!canStart}
             onClick={() => {
               playClickSound()
               onStartGame()
             }}
-            disabled={!canStart}
-            className={`w-full py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition ${
-              canStart
-                ? 'bg-gradient-to-r from-red-600 via-amber-500 to-emerald-600 hover:brightness-110 active:scale-95 text-white cursor-pointer shadow-red-950/40'
-                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-            }`}
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>{canStart ? 'Start Game' : 'Waiting for more players...'}</span>
-          </button>
+            {canStart ? 'Deal the cards' : 'Waiting for one more player'}
+          </Button>
         ) : (
-          <div className="w-full py-3.5 px-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-400 flex items-center justify-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            <span>Waiting for host to start the game...</span>
+          <div className="w-full py-3.5 px-4 rounded-object bg-well border border-edge shadow-sink text-center text-mini text-ink-muted flex items-center justify-center gap-2">
+            <Dot tone="turn" className="w-2 h-2 animate-pulse" />
+            Waiting for the host to deal…
           </div>
         )}
 
-        <button
+        <Button
+          variant="ghost"
+          size="md"
+          fullWidth
           onClick={() => {
             playClickSound()
             onLeaveRoom()
           }}
-          className="w-full py-2.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
         >
-          Leave Room
-        </button>
+          Leave this room
+        </Button>
       </div>
-    </div>
+    </Screen>
   )
 }
