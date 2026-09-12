@@ -15,7 +15,6 @@ export default function TankCanvas({
   obstacles,
   barrels,
   crates,
-  particles,
   pings,
   mySlotId,
   score,
@@ -682,19 +681,6 @@ export default function TankCanvas({
         }
       })
 
-      // 10. Draw Explosions and Particles
-      if (particles) {
-        particles.forEach((p) => {
-          ctx.save()
-          ctx.translate(p.x, p.y)
-          ctx.fillStyle = p.color || '#f97316'
-          ctx.globalAlpha = p.alpha || 1
-          ctx.beginPath()
-          ctx.arc(0, 0, p.radius || 3, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.restore()
-        })
-      }
       // End World Transform (so HUD is drawn in screen space)
       ctx.restore()
 
@@ -771,7 +757,6 @@ export default function TankCanvas({
     obstacles,
     barrels,
     crates,
-    particles,
     pings,
     mySlotId,
     score,

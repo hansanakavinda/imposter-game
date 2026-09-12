@@ -5,31 +5,21 @@ import TankControls from './components/TankControls'
 import TankGameOverModal from './components/TankGameOverModal'
 import TankRulesModal from './components/TankRulesModal'
 import {
-  ARENA_WIDTH,
-  ARENA_HEIGHT,
-  TANK_RADIUS,
-  TANK_SPEED,
-  TANK_REVERSE_SPEED,
-  TANK_TURN_SPEED,
-  TANK_MUD_SPEED_MULT,
-  BULLET_RADIUS,
-  BULLET_LIFETIME_MS,
   MODES,
-  TERRAIN_TYPES,
   WEAPON_TYPES,
   TARGET_SCORE_DEFAULT,
   TANK_MAX_HP,
   TANK_TYPES,
   DEFAULT_TANK_TYPE,
-  CRATE_DROP_INTERVAL_MS,
-  CRATE_SIZE,
 } from './constants/tankConstants'
-import { getBattlefieldMap, getSpawnPoints } from './utils/tankTerrain'
 import {
-  moveTankWithCollision,
-  isTankInMud,
-  testCircleRect,
-} from './utils/tankPhysics'
+  createEmptyWorld,
+  buildRoundWorld,
+  stepWorld,
+  fireFromTank,
+  toSnapshot,
+  EVENTS,
+} from './engine/tankSimulation'
 import {
   TankNetwork,
   generateRoomCode,
@@ -82,7 +72,6 @@ export default function TankGame({
   const [roundWinner, setRoundWinner] = useState(null)
   const [matchWinner, setMatchWinner] = useState(null)
   const [score, setScore] = useState({ blue: 0, red: 0 })
-  const [currentMapIndex, setCurrentMapIndex] = useState(0)
 
   // World Simulation State
   const [tanks, setTanks] = useState([])
@@ -90,7 +79,6 @@ export default function TankGame({
   const [obstacles, setObstacles] = useState([])
   const [barrels, setBarrels] = useState([])
   const [crates, setCrates] = useState([])
-  const [particles, setParticles] = useState([])
   const [pings, setPings] = useState([])
 
   // Device Orientation State (default to auto-detect portrait on mobile)
@@ -143,24 +131,18 @@ export default function TankGame({
   const playersRef = useRef(players)
   const mySlotIdRef = useRef(mySlotId)
   const playerNameRef = useRef(playerName)
-  const roundStatusRef = useRef('playing')
-  const roundWinnerRef = useRef(null)
-  const scoreRef = useRef({ blue: 0, red: 0 })
-  const currentMapIndexRef = useRef(0)
 
-  // World simulation refs for smooth 30FPS physics loop
-  const tanksRef = useRef([])
-  const bulletsRef = useRef([])
-  const obstaclesRef = useRef([])
-  const barrelsRef = useRef([])
-  const cratesRef = useRef([])
-  const particlesRef = useRef([])
-  const pingsRef = useRef([])
+  /**
+   * The authoritative world, owned by the simulation rather than by React.
+   *
+   * The 32ms tick and the network callbacks both read and write this, so it must not
+   * be useState: a stale closure there would silently roll the match back. React state
+   * below is a render-only mirror, refreshed by commitWorld.
+   */
+  const worldRef = useRef(createEmptyWorld())
 
   const networkRef = useRef(null)
   const simulationTimerRef = useRef(null)
-  const lastCrateDropRef = useRef(0)
-  const lastFiredTimeRef = useRef(0)
   // Round-win and match-over transitions are deferred; keep the handle so leaving
   // mid-transition does not fire state updates into an unmounted component.
   const roundTransitionTimerRef = useRef(null)
@@ -186,18 +168,6 @@ export default function TankGame({
   useEffect(() => {
     playerNameRef.current = playerName
   }, [playerName])
-  useEffect(() => {
-    roundStatusRef.current = roundStatus
-  }, [roundStatus])
-  useEffect(() => {
-    roundWinnerRef.current = roundWinner
-  }, [roundWinner])
-  useEffect(() => {
-    scoreRef.current = score
-  }, [score])
-  useEffect(() => {
-    currentMapIndexRef.current = currentMapIndex
-  }, [currentMapIndex])
 
   // Persist player name
   useEffect(() => {
@@ -227,434 +197,128 @@ export default function TankGame({
   }, [])
 
   // -------------------------------------------------------------
-  // Spawn & World Initialization (Host Authoritative)
+  // World lifecycle (Host Authoritative)
+  //
+  // All simulation rules live in engine/tankSimulation.js. This component owns the
+  // world object, drives the tick, mirrors the result into React state for rendering,
+  // and broadcasts snapshots to clients.
   // -------------------------------------------------------------
-  const initRoundWorld = useCallback((currentScore = scoreRef.current, mapIdx = currentMapIndexRef.current) => {
-    const map = getBattlefieldMap(mapIdx)
-    const currentMode = modeRef.current
-    const spawns = getSpawnPoints(currentMode)
 
-    const initialTanks = []
-    const modeConfig = MODES[currentMode] || MODES['1v1']
-    const currentPlayers = playersRef.current
+  /** Push the world into React state so the canvas re-renders. */
+  const commitWorld = useCallback((world) => {
+    worldRef.current = world
+    setTanks(world.tanks)
+    setBullets(world.bullets)
+    setObstacles(world.obstacles)
+    setBarrels(world.barrels)
+    setCrates(world.crates)
+    setScore(world.score)
+    setRoundStatus(world.roundStatus)
+    setRoundWinner(world.roundWinner)
+  }, [])
 
-    modeConfig.slots.forEach((slot) => {
-      const p = currentPlayers.find((pl) => pl.slotId === slot.id)
-      const spawn = spawns[slot.id] || { x: 100, y: 300, angle: 0 }
+  /** Lay out a fresh round and publish it. Host only. */
+  const startRound = useCallback(
+    (nextScore, mapIndex) => {
+      const world = buildRoundWorld({
+        mode: modeRef.current,
+        players: playersRef.current,
+        mapIndex,
+        score: nextScore,
+      })
+      commitWorld(world)
+      return world
+    },
+    [commitWorld]
+  )
 
-      if (p) {
-        const tankConfig = TANK_TYPES[p.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
-        initialTanks.push({
-          id: slot.id,
-          slotId: slot.id,
-          name: p.name,
-          team: slot.team,
-          tankType: p.tankType || DEFAULT_TANK_TYPE,
-          x: spawn.x,
-          y: spawn.y,
-          angle: spawn.angle,
-          turretAngle: spawn.angle,
-          hp: tankConfig.maxHp,
-          maxHp: tankConfig.maxHp,
-          speed: tankConfig.speed,
-          reverseSpeed: tankConfig.reverseSpeed,
-          turnSpeed: tankConfig.turnSpeed,
-          radius: tankConfig.radius,
-          cooldownMs: tankConfig.cooldownMs,
-          bulletSpeed: tankConfig.bulletSpeed,
-          bulletRadius: tankConfig.bulletRadius,
-          bulletColor: tankConfig.bulletColor,
-          isAlive: true,
-          shield: false,
-          weapon: 'STANDARD',
-          lastFiredAt: 0,
-        })
+  /** Translate the simulation's events into sound. */
+  const playWorldEvents = useCallback((events) => {
+    let explosionPlayed = false
+    for (const event of events) {
+      switch (event.type) {
+        case EVENTS.RICOCHET:
+          playTankRicochetSound()
+          break
+        case EVENTS.BARREL_EXPLOSION:
+          playBarrelExplosionSound()
+          break
+        case EVENTS.TANK_DESTROYED:
+          // One boom per tick even if a barrel takes out a whole squad.
+          if (!explosionPlayed) {
+            playTankExplosionSound()
+            explosionPlayed = true
+          }
+          break
+        case EVENTS.CRATE_PICKUP:
+          playCratePickupSound()
+          break
+        default:
+          break
       }
-    })
-
-    tanksRef.current = initialTanks
-    obstaclesRef.current = map.obstacles
-    barrelsRef.current = map.barrels
-    bulletsRef.current = []
-    cratesRef.current = []
-    particlesRef.current = []
-    pingsRef.current = []
-    scoreRef.current = currentScore
-    roundStatusRef.current = 'playing'
-    roundWinnerRef.current = null
-    currentMapIndexRef.current = mapIdx
-    lastCrateDropRef.current = Date.now()
-
-    setTanks(initialTanks)
-    setObstacles(map.obstacles)
-    setBarrels(map.barrels)
-    setBullets([])
-    setCrates([])
-    setParticles([])
-    setPings([])
-    setRoundStatus('playing')
-    setRoundWinner(null)
-    setScore(currentScore)
-    setCurrentMapIndex(mapIdx)
-
-    return {
-      tanks: initialTanks,
-      obstacles: map.obstacles,
-      barrels: map.barrels,
-      score: currentScore,
-      mapIndex: mapIdx,
     }
   }, [])
 
-  // Handle Round Win & Score Update
-  const handleRoundWin = useCallback((winner) => {
-    setRoundStatus('round_win')
-    roundStatusRef.current = 'round_win'
-    setRoundWinner(winner)
-    roundWinnerRef.current = winner
-    playTankExplosionSound()
+  /**
+   * A team has taken the round: bank the point, then either end the match or roll the
+   * next map after a short pause so players can see what happened.
+   */
+  const handleRoundWin = useCallback(
+    (winner, nextScore) => {
+      playTankExplosionSound()
 
-    const prevScore = scoreRef.current
-    const newScore = {
-      ...prevScore,
-      [winner]: (prevScore[winner] || 0) + 1,
-    }
-    scoreRef.current = newScore
-    setScore(newScore)
+      if (roundTransitionTimerRef.current) {
+        clearTimeout(roundTransitionTimerRef.current)
+      }
 
-    if (roundTransitionTimerRef.current) {
-      clearTimeout(roundTransitionTimerRef.current)
-    }
-
-    if (newScore[winner] >= TARGET_SCORE_DEFAULT) {
-      roundTransitionTimerRef.current = setTimeout(() => {
-        roundTransitionTimerRef.current = null
-        setMatchWinner(winner)
-        setGamePhase('game_over')
-        networkRef.current?.broadcast({
-          type: 'MATCH_OVER',
-          winner,
-        })
-      }, 1800)
-    } else {
-      roundTransitionTimerRef.current = setTimeout(() => {
-        roundTransitionTimerRef.current = null
-        const nextMap = currentMapIndexRef.current + 1
-        const nextWorld = initRoundWorld(newScore, nextMap)
-        networkRef.current?.broadcast({
-          type: 'START_MATCH',
-          score: newScore,
-          tanks: nextWorld.tanks,
-          obstacles: nextWorld.obstacles,
-          barrels: nextWorld.barrels,
-        })
-      }, 2400)
-    }
-  }, [initRoundWorld])
+      if (nextScore[winner] >= TARGET_SCORE_DEFAULT) {
+        roundTransitionTimerRef.current = setTimeout(() => {
+          roundTransitionTimerRef.current = null
+          setMatchWinner(winner)
+          setGamePhase('game_over')
+          networkRef.current?.broadcast({ type: 'MATCH_OVER', winner })
+        }, 1800)
+      } else {
+        roundTransitionTimerRef.current = setTimeout(() => {
+          roundTransitionTimerRef.current = null
+          const next = startRound(nextScore, worldRef.current.mapIndex + 1)
+          networkRef.current?.broadcast({
+            type: 'START_MATCH',
+            score: next.score,
+            tanks: next.tanks,
+            obstacles: next.obstacles,
+            barrels: next.barrels,
+          })
+        }, 2400)
+      }
+    },
+    [startRound]
+  )
 
   // -------------------------------------------------------------
-  // Host Game Simulation Loop (~31 FPS Physics Tick)
+  // Host simulation tick (~31 FPS)
   // -------------------------------------------------------------
   const runHostSimulationTick = useCallback(() => {
-    if (roundStatusRef.current !== 'playing') return
-
-    const currentTanks = tanksRef.current
-    if (!currentTanks || !currentTanks.length) return
-
-    // 1. Steering & Tank Movement
-    let updatedTanks = currentTanks.map((tank) => {
-      if (!tank.isAlive) return tank
-
-      // Determine input for this tank
-      let input = { forward: false, reverse: false, steerLeft: false, steerRight: false }
-      if (tank.slotId === mySlotIdRef.current) {
-        input = localInputRef.current
-      } else {
-        input = tank.remoteInput || input
-      }
-
-      let newAngle = tank.angle
-      const inMud = isTankInMud(tank, obstaclesRef.current)
-      const speedMult = inMud ? TANK_MUD_SPEED_MULT : 1.0
-
-      let targetX = tank.x
-      let targetY = tank.y
-
-      const turnSpeed = tank.turnSpeed || TANK_TURN_SPEED
-      const moveSpeed = tank.speed || TANK_SPEED
-      const revSpeed = tank.reverseSpeed || TANK_REVERSE_SPEED
-
-      if (input.isMoving && input.moveAngle !== undefined && input.moveAngle !== null) {
-        // Virtual Joystick steering & driving
-        const diff = Math.atan2(Math.sin(input.moveAngle - newAngle), Math.cos(input.moveAngle - newAngle))
-        const maxTurn = turnSpeed * 1.5
-        if (Math.abs(diff) > 0.05) {
-          newAngle += Math.sign(diff) * Math.min(Math.abs(diff), maxTurn)
-        }
-
-        const alignment = Math.max(0, Math.cos(diff))
-        const currentSpeed = moveSpeed * speedMult * (input.moveMagnitude || 1.0) * (0.35 + 0.65 * alignment)
-        targetX += Math.cos(newAngle) * currentSpeed
-        targetY += Math.sin(newAngle) * currentSpeed
-      } else {
-        // Desktop keyboard controls (WASD / Arrows)
-        if (input.steerLeft) newAngle -= turnSpeed
-        if (input.steerRight) newAngle += turnSpeed
-        if (input.forward) {
-          targetX += Math.cos(newAngle) * moveSpeed * speedMult
-          targetY += Math.sin(newAngle) * moveSpeed * speedMult
-        } else if (input.reverse) {
-          targetX -= Math.cos(newAngle) * revSpeed * speedMult
-          targetY -= Math.sin(newAngle) * revSpeed * speedMult
-        }
-      }
-
-      const resolved = moveTankWithCollision(
-        tank,
-        targetX,
-        targetY,
-        obstaclesRef.current,
-        barrelsRef.current,
-        currentTanks
-      )
-
-      return {
-        ...tank,
-        x: resolved.x,
-        y: resolved.y,
-        angle: newAngle,
-        turretAngle: input.turretAngle ?? tank.turretAngle ?? newAngle,
-      }
+    const { world, events } = stepWorld(worldRef.current, {
+      localSlotId: mySlotIdRef.current,
+      localInput: localInputRef.current,
     })
 
-    // 2. Check Crate Pickups
-    let remainingCrates = []
-    if (cratesRef.current && cratesRef.current.length) {
-      cratesRef.current.forEach((crate) => {
-        let pickedBy = null
-        for (let i = 0; i < updatedTanks.length; i++) {
-          const t = updatedTanks[i]
-          if (t.isAlive) {
-            const tr = t.radius || TANK_RADIUS
-            const dx = t.x - crate.x
-            const dy = t.y - crate.y
-            if (dx * dx + dy * dy < (tr + CRATE_SIZE / 2) * (tr + CRATE_SIZE / 2)) {
-              pickedBy = t
-              break
-            }
-          }
-        }
+    if (world === worldRef.current) return // between rounds; nothing to publish
 
-        if (pickedBy) {
-          playCratePickupSound()
-          updatedTanks = updatedTanks.map((t) => {
-            if (t.id === pickedBy.id) {
-              if (crate.type === 'SHIELD') {
-                return { ...t, shield: true }
-              }
-              return { ...t, weapon: crate.type }
-            }
-            return t
-          })
-        } else {
-          remainingCrates.push(crate)
-        }
-      })
-    }
+    commitWorld(world)
+    playWorldEvents(events)
 
-    // 3. Crate Drop Timer
-    if (Date.now() - lastCrateDropRef.current > CRATE_DROP_INTERVAL_MS) {
-      lastCrateDropRef.current = Date.now()
-      const weaponOptions = ['LASER', 'ROCKET', 'SHOTGUN', 'SHIELD']
-      const chosenWeapon = weaponOptions[Math.floor(Math.random() * weaponOptions.length)]
-      const randomX = 350 + Math.random() * 300
-      const randomY = 150 + Math.random() * 350
-      remainingCrates.push({
-        id: `crate_${Date.now()}`,
-        x: randomX,
-        y: randomY,
-        type: chosenWeapon,
-      })
-    }
-
-    // 4. Update Bullets & Collisions
-    let remainingBullets = []
-    if (bulletsRef.current && bulletsRef.current.length) {
-      bulletsRef.current.forEach((bullet) => {
-        let bx = bullet.x + bullet.vx
-        let by = bullet.y + bullet.vy
-        let destroyed = false
-
-        // Boundary collision - vanishes on impact
-        if (
-          bx <= BULLET_RADIUS ||
-          bx >= ARENA_WIDTH - BULLET_RADIUS ||
-          by <= BULLET_RADIUS ||
-          by >= ARENA_HEIGHT - BULLET_RADIUS
-        ) {
-          destroyed = true
-          playTankRicochetSound()
-        }
-
-        // Obstacles (Steel & Brick) - vanishes on impact
-        if (!destroyed && obstaclesRef.current) {
-          for (let i = 0; i < obstaclesRef.current.length; i++) {
-            const obs = obstaclesRef.current[i]
-            if (
-              obs.type === TERRAIN_TYPES.STEEL ||
-              (obs.type === TERRAIN_TYPES.BRICK && (obs.hp || 0) > 0)
-            ) {
-              const col = testCircleRect(bx, by, bullet.radius, obs.x, obs.y, obs.width, obs.height)
-              if (col.collided) {
-                if (obs.type === TERRAIN_TYPES.STEEL) {
-                  destroyed = true
-                  playTankRicochetSound()
-                  break
-                } else if (obs.type === TERRAIN_TYPES.BRICK) {
-                  obs.hp -= 1
-                  destroyed = true
-                  playTankRicochetSound()
-                  break
-                }
-              }
-            }
-          }
-        }
-
-        // Barrels
-        if (!destroyed && barrelsRef.current) {
-          for (let i = 0; i < barrelsRef.current.length; i++) {
-            const barrel = barrelsRef.current[i]
-            if (barrel.hp > 0) {
-              const dx = bx - barrel.x
-              const dy = by - barrel.y
-              if (dx * dx + dy * dy < (bullet.radius + barrel.radius) * (bullet.radius + barrel.radius)) {
-                barrel.hp = 0
-                destroyed = true
-                playBarrelExplosionSound()
-
-                let anyTankDied = false
-                updatedTanks = updatedTanks.map((t) => {
-                  if (!t.isAlive) return t
-                  const bdx = t.x - barrel.x
-                  const bdy = t.y - barrel.y
-                  if (bdx * bdx + bdy * bdy < 75 * 75) {
-                    if (t.shield) {
-                      return { ...t, shield: false }
-                    }
-                    const currentHp = t.hp !== undefined ? t.hp : TANK_MAX_HP
-                    const nextHp = Math.max(0, currentHp - 2)
-                    if (nextHp <= 0) {
-                      anyTankDied = true
-                      return { ...t, hp: 0, isAlive: false }
-                    }
-                    return { ...t, hp: nextHp }
-                  }
-                  return t
-                })
-                if (anyTankDied) {
-                  playTankExplosionSound()
-                }
-                break
-              }
-            }
-          }
-        }
-
-        // Tank hit
-        if (!destroyed) {
-          let hitTank = null
-          let tankDied = false
-          updatedTanks = updatedTanks.map((t) => {
-            if (!t.isAlive || t.team === bullet.team) return t
-            const tr = t.radius || TANK_RADIUS
-            const dx = bx - t.x
-            const dy = by - t.y
-            if (dx * dx + dy * dy < (bullet.radius + tr) * (bullet.radius + tr)) {
-              hitTank = t
-              if (t.shield) {
-                return { ...t, shield: false }
-              }
-              const bulletDmg = bullet.damage || 1
-              const currentHp = t.hp !== undefined ? t.hp : (t.maxHp || TANK_MAX_HP)
-              const nextHp = Math.max(0, currentHp - bulletDmg)
-              if (nextHp <= 0) {
-                tankDied = true
-                return { ...t, hp: 0, isAlive: false }
-              }
-              return { ...t, hp: nextHp }
-            }
-            return t
-          })
-
-          if (hitTank) {
-            destroyed = true
-            if (tankDied) {
-              playTankExplosionSound()
-            } else {
-              playTankRicochetSound()
-            }
-          }
-        }
-
-        // Lifetime expiration check
-        if (bullet.createdAt && Date.now() - bullet.createdAt > BULLET_LIFETIME_MS) {
-          destroyed = true
-        }
-
-        if (!destroyed) {
-          remainingBullets.push({
-            ...bullet,
-            x: bx,
-            y: by,
-            bounces: 0,
-          })
-        }
-      })
-    }
-
-    // 5. Check Round Win Condition
-    const hasBlue = updatedTanks.some((t) => t.team === 'blue')
-    const hasRed = updatedTanks.some((t) => t.team === 'red')
-    if (hasBlue && hasRed) {
-      const aliveBlue = updatedTanks.some((t) => t.team === 'blue' && t.isAlive)
-      const aliveRed = updatedTanks.some((t) => t.team === 'red' && t.isAlive)
-      if (!aliveBlue || !aliveRed) {
-        let winner = null
-        if (aliveBlue && !aliveRed) winner = 'blue'
-        if (aliveRed && !aliveBlue) winner = 'red'
-
-        if (winner && roundStatusRef.current === 'playing') {
-          handleRoundWin(winner)
-        }
-      }
-    }
-
-    // 6. Update refs
-    tanksRef.current = updatedTanks
-    bulletsRef.current = remainingBullets
-    cratesRef.current = remainingCrates
-
-    // 7. Update React state for host canvas
-    setTanks(updatedTanks)
-    setBullets(remainingBullets)
-    setCrates(remainingCrates)
-
-    // 8. Broadcast world state to clients
     if (networkRef.current && isHostRef.current) {
-      networkRef.current.broadcast({
-        type: 'WORLD_STATE',
-        tanks: updatedTanks,
-        bullets: remainingBullets,
-        obstacles: obstaclesRef.current,
-        barrels: barrelsRef.current,
-        crates: remainingCrates,
-        score: scoreRef.current,
-        roundStatus: roundStatusRef.current,
-        roundWinner: roundWinnerRef.current,
-      })
+      networkRef.current.broadcast({ type: 'WORLD_STATE', ...toSnapshot(world) })
     }
-  }, [handleRoundWin])
+
+    const roundWin = events.find((e) => e.type === EVENTS.ROUND_WIN)
+    if (roundWin) {
+      handleRoundWin(roundWin.winner, roundWin.score)
+    }
+  }, [commitWorld, playWorldEvents, handleRoundWin])
+
 
   // Simulation interval for Host
   useEffect(() => {
@@ -670,123 +334,60 @@ export default function TankGame({
   }, [gamePhase, isHost, runHostSimulationTick])
 
   // -------------------------------------------------------------
-  // Firing Cannon & Spawning Projectiles
+  // Firing
+  //
+  // The host constructs every shell from its own authoritative tank record and
+  // enforces the per-tank cooldown there. A client only asks *that* it fires and in
+  // which direction, so it cannot dictate position, speed, damage or team.
   // -------------------------------------------------------------
   const handleFireCannon = () => {
-    const currentTanks = tanksRef.current
-    const myTank = currentTanks.find((t) => t.slotId === mySlotIdRef.current)
-    if (!myTank || !myTank.isAlive) return
+    const turretAngle = localInputRef.current.turretAngle
 
-    const tankTypeCfg = TANK_TYPES[myTank.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
-    const isCrateWeapon = myTank.weapon && myTank.weapon !== 'STANDARD'
-    const crateCfg = isCrateWeapon ? WEAPON_TYPES[myTank.weapon] : null
-
-    const cooldownMs = crateCfg ? crateCfg.cooldownMs : (myTank.cooldownMs || tankTypeCfg.cooldownMs)
-    if (Date.now() - lastFiredTimeRef.current < cooldownMs) {
-      return // Still in cooldown
-    }
-    lastFiredTimeRef.current = Date.now()
-
-    playTankShootSound()
-
-    const tankRadius = myTank.radius || tankTypeCfg.radius || TANK_RADIUS
-    const spawnDist = tankRadius + 12
-    const muzzleX = myTank.x + Math.cos(myTank.turretAngle) * spawnDist
-    const muzzleY = myTank.y + Math.sin(myTank.turretAngle) * spawnDist
-
-    const shellSpeed = crateCfg ? crateCfg.speed : (myTank.bulletSpeed || tankTypeCfg.bulletSpeed)
-    const shellRadius = crateCfg
-      ? (myTank.weapon === 'ROCKET' ? 5.5 : BULLET_RADIUS)
-      : (myTank.bulletRadius || tankTypeCfg.bulletRadius)
-    const shellDamage = crateCfg?.damage || (myTank.weapon === 'ROCKET' ? 2 : 1)
-    const shellColor = crateCfg ? crateCfg.color : (myTank.bulletColor || tankTypeCfg.bulletColor)
-
-    if (myTank.weapon === 'SHOTGUN') {
-      // 3 spreading pellets
-      const angles = [myTank.turretAngle - 0.18, myTank.turretAngle, myTank.turretAngle + 0.18]
-      const newBullets = angles.map((ang) => ({
-        id: `bullet_${Date.now()}_${Math.random()}`,
-        x: muzzleX,
-        y: muzzleY,
-        vx: Math.cos(ang) * shellSpeed,
-        vy: Math.sin(ang) * shellSpeed,
-        radius: shellRadius,
-        damage: shellDamage,
-        color: shellColor,
-        bounces: 0,
-        maxBounces: 0,
-        team: myTank.team,
-        ownerSlotId: mySlotIdRef.current,
-        createdAt: Date.now(),
-      }))
-
-      if (isHostRef.current) {
-        bulletsRef.current = [...bulletsRef.current, ...newBullets]
-        setBullets(bulletsRef.current)
-      } else {
-        networkRef.current?.sendToHost({ type: 'FIRE_BULLETS', bullets: newBullets })
-      }
+    if (isHostRef.current) {
+      const next = fireFromTank(worldRef.current, mySlotIdRef.current, turretAngle)
+      if (!next) return // dead, unknown slot, or still reloading
+      playTankShootSound()
+      commitWorld(next)
     } else {
-      // Single shell / Rocket / Laser
-      const newBullet = {
-        id: `bullet_${Date.now()}`,
-        x: muzzleX,
-        y: muzzleY,
-        vx: Math.cos(myTank.turretAngle) * shellSpeed,
-        vy: Math.sin(myTank.turretAngle) * shellSpeed,
-        radius: shellRadius,
-        damage: shellDamage,
-        color: shellColor,
-        bounces: 0,
-        maxBounces: 0,
-        team: myTank.team,
-        ownerSlotId: mySlotIdRef.current,
-        createdAt: Date.now(),
-      }
-
-      if (isHostRef.current) {
-        bulletsRef.current = [...bulletsRef.current, newBullet]
-        setBullets(bulletsRef.current)
-      } else {
-        networkRef.current?.sendToHost({ type: 'FIRE_BULLETS', bullets: [newBullet] })
-      }
+      // Optimistic muzzle report only; the host decides whether the shot happened.
+      playTankShootSound()
+      networkRef.current?.sendToHost({
+        type: 'FIRE',
+        slotId: mySlotIdRef.current,
+        turretAngle,
+      })
     }
-
-    // Set lastFiredAt on local tank to reveal from bushes
-    tanksRef.current = currentTanks.map((t) =>
-      t.slotId === mySlotIdRef.current ? { ...t, lastFiredAt: Date.now() } : t
-    )
-    setTanks(tanksRef.current)
   }
 
   // -------------------------------------------------------------
-  // Radar Ping
+  // Radar Ping (2v2 team marker)
   // -------------------------------------------------------------
   const handleTriggerRadarPing = (coords) => {
-    const myTank = tanksRef.current.find((t) => t.slotId === mySlotIdRef.current)
-    const team = myTank ? myTank.team : 'blue'
-    const pingPos = coords || (myTank ? { x: myTank.x, y: myTank.y } : { x: 500, y: 325 })
+    const myTankNow = worldRef.current.tanks.find((t) => t.slotId === mySlotIdRef.current)
+    const team = myTankNow ? myTankNow.team : 'blue'
+    const position = coords || (myTankNow ? { x: myTankNow.x, y: myTankNow.y } : { x: 500, y: 325 })
 
     playRadarPingSound()
 
-    const newPing = {
+    const ping = {
       id: `ping_${Date.now()}`,
-      x: pingPos.x,
-      y: pingPos.y,
+      x: position.x,
+      y: position.y,
       team,
       createdAt: performance.now(),
     }
 
-    setPings((prev) => [...prev.slice(-4), newPing])
+    setPings((prev) => [...prev.slice(-4), ping])
 
     if (networkRef.current) {
       if (isHostRef.current) {
-        networkRef.current.broadcast({ type: 'RADAR_PING', ping: newPing })
+        networkRef.current.broadcast({ type: 'RADAR_PING', ping })
       } else {
-        networkRef.current.sendToHost({ type: 'RADAR_PING', ping: newPing })
+        networkRef.current.sendToHost({ type: 'RADAR_PING', ping })
       }
     }
   }
+
 
   const handleFireCannonRef = useRef(handleFireCannon)
   const handleTriggerRadarPingRef = useRef(handleTriggerRadarPing)
@@ -881,10 +482,10 @@ export default function TankGame({
 
   // Mouse Aim on Canvas
   const handleCanvasPointerMove = (coords) => {
-    const myTank = tanksRef.current.find((t) => t.slotId === mySlotIdRef.current)
-    if (!myTank) return
+    const myTankNow = worldRef.current.tanks.find((t) => t.slotId === mySlotIdRef.current)
+    if (!myTankNow) return
 
-    const angle = Math.atan2(coords.y - myTank.y, coords.x - myTank.x)
+    const angle = Math.atan2(coords.y - myTankNow.y, coords.x - myTankNow.x)
     localInputRef.current.turretAngle = angle
     localInputRef.current.aimCoord = coords
 
@@ -1119,89 +720,63 @@ export default function TankGame({
 
       case 'START_MATCH': {
         setGamePhase('battle')
-        if (data.score) {
-          setScore(data.score)
-          scoreRef.current = data.score
-        }
-        if (data.tanks) {
-          setTanks(data.tanks)
-          tanksRef.current = data.tanks
-        }
-        if (data.obstacles) {
-          setObstacles(data.obstacles)
-          obstaclesRef.current = data.obstacles
-        }
-        if (data.barrels) {
-          setBarrels(data.barrels)
-          barrelsRef.current = data.barrels
-        }
-        setBullets([])
-        bulletsRef.current = []
-        setCrates([])
-        cratesRef.current = []
-        setParticles([])
-        particlesRef.current = []
+        commitWorld({
+          ...createEmptyWorld(),
+          tanks: data.tanks || [],
+          obstacles: data.obstacles || [],
+          barrels: data.barrels || [],
+          score: data.score || { blue: 0, red: 0 },
+          mapIndex: worldRef.current.mapIndex,
+        })
         setPings([])
-        pingsRef.current = []
-        setRoundStatus('playing')
-        roundStatusRef.current = 'playing'
-        setRoundWinner(null)
-        roundWinnerRef.current = null
         setMatchWinner(null)
         break
       }
 
       case 'WORLD_STATE': {
+        // Clients are pure renderers: adopt the host's snapshot wholesale.
         if (!isHostRef.current) {
-          if (data.tanks) {
-            setTanks(data.tanks)
-            tanksRef.current = data.tanks
-          }
-          if (data.bullets) {
-            setBullets(data.bullets)
-            bulletsRef.current = data.bullets
-          }
-          if (data.obstacles) {
-            setObstacles(data.obstacles)
-            obstaclesRef.current = data.obstacles
-          }
-          if (data.barrels) {
-            setBarrels(data.barrels)
-            barrelsRef.current = data.barrels
-          }
-          if (data.crates) {
-            setCrates(data.crates)
-            cratesRef.current = data.crates
-          }
-          if (data.score) {
-            setScore(data.score)
-            scoreRef.current = data.score
-          }
-          if (data.roundStatus) {
-            setRoundStatus(data.roundStatus)
-            roundStatusRef.current = data.roundStatus
-          }
-          if (data.roundWinner !== undefined) {
-            setRoundWinner(data.roundWinner)
-            roundWinnerRef.current = data.roundWinner
-          }
+          const current = worldRef.current
+          commitWorld({
+            ...current,
+            tanks: data.tanks ?? current.tanks,
+            bullets: data.bullets ?? current.bullets,
+            obstacles: data.obstacles ?? current.obstacles,
+            barrels: data.barrels ?? current.barrels,
+            crates: data.crates ?? current.crates,
+            score: data.score ?? current.score,
+            roundStatus: data.roundStatus ?? current.roundStatus,
+            roundWinner: data.roundWinner !== undefined ? data.roundWinner : current.roundWinner,
+          })
         }
         break
       }
 
       case 'PLAYER_INPUT': {
+        // Stashed on the tank; the next tick drives that tank with it. Not committed
+        // to React state - input is not rendered and the tick runs at 31Hz anyway.
         if (isHostRef.current && data.slotId && data.input) {
-          tanksRef.current = tanksRef.current.map((t) =>
-            t.slotId === data.slotId ? { ...t, remoteInput: data.input } : t
-          )
+          worldRef.current = {
+            ...worldRef.current,
+            tanks: worldRef.current.tanks.map((t) =>
+              t.slotId === data.slotId ? { ...t, remoteInput: data.input } : t
+            ),
+          }
         }
         break
       }
 
-      case 'FIRE_BULLETS': {
-        if (isHostRef.current && Array.isArray(data.bullets)) {
-          bulletsRef.current = [...bulletsRef.current, ...data.bullets]
-          setBullets(bulletsRef.current)
+      case 'FIRE': {
+        // Intent only. The host builds the shell from its own tank record and applies
+        // that tank's cooldown, so a client cannot fire faster, harder or from
+        // somewhere it is not. Replaces the old FIRE_BULLETS message, which took
+        // client-supplied bullets at face value.
+        if (isHostRef.current && data.slotId) {
+          const next = fireFromTank(worldRef.current, data.slotId, data.turretAngle)
+          if (next) {
+            playTankShootSound()
+            commitWorld(next)
+          }
         }
         break
       }
@@ -1235,36 +810,21 @@ export default function TankGame({
 
       case 'REMATCH_START': {
         setGamePhase('battle')
-        setScore({ blue: 0, red: 0 })
-        scoreRef.current = { blue: 0, red: 0 }
-        setRoundStatus('playing')
-        roundStatusRef.current = 'playing'
-        setRoundWinner(null)
-        roundWinnerRef.current = null
+        commitWorld({
+          ...createEmptyWorld(),
+          tanks: data.tanks || [],
+          obstacles: data.obstacles || [],
+          barrels: data.barrels || [],
+        })
+        setPings([])
         setMatchWinner(null)
-        if (data.tanks) {
-          setTanks(data.tanks)
-          tanksRef.current = data.tanks
-        }
-        if (data.obstacles) {
-          setObstacles(data.obstacles)
-          obstaclesRef.current = data.obstacles
-        }
-        if (data.barrels) {
-          setBarrels(data.barrels)
-          barrelsRef.current = data.barrels
-        }
-        setBullets([])
-        bulletsRef.current = []
-        setCrates([])
-        cratesRef.current = []
         break
       }
 
       default:
         break
     }
-  }, [])
+  }, [commitWorld])
 
   // Keep callback refs fresh
   useEffect(() => {
@@ -1485,38 +1045,25 @@ export default function TankGame({
     }
   }
 
-  // Start Game (Host only)
-  const handleStartGame = () => {
+  /** Host only: lay out round 1 on the first map and tell everyone to start. */
+  const beginMatchFromScratch = () => {
     if (!isHostRef.current) return
 
-    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, 0)
+    setMatchWinner(null)
+    const world = startRound({ blue: 0, red: 0 }, 0)
     setGamePhase('battle')
 
     networkRef.current?.broadcast({
       type: 'START_MATCH',
-      score: { blue: 0, red: 0 },
-      tanks: initialWorld.tanks,
-      obstacles: initialWorld.obstacles,
-      barrels: initialWorld.barrels,
+      score: world.score,
+      tanks: world.tanks,
+      obstacles: world.obstacles,
+      barrels: world.barrels,
     })
   }
 
-  // Rematch
-  const handleRematch = () => {
-    if (!isHostRef.current) return
-    scoreRef.current = { blue: 0, red: 0 }
-    setScore({ blue: 0, red: 0 })
-    const initialWorld = initRoundWorld({ blue: 0, red: 0 }, 0)
-    setGamePhase('battle')
-
-    networkRef.current?.broadcast({
-      type: 'START_MATCH',
-      score: { blue: 0, red: 0 },
-      tanks: initialWorld.tanks,
-      obstacles: initialWorld.obstacles,
-      barrels: initialWorld.barrels,
-    })
-  }
+  const handleStartGame = beginMatchFromScratch
+  const handleRematch = beginMatchFromScratch
 
   // Leave Room
   const handleLeaveRoom = () => {
@@ -1537,10 +1084,8 @@ export default function TankGame({
     setRoomCode('')
     setPlayers([])
     playersRef.current = []
-    setTanks([])
-    tanksRef.current = []
-    setBullets([])
-    bulletsRef.current = []
+    commitWorld(createEmptyWorld())
+    setPings([])
     setIsHost(false)
     isHostRef.current = false
     setMySlotId('p1')
@@ -1613,7 +1158,6 @@ export default function TankGame({
               obstacles={obstacles}
               barrels={barrels}
               crates={crates}
-              particles={particles}
               pings={pings}
               mySlotId={mySlotId}
               score={score}
