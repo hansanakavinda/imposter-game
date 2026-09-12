@@ -72,7 +72,7 @@ export default function Modal({
           </div>
         )}
 
-        <div className={cx('px-5 overflow-y-auto scrollbar-none', title ? '' : 'pt-5', bodyClassName)}>
+        <div className={cx('px-5 overflow-y-auto scrollbar-none', title ? 'pt-1' : 'pt-5', bodyClassName)}>
           {children}
         </div>
 

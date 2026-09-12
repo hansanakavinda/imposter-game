@@ -6,17 +6,19 @@ import { FOCUS, WIDTH, cx } from './tokens'
  * The page shell. Ten screens across three games each had their own copy of
  * this, drifting on max-width, padding and min-height.
  *
- * `fill` is for screens with a footer-pinned primary action. Without it the
- * content sizes to itself and centres -- the old `min-h-[80vh] justify-between`
+ * Screens sit under the lamp, at the top, like the hub. `fill` is for screens
+ * with a footer-pinned primary action; `center` is for the few whose subject is
+ * one object in the middle of the table. The old `min-h-[80vh] justify-between`
  * default is what produced the large empty bands above and below every screen.
  */
-export default function Screen({ width = 'md', fill = false, className = '', children }) {
+export default function Screen({ width = 'md', fill = false, center = false, className = '', children }) {
   return (
     <div
       className={cx(
         'relative z-10 w-full mx-auto px-5 py-5 flex flex-col select-none animate-fadeIn',
         WIDTH[width],
-        fill ? 'flex-1 justify-between' : 'my-auto',
+        fill && 'flex-1 justify-between',
+        center && 'my-auto',
         className
       )}
     >

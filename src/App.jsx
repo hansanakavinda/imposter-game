@@ -87,7 +87,6 @@ export default function App() {
 
         {selectedGame === 'imposter' && (
           <ImposterGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
