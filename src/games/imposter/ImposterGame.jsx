@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import SetupScreen from './components/SetupScreen'
 import PassCardScreen from './components/PassCardScreen'
 import DiscussionScreen from './components/DiscussionScreen'
@@ -7,10 +7,15 @@ import RulesModal from './components/RulesModal'
 import { getRandomWordPair } from './data/words'
 import { assignPlayerThemes, shuffleArray } from './data/cardThemes'
 
-export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules }) {
+export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules, onInGameChange }) {
   // Navigation & Screen State
   const [currentScreen, setCurrentScreen] = useState('setup') // 'setup' | 'pass' | 'discussion' | 'reveal'
   const [internalRulesOpen, setInternalRulesOpen] = useState(false)
+
+  // Tell the hub when a round is live, so leaving warns first.
+  useEffect(() => {
+    onInGameChange?.(currentScreen !== 'setup')
+  }, [currentScreen, onInGameChange])
 
   // Game Configuration State
   const [gameConfig, setGameConfig] = useState({

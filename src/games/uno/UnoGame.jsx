@@ -73,6 +73,7 @@ export default function UnoGame({
   isRulesOpen,
   onCloseRules,
   initialRoomCode = '',
+  onInGameChange,
 }) {
   const effectiveInitialRoom =
     initialRoomCode ||
@@ -85,6 +86,11 @@ export default function UnoGame({
   // Screen state
   const [screen, setScreen] = useState(() => (effectiveInitialRoom ? 'mp_lobby' : 'mode_select'))
   const [internalRulesOpen, setInternalRulesOpen] = useState(false)
+
+  // Tell the hub when a match is live, so leaving warns first.
+  useEffect(() => {
+    onInGameChange?.(screen === 'ai_playing' || screen === 'mp_playing')
+  }, [screen, onInGameChange])
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [pendingCard, setPendingCard] = useState(null)
 

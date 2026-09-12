@@ -41,6 +41,7 @@ export default function TankGame({
   isRulesOpen,
   onCloseRules,
   initialRoomCode = '',
+  onInGameChange,
 }) {
   // Lobby State
   const [mode, setMode] = useState('1v1') // '1v1' or '2v2'
@@ -69,6 +70,11 @@ export default function TankGame({
 
   // Game Flow State
   const [gamePhase, setGamePhase] = useState('lobby') // 'lobby', 'battle', 'game_over'
+
+  // Tell the hub when a battle is live, so leaving warns first.
+  useEffect(() => {
+    onInGameChange?.(gamePhase === 'battle')
+  }, [gamePhase, onInGameChange])
   const [roundStatus, setRoundStatus] = useState('playing') // 'playing', 'round_win', 'match_over'
   const [roundWinner, setRoundWinner] = useState(null)
   const [matchWinner, setMatchWinner] = useState(null)
