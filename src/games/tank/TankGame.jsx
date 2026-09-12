@@ -395,7 +395,7 @@ export default function TankGame({
       x: position.x,
       y: position.y,
       team,
-      createdAt: performance.now(),
+      createdAt: performance.now(), // local clock; receivers re-stamp on arrival
     }
 
     setPings((prev) => [...prev.slice(-4), ping])
@@ -507,7 +507,7 @@ export default function TankGame({
   // -------------------------------------------------------------
   // Network Message Dispatcher
   // -------------------------------------------------------------
-  const handleNetworkMessage = useCallback((data, _senderPeerId) => {
+  const handleNetworkMessage = useCallback((data, senderPeerId) => {
     if (!data || !data.type) return
 
     switch (data.type) {
@@ -530,10 +530,10 @@ export default function TankGame({
 
       case 'TOGGLE_READY': {
         if (isHostRef.current) {
-          const senderPeerId = _senderPeerId || data.peerId
+          const resolvedPeerId = senderPeerId || data.peerId
           const updated = playersRef.current.map((p) => {
             const isMatch =
-              (senderPeerId && p.peerId === senderPeerId) ||
+              (resolvedPeerId && p.peerId === resolvedPeerId) ||
               (data.slotId && p.slotId === data.slotId)
             if (!isMatch) return p
             const newReady = typeof data.isReady === 'boolean' ? data.isReady : !p.isReady
@@ -552,10 +552,10 @@ export default function TankGame({
 
       case 'SELECT_TANK': {
         if (isHostRef.current && data.tankType && TANK_TYPES[data.tankType]) {
-          const senderPeerId = _senderPeerId || data.peerId
+          const resolvedPeerId = senderPeerId || data.peerId
           const updated = playersRef.current.map((p) => {
             const isMatch =
-              (senderPeerId && p.peerId === senderPeerId) ||
+              (resolvedPeerId && p.peerId === resolvedPeerId) ||
               (data.slotId && p.slotId === data.slotId)
             return isMatch ? { ...p, tankType: data.tankType } : p
           })
@@ -578,10 +578,10 @@ export default function TankGame({
             const currentPlayers = playersRef.current
             const isOccupied = currentPlayers.some((p) => p.slotId === data.newSlot)
             if (!isOccupied) {
-              const senderPeerId = _senderPeerId || data.peerId
+              const resolvedPeerId = senderPeerId || data.peerId
               const updated = currentPlayers.map((p) => {
                 const isMatch =
-                  (senderPeerId && p.peerId === senderPeerId) ||
+                  (resolvedPeerId && p.peerId === resolvedPeerId) ||
                   (data.oldSlot && p.slotId === data.oldSlot)
                 return isMatch
                   ? { ...p, slotId: data.newSlot, team: slotConfig.team }
@@ -689,9 +689,13 @@ export default function TankGame({
       case 'RADAR_PING': {
         if (data.ping) {
           playRadarPingSound()
-          setPings((p) => [...p.slice(-4), data.ping])
+          // Stamp arrival on OUR clock. performance.now() is relative to each
+          // tab's own page load, so a sender's timestamp is meaningless here --
+          // it would make the ping either expire instantly or never.
+          setPings((p) => [...p.slice(-4), { ...data.ping, createdAt: performance.now() }])
           if (isHostRef.current) {
-            networkRef.current?.broadcast(data)
+            // Relay to everyone but the sender, who already drew it locally.
+            networkRef.current?.broadcast(data, senderPeerId)
           }
         }
         break

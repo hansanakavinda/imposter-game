@@ -182,9 +182,12 @@ export class TankNetwork {
     })
   }
 
-  broadcast(message) {
+  // excludePeerId lets the host relay a client's message to everyone else
+  // without echoing it back to whoever sent it.
+  broadcast(message, excludePeerId = null) {
     if (this.isHost) {
       for (const [peerId, conn] of this.connections) {
+        if (peerId === excludePeerId) continue
         if (conn && (conn.open || conn._open)) {
           try {
             conn.send(message)
