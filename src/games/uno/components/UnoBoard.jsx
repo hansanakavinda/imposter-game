@@ -2,7 +2,6 @@ import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import {
   RotateCw,
   RotateCcw,
-  AlertCircle,
   Sparkles,
   Check,
   ArrowRight,
@@ -12,7 +11,6 @@ import {
   Flame,
   ArrowUpDown,
   Settings,
-  AlertTriangle,
   Eye,
 } from 'lucide-react'
 import UnoCard from './UnoCard'
@@ -21,6 +19,11 @@ import { COLOR_CONFIG, CARD_COLORS, getRankBadge } from '../constants/unoConstan
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
 import { getActivePlayers, findNextPlayerIndex } from '../utils/turnOrder'
 import useDrawAnimation from '../hooks/useDrawAnimation'
+import UnoDisconnectBanner from './board/UnoDisconnectBanner'
+import UnoSkipAlert from './board/UnoSkipAlert'
+import UnoStackBanner from './board/UnoStackBanner'
+import UnoActionToast from './board/UnoActionToast'
+import UnoFlyingCardsLayer from './board/UnoFlyingCardsLayer'
 import { playClickSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
@@ -180,41 +183,11 @@ export default function UnoBoard({
     <div className="w-full max-w-2xl mx-auto px-3 flex flex-col justify-between min-h-[88vh] select-none">
       {/* 1. Top Section: Header Bar & Turn Order Track */}
       <div className="w-full pt-1 pb-3">
-        {/* Disconnection Warning Banner (when connection lost during multiplayer match) */}
         {isMultiplayer && !isHost && connectionStatus === 'disconnected' && (
-          <div className="mb-2.5 p-2.5 rounded-2xl bg-red-950/90 border border-red-500/60 text-red-200 text-xs flex items-center justify-between shadow-lg shadow-red-950/60 max-w-lg mx-auto animate-pulse">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-              <div>
-                <div className="font-bold text-white text-xs leading-tight">Connection Lost</div>
-                <div className="text-[10px] text-red-300">Your hand and seat are preserved</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {onReconnect && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClickSound()
-                    onReconnect()
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-[11px] transition active:scale-95 cursor-pointer shadow-sm"
-                >
-                  Reconnect
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound()
-                  setIsSettingsOpen(true)
-                }}
-                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold transition cursor-pointer"
-              >
-                Menu
-              </button>
-            </div>
-          </div>
+          <UnoDisconnectBanner
+            onReconnect={onReconnect}
+            onOpenMenu={() => setIsSettingsOpen(true)}
+          />
         )}
 
         {/* Unified Top Utility Bar: Room Info, Direction Indicator, and Actions */}
@@ -442,79 +415,25 @@ export default function UnoBoard({
           </div>
         </div>
 
-        {/* Prominent Alert when a Skip Occurs */}
         {skippedInfo && (
-          <div className="mt-2 px-1">
-            {isMyTurnSkipped ? (
-              <div className="w-full max-w-lg mx-auto p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-red-950/95 via-red-900/90 to-red-950/95 border-2 border-red-500 shadow-xl shadow-red-950/60 flex items-center gap-3 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center text-xl flex-shrink-0 shadow-md border border-red-400">
-                  🚫
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-red-200 font-black text-xs uppercase tracking-wider">
-                      Turn Skipped!
-                    </span>
-                    {skippedInfo.cardsDrawn > 0 && (
-                      <span className="px-1.5 py-0.2 rounded bg-red-500 text-white font-black text-[10px]">
-                        +{skippedInfo.cardsDrawn} CARDS
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-white font-semibold leading-tight mt-0.5">
-                    <strong className="text-amber-300">{skippedInfo.playedByName}</strong> played{' '}
-                    {skippedInfo.cardType === 'draw2'
-                      ? 'a +2'
-                      : skippedInfo.cardType === 'wild4'
-                      ? 'a Wild +4'
-                      : skippedInfo.cardType === 'reverse'
-                      ? 'a Reverse'
-                      : 'a Skip'} card!{' '}
-                    {skippedInfo.cardsDrawn > 0
-                      ? `You drew ${skippedInfo.cardsDrawn} cards and your turn was skipped.`
-                      : 'Your turn was skipped and passed to the next player.'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full max-w-lg mx-auto px-3 py-1.5 rounded-xl bg-zinc-900/95 border border-red-500/50 text-xs font-semibold text-zinc-200 shadow-md flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-xs flex-shrink-0">
-                  🚫
-                </span>
-                <span className="truncate">
-                  <strong className="text-white">{skippedInfo.playedByName}</strong> skipped{' '}
-                  <strong className="text-red-400">{skippedInfo.playerName}</strong>
-                  {skippedInfo.cardsDrawn > 0 ? ` (+${skippedInfo.cardsDrawn} cards)` : ''}!
-                  Turn passed to <strong className="text-blue-300">{activePlayer?.name}</strong>.
-                </span>
-              </div>
-            )}
-          </div>
+          <UnoSkipAlert
+            skippedInfo={skippedInfo}
+            isMyTurnSkipped={isMyTurnSkipped}
+            activePlayer={activePlayer}
+          />
         )}
       </div>
 
       {/* 2. Middle Section: The Table Arena */}
       <div className="relative my-auto flex flex-col items-center justify-center py-4 mt-1 sm:mt-2">
-        {/* Active Card Stack Warning */}
         {pendingDrawCount > 0 && (
-          <div className="mb-4 px-4 py-2 rounded-2xl bg-gradient-to-r from-red-600 via-amber-500 to-red-600 text-white shadow-xl shadow-red-950/70 border-2 border-amber-300 flex items-center gap-2.5 animate-bounce max-w-sm mx-auto">
-            <Flame className="w-5 h-5 text-amber-200 fill-amber-300 animate-pulse flex-shrink-0" />
-            <div className="text-left">
-              <div className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-                <span>Stack Penalty Active!</span>
-                <span className="px-2 py-0.5 rounded-full bg-black/40 text-amber-300 font-extrabold text-xs">
-                  +{pendingDrawCount} CARDS
-                </span>
-              </div>
-              <p className="text-[10px] text-amber-100 font-bold leading-tight">
-                {isCurrentTurnForMe
-                  ? myCanStack
-                    ? `Play a ${pendingStackType === 'draw2' ? '+2' : '+4'} to counter, or click Draw Pile to take +${pendingDrawCount} cards!`
-                    : `No counter in hand! Click the Draw Pile to draw +${pendingDrawCount} cards.`
-                  : `Waiting for ${activePlayer?.name} to counter or draw +${pendingDrawCount}...`}
-              </p>
-            </div>
-          </div>
+          <UnoStackBanner
+            pendingDrawCount={pendingDrawCount}
+            pendingStackType={pendingStackType}
+            isCurrentTurnForMe={isCurrentTurnForMe}
+            myCanStack={myCanStack}
+            activePlayer={activePlayer}
+          />
         )}
 
         {/* Center Card Play Area (Draw Pile & Discard Pile) */}
@@ -610,13 +529,7 @@ export default function UnoBoard({
           </div>
         </div>
 
-        {/* Action announcement toast */}
-        {actionMessage && (
-          <div className="mt-4 px-4 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 text-xs font-medium text-zinc-300 shadow-md flex items-center gap-1.5 animate-fadeIn">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-            <span>{actionMessage}</span>
-          </div>
-        )}
+        {actionMessage && <UnoActionToast actionMessage={actionMessage} />}
       </div>
 
       {/* 3. Bottom Section: Player Hand & Controls */}
@@ -925,47 +838,7 @@ export default function UnoBoard({
         )}
       </div>
 
-      {/* Flying Cards Animation Layer: cards flying from Draw Pile down into the Hand */}
-      {flyingCards.length > 0 && (
-        <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-          {flyingCards.map((fc) => {
-            const isFlying = fc.phase === 'flying'
-            return (
-              <div
-                key={fc.animId}
-                className="absolute transition-all ease-out duration-500 will-change-transform"
-                style={{
-                  left: 0,
-                  top: 0,
-                  transform: isFlying
-                    ? `translate3d(${fc.targetX}px, ${fc.targetY}px, 0) scale(1) rotate(0deg)`
-                    : `translate3d(${fc.startX}px, ${fc.startY}px, 0) scale(0.65) rotate(-12deg)`,
-                  opacity: isFlying ? 1 : 0.9,
-                }}
-              >
-                <div
-                  className={`transition-transform duration-300 ${
-                    isFlying ? 'rotate-y-0' : 'rotate-y-180'
-                  }`}
-                  style={{ perspective: 600 }}
-                >
-                  <div className="relative shadow-2xl rounded-xl ring-4 ring-amber-400/90 shadow-amber-500/40">
-                    <UnoCard
-                      card={fc.card}
-                      isBack={!isFlying}
-                      size="md"
-                      isPlayable={false}
-                    />
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-zinc-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-0.5 whitespace-nowrap animate-bounce">
-                      <span>✨ DRAW</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {flyingCards.length > 0 && <UnoFlyingCardsLayer flyingCards={flyingCards} />}
 
       {/* In-Game Settings / Menu Modal */}
       <UnoSettingsModal
