@@ -1500,6 +1500,16 @@ export default function TankGame({
   // Active tank for local player
   const myTank = tanks.find((t) => t.slotId === mySlotId)
 
+  // The single source of truth for fire rate: a held crate weapon overrides the tank
+  // class. handleFireCannon gates on the same value, so the controls must not re-derive
+  // it independently.
+  const myTankConfig = TANK_TYPES[myTank?.tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
+  const heldCrateWeapon =
+    myTank?.weapon && myTank.weapon !== 'STANDARD' ? WEAPON_TYPES[myTank.weapon] : null
+  const effectiveFireCooldownMs = heldCrateWeapon
+    ? heldCrateWeapon.cooldownMs
+    : myTank?.cooldownMs || myTankConfig.cooldownMs
+
   return (
     <div className="w-full flex flex-col items-center justify-center select-none">
       {/* 1. Lobby Phase */}
@@ -1581,6 +1591,7 @@ export default function TankGame({
               onFire={handleFireCannon}
               onPing={handleTriggerRadarPing}
               activeWeapon={myTank?.weapon || 'STANDARD'}
+              fireCooldownMs={effectiveFireCooldownMs}
               hasShield={!!myTank?.shield}
               tankType={myTank?.tankType || DEFAULT_TANK_TYPE}
               isAlive={myTank?.isAlive ?? true}

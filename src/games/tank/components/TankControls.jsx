@@ -20,6 +20,7 @@ export default function TankControls({
   onFire,
   onPing,
   activeWeapon = 'STANDARD',
+  fireCooldownMs = null,
   hasShield = false,
   tankType = DEFAULT_TANK_TYPE,
   isAlive = true,
@@ -58,14 +59,19 @@ export default function TankControls({
   const onFireRef = useRef(onFire)
   const onAimChangeRef = useRef(onAimChange)
   const onInputChangeRef = useRef(onInputChange)
-  const weaponCooldownRef = useRef(currentWeapon.cooldownMs)
+  /**
+   * The rate the simulation will actually honour. TankGame derives it from the tank
+   * class, or the crate weapon when one is held - reading WEAPON_TYPES here instead
+   * would throttle a fast class such as Specter to the STANDARD shell's rate.
+   */
+  const effectiveCooldownMs = fireCooldownMs ?? currentWeapon.cooldownMs
+  const weaponCooldownRef = useRef(effectiveCooldownMs)
 
   useEffect(() => {
     onFireRef.current = onFire
     onAimChangeRef.current = onAimChange
     onInputChangeRef.current = onInputChange
-    weaponCooldownRef.current = currentWeapon.cooldownMs
-  }, [onFire, onAimChange, onInputChange, currentWeapon.cooldownMs])
+  }, [onFire, onAimChange, onInputChange])
 
   // -------------------------------------------------------------
   // Top Zone: Floating Movement Joystick State & Handlers
@@ -208,10 +214,9 @@ export default function TankControls({
     }
   }, [])
 
-  const startAimFireLoop = useCallback(() => {
+  const startAimFireLoop = useCallback((immediate = true) => {
     if (aimFireTimerRef.current) return
-    // Immediate first fire shot
-    onFireRef.current?.()
+    if (immediate) onFireRef.current?.()
 
     aimFireTimerRef.current = setInterval(() => {
       onFireRef.current?.()
@@ -224,6 +229,17 @@ export default function TankControls({
       aimFireTimerRef.current = null
     }
   }, [])
+
+  // Picking up a crate weapon mid-hold changes the rate; re-arm the interval so the
+  // new cadence takes effect without the player having to lift their thumb.
+  useEffect(() => {
+    weaponCooldownRef.current = effectiveCooldownMs
+    if (aimFireTimerRef.current) {
+      clearInterval(aimFireTimerRef.current)
+      aimFireTimerRef.current = null
+      startAimFireLoop(false)
+    }
+  }, [effectiveCooldownMs, startAimFireLoop])
 
   const handleAimPointerDown = (e) => {
     if (!isAlive || aimPointerIdRef.current !== null) return
