@@ -1,127 +1,23 @@
 import { Peer } from 'peerjs'
+import {
+  preloadIceConfig,
+  getIceConfig,
+  generateRoomCode,
+  createPeerIdFormatter,
+} from '../../../services/peerConfig'
 
-// Prefix to prevent collisions on the public PeerJS broker
+// Prefix namespaces UNO rooms on the shared public PeerJS broker
 const PEER_PREFIX = 'party-arcade-uno-v1-'
 
-/**
- * Dynamic cache for API-fetched ICE servers
- */
-let dynamicIceConfig = null
+/** Format a human-readable room code into a global Peer ID */
+export const formatPeerId = createPeerIdFormatter(PEER_PREFIX)
+
+// Re-exported so UnoGame keeps a single import site for its networking needs
+export { preloadIceConfig, getIceConfig, generateRoomCode }
 
 /**
- * Preload ICE configuration.
- * 1. First tries the secure serverless endpoint /api/turn.
- * 2. Falls back to direct REST fetch if VITE_METERED_DOMAIN & VITE_METERED_API_KEY exist.
- */
-export async function preloadIceConfig() {
-  if (dynamicIceConfig) return dynamicIceConfig
-
-  // 1. Fetch from secure serverless route /api/turn
-  try {
-    const res = await fetch('/api/turn')
-    if (res.ok) {
-      const data = await res.json()
-      if (data && (Array.isArray(data.iceServers) || Array.isArray(data))) {
-        const servers = Array.isArray(data.iceServers) ? data.iceServers : data
-        if (servers.length > 0) {
-          dynamicIceConfig = {
-            iceServers: servers,
-            iceCandidatePoolSize: 10,
-          }
-          return dynamicIceConfig
-        }
-      }
-    }
-  } catch {
-    // /api/turn unavailable, continue to fallbacks
-  }
-
-  // 2. Direct REST fetch if client env vars are provided
-  const domain = import.meta.env.VITE_METERED_DOMAIN
-  const apiKey = import.meta.env.VITE_METERED_API_KEY
-
-  if (domain && apiKey && !dynamicIceConfig) {
-    try {
-      const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
-      const res = await fetch(`https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey.trim()}`)
-      if (res.ok) {
-        const servers = await res.json()
-        dynamicIceConfig = {
-          iceServers: Array.isArray(servers) ? servers : [servers],
-          iceCandidatePoolSize: 10,
-        }
-        return dynamicIceConfig
-      }
-    } catch (e) {
-      console.warn('[Network] Dynamic TURN fetch failed, falling back:', e)
-    }
-  }
-
-  return getIceConfig()
-}
-
-/**
- * Build ICE servers configuration.
- * Uses Metered TURN credentials from environment variables if present,
- * plus Google STUN and Metered STUN servers.
- */
-export function getIceConfig() {
-  if (dynamicIceConfig) {
-    return dynamicIceConfig
-  }
-
-  const meteredUser = import.meta.env.VITE_METERED_USERNAME
-  const meteredCred = import.meta.env.VITE_METERED_CREDENTIAL
-
-  const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.relay.metered.ca:80' },
-  ]
-
-  if (meteredUser && meteredCred) {
-    const user = meteredUser.trim()
-    const cred = meteredCred.trim()
-    iceServers.push(
-      {
-        urls: 'turn:global.relay.metered.ca:80',
-        username: user,
-        credential: cred,
-      },
-      {
-        urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-        username: user,
-        credential: cred,
-      },
-      {
-        urls: 'turn:global.relay.metered.ca:443',
-        username: user,
-        credential: cred,
-      },
-      {
-        urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-        username: user,
-        credential: cred,
-      }
-    )
-  }
-
-  return {
-    iceServers,
-    iceCandidatePoolSize: 10,
-  }
-}
-
-/**
- * Format a human-readable room code into a global Peer ID
- */
-export function formatPeerId(roomCode) {
-  return `${PEER_PREFIX}${roomCode.trim().toLowerCase()}`
-}
-
-/**
- * Persistent tab session ID for reconnects
+ * Persistent tab session ID, used to reclaim a seat after a refresh.
+ * Deliberately sessionStorage: a second tab is a different player.
  */
 export function getClientSessionId() {
   if (typeof window === 'undefined') return ''
@@ -135,18 +31,6 @@ export function getClientSessionId() {
   } catch {
     return ''
   }
-}
-
-/**
- * Generate a random 4-character uppercase alphanumeric room code
- */
-export function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // Exclude ambiguous chars like I, 1, O, 0
-  let code = ''
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return code
 }
 
 /**

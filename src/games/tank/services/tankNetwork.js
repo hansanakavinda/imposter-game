@@ -1,20 +1,19 @@
 import { Peer } from 'peerjs'
-import { preloadIceConfig, getIceConfig } from '../../uno/services/unoNetwork'
+import {
+  preloadIceConfig,
+  getIceConfig,
+  generateRoomCode,
+  createPeerIdFormatter,
+} from '../../../services/peerConfig'
 
+// Prefix namespaces Tank rooms on the shared public PeerJS broker
 const PEER_PREFIX = 'party-arcade-tank-v1-'
 
-export function formatTankPeerId(roomCode) {
-  return `${PEER_PREFIX}${roomCode.trim().toLowerCase()}`
-}
+/** Format a human-readable room code into a global Peer ID */
+export const formatTankPeerId = createPeerIdFormatter(PEER_PREFIX)
 
-export function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let result = ''
-  for (let i = 0; i < 4; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
-}
+// Re-exported so TankGame keeps a single import site for its networking needs
+export { generateRoomCode }
 
 /**
  * Tank Multiplayer Network Controller
