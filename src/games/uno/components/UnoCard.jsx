@@ -1,7 +1,54 @@
 import React from 'react'
 import { CARD_COLORS, CARD_TYPES, COLOR_CONFIG } from '../constants/unoConstants'
+import CardGlyph from './board/glyphs'
+import { FOCUS, cx } from '../../../components/ui/tokens'
 
-export default function UnoCard({
+/**
+ * One UNO card.
+ *
+ * The face is the game's whole visual identity, so it is built the way a real
+ * card is: a flat field of one colour, a white frame printed inside the edge,
+ * the tilted oval, and the value repeated small in two opposite corners so it
+ * still reads when the hand is shingled and only the left edge shows.
+ *
+ * Everything that used to be spent on filters is gone -- there was a blur-xl
+ * shine and three drop-shadows on *every card in hand*, which is what made a
+ * large hand expensive to paint on a phone. Depth now comes from the same
+ * lamp rule as the rest of the app: a warm highlight on the top edge, a shadow
+ * below, and the card pressing into the table when you touch it.
+ */
+
+/**
+ * The oval is deliberately wider than it is tall -- a card is 2:3, so equal
+ * percentages of width and height give you a circle, which is what this used
+ * to draw. The numeral fills it rather than floating in it.
+ */
+const SIZES = {
+  sm: { box: 'w-11 h-16 rounded-well', index: 'text-nano', value: 'text-sm', glyph: 'w-3.5 h-3.5' },
+  md: { box: 'w-16 h-24 rounded-well', index: 'text-micro', value: 'text-2xl', glyph: 'w-6 h-6' },
+  lg: { box: 'w-20 h-30 rounded-object', index: 'text-mini', value: 'text-3xl', glyph: 'w-7 h-7' },
+  xl: { box: 'w-24 h-36 rounded-object', index: 'text-sm', value: 'text-4xl', glyph: 'w-9 h-9' },
+}
+
+/** The wheel on a wild: the four colours, in play order, as one object. */
+function ColourWheel({ className }) {
+  return (
+    <span
+      className={cx(
+        'grid grid-cols-2 grid-rows-2 overflow-hidden rounded-full',
+        'border-2 border-card-face/80',
+        className
+      )}
+    >
+      <span className="bg-card-red" />
+      <span className="bg-card-blue" />
+      <span className="bg-card-yellow" />
+      <span className="bg-card-green" />
+    </span>
+  )
+}
+
+function UnoCard({
   card,
   isBack = false,
   isPlayable = true,
@@ -11,29 +58,27 @@ export default function UnoCard({
   style = {},
   activeColor = null,
 }) {
-  const sizeClasses = {
-    sm: 'w-12 h-18 text-xs rounded-lg',
-    md: 'w-16 h-24 sm:w-20 sm:h-30 text-base rounded-xl',
-    lg: 'w-24 h-36 sm:w-28 sm:h-42 text-xl rounded-2xl',
-  }[size] || 'w-16 h-24 rounded-xl'
+  const s = SIZES[size] || SIZES.md
 
-  // Card Back view (for opponents or draw pile)
+  // The back: the draw pile, an opponent's card, a card mid-flight.
   if (isBack) {
     return (
       <div
-        className={`relative select-none flex-shrink-0 bg-well border-2 border-white/20 shadow-lg flex items-center justify-center overflow-hidden transition-all duration-200 ${sizeClasses} ${className}`}
+        className={cx(
+          'relative select-none shrink-0 flex items-center justify-center overflow-hidden',
+          'bg-felt border border-edge-lit shadow-lift-1',
+          s.box,
+          className
+        )}
         style={style}
         onClick={onClick}
       >
-        {/* Outer border groove */}
-        <div className="absolute inset-1 rounded-md border border-white/10" />
-
-        {/* Central tilted red oval with UNO lettering */}
-        <div className="w-[85%] h-[55%] -rotate-25 bg-red-600 rounded-[50%] flex items-center justify-center shadow-md border-2 border-amber-400">
-          <span className="font-bold italic tracking-tighter text-amber-300 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] text-nano sm:text-xs">
+        <span className="absolute inset-1 rounded-[inherit] border border-lamp/10" />
+        <span className="w-[84%] h-[34%] -rotate-[22deg] rounded-[50%] bg-card-red border-2 border-card-yellow flex items-center justify-center">
+          <span className="font-display italic tracking-tight text-card-yellow text-micro">
             UNO
           </span>
-        </div>
+        </span>
       </div>
     )
   }
@@ -42,86 +87,104 @@ export default function UnoCard({
 
   const config = COLOR_CONFIG[card.color] || COLOR_CONFIG[CARD_COLORS.WILD]
   const isWild = card.color === CARD_COLORS.WILD
-  const chosenConfig =
-    isWild && activeColor && activeColor !== CARD_COLORS.WILD
-      ? COLOR_CONFIG[activeColor]
-      : null
+  // A wild that has had a colour named still shows its own face; the declared
+  // colour is a band across the foot, not a repaint, so you can still tell a
+  // wild from a real card of that colour.
+  const declared =
+    isWild && activeColor && activeColor !== CARD_COLORS.WILD ? COLOR_CONFIG[activeColor] : null
+  const live = Boolean(isPlayable && onClick)
+
+  const index = (
+    <CardGlyph
+      type={card.type}
+      label={card.label}
+      glyphClassName={cx('w-3.5 h-3.5', isWild ? 'text-card-face' : 'text-card-face')}
+      labelClassName={cx('font-display leading-none text-card-face', s.index)}
+    />
+  )
 
   return (
     <button
       type="button"
       onClick={(e) => {
-        if (!isPlayable || !onClick) return
+        if (!live) return
         e.stopPropagation()
-        onClick()
+        // The card hands itself back, so a caller can pass one stable handler
+        // for the whole hand instead of a fresh arrow per card -- which is
+        // what makes the memo below worth having.
+        onClick(card)
       }}
       aria-disabled={!isPlayable}
-      tabIndex={isPlayable ? 0 : -1}
+      aria-label={`${config.name} ${card.label}`}
+      tabIndex={live ? 0 : -1}
       style={style}
-      className={`relative select-none flex-shrink-0 border-2 border-white/80 shadow-md flex flex-col justify-between p-1.5 sm:p-2 overflow-hidden transition-all duration-200 group text-left touch-pan-x ${
-        config.bg
-      } ${sizeClasses} ${
-        isPlayable && onClick
-          ? 'cursor-pointer hover:-translate-y-3 hover:shadow-2xl ring-2 ring-white/60 active:scale-95'
-          : 'cursor-default'
-      } ${chosenConfig ? `ring-2 ${chosenConfig.ring}` : ''} ${className}`}
+      className={cx(
+        'relative select-none shrink-0 overflow-hidden text-left touch-pan-x',
+        'flex flex-col justify-between p-1.5',
+        'border border-black/25 shadow-lift-1 transition-transform duration-150',
+        config.bg,
+        s.box,
+        live
+          ? 'cursor-pointer hover:-translate-y-1.5 active:scale-[0.97] active:shadow-lift-0'
+          : 'cursor-default',
+        FOCUS,
+        className
+      )}
     >
-      {/* Top Left Mini Index */}
-      <div className="flex items-center gap-0.5 leading-none z-10">
-        <span className="font-bold text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] text-micro sm:text-sm">
-          {card.label}
-        </span>
-      </div>
+      {/* The printed frame. Real cards have one, and it is what stops a flat
+          colour field from reading as a coloured rectangle. */}
+      <span className="absolute inset-[3px] rounded-[inherit] border border-card-face/70 pointer-events-none" />
 
-      {/* Central Center Badge */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <span className="relative z-10 leading-none">{index}</span>
+
+      <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {isWild ? (
-          // 4-Color segmented wheel for Wild cards
-          <div className="w-[70%] h-[55%] -rotate-20 rounded-[50%] bg-well p-1 border-2 border-white/40 shadow-inner flex items-center justify-center">
-            <div className="w-full h-full rounded-[50%] overflow-hidden grid grid-cols-2 grid-rows-2">
-              <div className="bg-red-500" />
-              <div className="bg-blue-500" />
-              <div className="bg-amber-400" />
-              <div className="bg-emerald-500" />
-            </div>
+          // The wheel sizes off the card's height, not off this wrapper --
+          // a percentage width inside an auto-width flex child resolves to
+          // nothing, which is how it came out invisible.
+          <span className="relative h-[44%] aspect-square flex items-center justify-center">
+            <ColourWheel className="w-full h-full -rotate-[18deg]" />
             {card.type === CARD_TYPES.WILD_DRAW_FOUR && (
-              <span className="absolute font-bold text-white text-xs sm:text-base drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              <span
+                className={cx(
+                  'absolute font-display text-card-face',
+                  'drop-shadow-[0_1px_2px_rgb(0_0_0_/_0.6)]',
+                  s.value
+                )}
+              >
                 +4
               </span>
             )}
-          </div>
+          </span>
         ) : (
-          // Tilted White Oval for regular / action cards
-          <div className="w-[75%] h-[60%] -rotate-20 bg-white rounded-[50%] shadow-inner flex items-center justify-center">
-            <span
-              className={`font-bold tracking-tight leading-none text-base sm:text-2xl filter drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)] ${
-                config.text
-              }`}
-            >
-              {card.label}
-            </span>
-          </div>
+          <span className="w-[80%] h-[42%] -rotate-[18deg] rounded-[50%] bg-card-face flex items-center justify-center">
+            <CardGlyph
+              type={card.type}
+              label={card.label}
+              glyphClassName={cx(s.glyph, config.text, 'rotate-[18deg]')}
+              labelClassName={cx('font-display leading-none tracking-tight', s.value, config.text)}
+            />
+          </span>
         )}
-      </div>
+      </span>
 
-      {/* Bottom Right Mini Index (Upside Down) */}
-      <div className="flex items-center justify-end leading-none z-10 rotate-180">
-        <span className="font-bold text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] text-micro sm:text-sm">
-          {card.label}
-        </span>
-      </div>
+      <span className="relative z-10 flex justify-end leading-none rotate-180">{index}</span>
 
-      {/* Active Color Stripe for Wild Card */}
-      {chosenConfig && (
-        <div
-          className={`absolute bottom-0 inset-x-0 py-0.5 text-center text-nano sm:text-nano font-bold uppercase text-white shadow-md z-20 ${chosenConfig.bg}`}
+      {declared && (
+        <span
+          className={cx(
+            'absolute bottom-0 inset-x-0 z-20 py-0.5 text-center',
+            'text-nano font-bold uppercase text-table',
+            declared.bg
+          )}
         >
-          {chosenConfig.name}
-        </div>
+          {declared.name}
+        </span>
       )}
-
-      {/* Subtle shine highlight */}
-      <div className="absolute -top-10 -left-10 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
     </button>
   )
 }
+
+// The hand re-rendered in full every time any opponent's count changed. It is
+// the most-instanced component in the app, so this is the memo that matters.
+export default React.memo(UnoCard)

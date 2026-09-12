@@ -19,7 +19,13 @@ const EMPTY_ID_SET = new Set()
  * setState on an unmounted component -- the same class of defect as the
  * round-transition timers in bugs.md #7.
  */
-export default function useDrawAnimation({ handCards, drawPileRef, handTrayRef, onCardsDrawn }) {
+export default function useDrawAnimation({
+  handCards,
+  drawPileRef,
+  handTrayRef,
+  onCardsDrawn,
+  spacing,
+}) {
   const [flyingCards, setFlyingCards] = useState([])
   const [newlyDrawnCardIds, setNewlyDrawnCardIds] = useState(new Set())
 
@@ -32,6 +38,14 @@ export default function useDrawAnimation({ handCards, drawPileRef, handTrayRef, 
   useEffect(() => {
     onCardsDrawnRef.current = onCardsDrawn
   }, [onCardsDrawn])
+
+  // How far apart the tray is currently spacing its cards. Held in a ref so a
+  // resize cannot re-fire the draw effect -- the effect is triggered by cards
+  // appearing in the hand, and nothing else may trigger it.
+  const spacingRef = useRef(spacing)
+  useEffect(() => {
+    spacingRef.current = spacing
+  }, [spacing])
 
   const trackTimer = useCallback((id) => {
     flightTimersRef.current.add(id)
@@ -96,6 +110,7 @@ export default function useDrawAnimation({ handCards, drawPileRef, handTrayRef, 
       count: addedCards.length,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
+      spacing: spacingRef.current,
     })
 
     addedCards.forEach((card, index) => {

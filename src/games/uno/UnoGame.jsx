@@ -44,6 +44,21 @@ import {
   playUnoCallSound,
 } from '../../utils/sound'
 
+/**
+ * Replace a Set-valued piece of state only when its contents actually changed.
+ *
+ * hostBroadcastGameState ran `setMpUnoCalledPlayers(new Set(...))` on every
+ * accepted action, so a brand-new Set identity landed in props whether or not
+ * anyone had called UNO -- which invalidated both of UnoBoard's memos, every
+ * action, for nothing.
+ */
+function sameMembers(a, b) {
+  if (a === b) return true
+  if (!a || !b || a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
 /** The host is always player 0 in a multiplayer room. */
 const HOST_PLAYER_ID = 0
 
@@ -291,7 +306,10 @@ export default function UnoGame({
     setMpDirection(g.direction)
     setMpDrawPileCount(g.drawPile.length)
     setMpActionMessage(message)
-    setMpUnoCalledPlayers(new Set(g.unoCalledPlayers))
+    setMpUnoCalledPlayers((prev) => {
+      const next = new Set(g.unoCalledPlayers)
+      return sameMembers(prev, next) ? prev : next
+    })
     setMpHasDrawnCardThisTurn(g.hasDrawnThisTurn)
     setMpSkippedInfo(g.skippedInfo || null)
     setMpPendingDrawCount(g.pendingDrawCount || 0)
@@ -979,7 +997,7 @@ export default function UnoGame({
           setMpDrawPileCount(data.drawPileCount)
           setMpActionMessage(data.actionMessage)
           const unoSet = new Set(data.unoCalledPlayers || [])
-          setMpUnoCalledPlayers(unoSet)
+          setMpUnoCalledPlayers((prev) => (sameMembers(prev, unoSet) ? prev : unoSet))
           setMpHasDrawnCardThisTurn(data.hasDrawnThisTurn || false)
           if (myHandNow.length > 1) {
             setMpHasCalledUnoThisRound(false)

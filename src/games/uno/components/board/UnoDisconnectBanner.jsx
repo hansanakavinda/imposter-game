@@ -1,42 +1,46 @@
 import React from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { WifiOff } from 'lucide-react'
+import Button from '../../../../components/ui/Button'
 import { playClickSound } from '../../../../utils/sound'
 
 /** Shown to a client whose connection dropped mid-match. */
 export default function UnoDisconnectBanner({ onReconnect, onOpenMenu }) {
   return (
-    <div className="mb-2.5 p-2.5 rounded-2xl bg-red-950/90 border border-red-500/60 text-red-200 text-xs flex items-center justify-between shadow-lg shadow-red-950/60 max-w-lg mx-auto animate-pulse">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-        <div>
-          <div className="font-bold text-white text-xs leading-tight">Connection Lost</div>
-          <div className="text-nano text-red-300">Your hand and seat are preserved</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5">
+    <div className="relative z-10 mb-2 p-2.5 rounded-object bg-danger/10 border border-danger/40 flex items-center justify-between gap-3">
+      <span className="flex items-center gap-2 min-w-0">
+        <WifiOff className="w-4 h-4 text-danger shrink-0" />
+        <span className="min-w-0">
+          <span className="block text-mini font-bold text-danger leading-tight">
+            Lost the host
+          </span>
+          <span className="block text-nano text-ink-muted">Your hand and seat are kept</span>
+        </span>
+      </span>
+
+      <span className="flex items-center gap-1.5 shrink-0">
         {onReconnect && (
-          <button
-            type="button"
+          <Button
+            size="sm"
+            tone="danger"
             onClick={() => {
               playClickSound()
               onReconnect()
             }}
-            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-micro transition active:scale-95 cursor-pointer shadow-sm"
           >
             Reconnect
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
+          size="sm"
+          variant="secondary"
           onClick={() => {
             playClickSound()
             onOpenMenu()
           }}
-          className="px-2 py-1 rounded-lg bg-felt-high hover:bg-felt-high text-ink text-micro font-semibold transition cursor-pointer"
         >
           Menu
-        </button>
-      </div>
+        </Button>
+      </span>
     </div>
   )
 }

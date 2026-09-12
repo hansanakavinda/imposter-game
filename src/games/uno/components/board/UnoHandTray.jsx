@@ -1,69 +1,116 @@
-import React from 'react'
+import React, { useLayoutEffect, useRef, useState } from 'react'
 import UnoCard from '../UnoCard'
-import { canPlayCard } from '../../utils/deck'
+import { cx } from '../../../../components/ui/tokens'
 
-/** The player's hand, scrolled horizontally. */
-export default function UnoHandTray({
+/** Card width at size="lg", and the most a card may be covered by its neighbour. */
+const CARD_WIDTH = 80
+const MIN_STEP = 30
+const EDGE_PADDING = 16
+
+/**
+ * Your hand, shingled.
+ *
+ * It used to be a flat row with real gaps, which meant about four and a half
+ * of an opening seven fitted a phone -- you scrolled to see your own hand, and
+ * a whole toolbar of chevrons existed to help you do it. Cards overlap now, by
+ * whatever amount makes the hand fit, the way you would actually hold them.
+ * Each card still shows its left edge and corner index, so a covered card is
+ * identifiable, and the playable ones lift clear of the shingle.
+ *
+ * Past about ten cards the overlap hits its floor and the row scrolls -- but
+ * by then you are losing anyway.
+ */
+function UnoHandTray({
   handTrayRef,
   displayedHandCards,
   isCurrentTurnForMe,
-  topCard,
-  activeColor,
-  pendingDrawCount,
-  pendingStackType,
+  playableIds,
   newlyDrawnCardIds,
   flyingCards,
   onPlayCard,
   onWheel,
+  onStepChange,
 }) {
+  const measureRef = useRef(null)
+  const [width, setWidth] = useState(0)
+
+  useLayoutEffect(() => {
+    const el = measureRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(el)
+    setWidth(el.getBoundingClientRect().width)
+    return () => observer.disconnect()
+  }, [])
+
+  const count = displayedHandCards.length
+  // How far apart the cards sit. Full width while they fit, then tightening,
+  // never past the point where a corner index would be covered.
+  const available = Math.max(width - EDGE_PADDING * 2 - CARD_WIDTH, 0)
+  const step =
+    count > 1 ? Math.max(MIN_STEP, Math.min(CARD_WIDTH + 6, available / (count - 1))) : CARD_WIDTH
+
+  // The draw animation lands cards on these same slots.
+  const reportedStep = useRef(null)
+  useLayoutEffect(() => {
+    if (onStepChange && reportedStep.current !== step) {
+      reportedStep.current = step
+      onStepChange(step)
+    }
+  }, [step, onStepChange])
+
   return (
-    <div
-      ref={handTrayRef}
-      onWheel={onWheel}
-      className="w-full overflow-x-auto pb-2 pt-4 touch-pan-x overscroll-x-contain select-none scroll-smooth"
-    >
-      <div className="flex items-center gap-1.5 sm:gap-2 px-1 min-w-max">
-        {displayedHandCards.map((card) => {
-          const isPlayable =
-            isCurrentTurnForMe &&
-            canPlayCard(card, topCard, activeColor, pendingDrawCount, pendingStackType)
-          const isNewlyDrawn = newlyDrawnCardIds.has(card.id)
-          const isFlying = flyingCards.some((fc) => fc.card.id === card.id)
+    <div ref={measureRef} className="w-full">
+      <div
+        ref={handTrayRef}
+        onWheel={onWheel}
+        className="w-full overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain select-none scroll-smooth pt-5 pb-1"
+      >
+        <div className="flex items-end min-w-max mx-auto px-4">
+          {displayedHandCards.map((card, index) => {
+            const isPlayable = isCurrentTurnForMe && playableIds.has(card.id)
+            const isNewlyDrawn = newlyDrawnCardIds.has(card.id)
+            const isFlying = flyingCards.some((fc) => fc.card.id === card.id)
 
-          return (
-            <div
-              key={card.id}
-              className={`relative transition-all duration-300 flex-shrink-0 touch-pan-x ${
-                isFlying ? 'opacity-0 scale-75' : 'opacity-100 scale-100'
-              }`}
-            >
-              {/* Bouncing "NEW" pill badge above freshly drawn cards */}
-              {isNewlyDrawn && !isFlying && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-table font-bold text-nano sm:text-nano uppercase tracking-wider shadow-lg border border-amber-300 flex items-center gap-0.5 animate-bounce pointer-events-none whitespace-nowrap">
-                  <span>✨</span>
-                  <span>NEW</span>
-                </div>
-              )}
+            return (
+              <div
+                key={card.id}
+                className={cx(
+                  'relative shrink-0 touch-pan-x transition-transform duration-200',
+                  isFlying && 'opacity-0',
+                  isPlayable && '-translate-y-2.5'
+                )}
+                style={{
+                  marginLeft: index === 0 ? 0 : step - CARD_WIDTH,
+                  // A lifted card has to sit above the one covering it.
+                  zIndex: isPlayable || isNewlyDrawn ? 40 + index : index,
+                }}
+              >
+                {isNewlyDrawn && !isFlying && (
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-50 px-1.5 py-px rounded-full bg-lamp text-table font-bold text-nano uppercase pointer-events-none">
+                    New
+                  </span>
+                )}
 
-              <UnoCard
-                card={card}
-                size="md"
-                isPlayable={isPlayable}
-                onClick={isPlayable ? () => onPlayCard(card) : undefined}
-                className={
-                  isNewlyDrawn && !isFlying
-                    ? 'ring-3 ring-amber-400 shadow-xl shadow-amber-500/40 -translate-y-1'
-                    : isPlayable
-                    ? 'ring-2 ring-white/90 shadow-xl -translate-y-1 sm:-translate-y-2'
-                    : isCurrentTurnForMe
-                    ? 'opacity-40 grayscale-[25%]'
-                    : 'opacity-95 shadow-md'
-                }
-              />
-            </div>
-          )
-        })}
+                <UnoCard
+                  card={card}
+                  size="lg"
+                  isPlayable={isPlayable}
+                  onClick={isPlayable ? onPlayCard : undefined}
+                  className={cx(
+                    isNewlyDrawn && !isFlying && 'ring-2 ring-lamp',
+                    isPlayable && 'shadow-lift-2',
+                    !isPlayable && isCurrentTurnForMe && 'opacity-70',
+                    !isPlayable && !isCurrentTurnForMe && 'opacity-90'
+                  )}
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
 }
+
+export default React.memo(UnoHandTray)

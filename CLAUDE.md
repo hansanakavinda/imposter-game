@@ -97,6 +97,17 @@ headings and game names, `font-sans` (Hanken Grotesk) for everything else, `font
 (DM Mono) for room codes, timers, counts, HP and scores. `font-black` and `font-extrabold`
 are not used. Radii are `rounded-well` / `-object` / `-slab`, and nothing else.
 
+UNO extends the lamp rule by exactly one step, and it is the only game that extends it:
+**the light over the board burns the colour of the card in play** (`.uno-table-light`,
+`--live` set from `COLOR_CONFIG[...].hex`). That is why UNO's four card colours are real
+tokens — `--color-card-red` / `-yellow` / `-green` / `-blue` / `-face`. They are the one
+place saturated colour belongs to a game's *material* rather than its ink. Keep the hex in
+`COLOR_CONFIG` in step with the token: a custom property cannot be read back as a class.
+
+The light is never the only signal. Red/green is UNO's classic accessibility failure and
+an ambient colour makes it worse, so the live colour is always also named in words beside
+the discard, and every card keeps its numeral plus two corner indices.
+
 The sub-14px range is `text-nano` (10px) / `text-micro` (11px) / `text-mini` (12px). 10px
 is the floor. Do not reach for an arbitrary `text-[9px]`; there used to be 118 of those.
 
@@ -125,7 +136,7 @@ closures inside network callbacks and timers. Keep it that way.
 
 ## Before claiming a change works
 
-Run `npm test` (235 tests) and `npm run lint`. The engine tests exist because the UNO
+Run `npm test` (290 tests) and `npm run lint`. The engine tests exist because the UNO
 rules and the Tank collision maths are easy to break silently.
 
 Where the coverage is:
@@ -136,8 +147,13 @@ Where the coverage is:
 | `uno/engine/hostEngine.js` | 63 |
 | `uno/services/unoHandshake.js` | 20 |
 | `uno/utils/unoAi.js` | 23 |
+| `uno/utils/turnOrder.js` | 16 |
+| `uno/utils/drawFlightGeometry.js` | 10 |
 | `tank/engine/tankSimulation.js` | 53 |
 | `tank/utils/tankPhysics.js` | 33 |
+| `tank/utils/arenaGeometry.js` | 14 |
+| `tank/utils/joystickMath.js` | 12 |
+| `tank/utils/tankHud.js` | 3 |
 
 The notable gap is `uno/hooks/useUnoAiGame.js` — solo-vs-AI holds its state in React,
 so it cannot be tested without a renderer. Treat changes there as unverified and play a
