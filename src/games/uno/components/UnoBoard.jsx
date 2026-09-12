@@ -19,6 +19,7 @@ import UnoCard from './UnoCard'
 import UnoSettingsModal from './UnoSettingsModal'
 import { COLOR_CONFIG, CARD_COLORS, getRankBadge } from '../constants/unoConstants'
 import { canPlayCard, sortCardsByColor, sortCardsByNumber } from '../utils/deck'
+import { getActivePlayers, findNextPlayerIndex } from '../utils/turnOrder'
 import { playClickSound, playCardDrawSound } from '../../../utils/sound'
 
 const EMPTY_HAND = []
@@ -66,34 +67,19 @@ export default function UnoBoard({
   const activePlayer =
     players[currentPlayerIndex] || players.find((p) => p.id === currentPlayerIndex) || players[0]
 
-  // Detect finished players
-  const isFinishedPlayer = (p) =>
-    Boolean(
-      p.rank ||
-        rankings.some((r) => r.playerId === p.id) ||
-        ((p.hand ? p.hand.length : p.cardCount) === 0 && (p.rank || rankings.length > 0))
-    )
-
+  // Both memos can now list exactly what they use: turnOrder's helpers are
+  // module-level functions, not closures redefined on every render. The two
+  // exhaustive-deps suppressions that used to sit here are gone rather than
+  // carried across.
   const activePlayers = useMemo(
-    () => players.filter((p) => !isFinishedPlayer(p)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => getActivePlayers(players, rankings),
     [players, rankings]
   )
 
-  // Find next active player in the direction
-  const nextPlayerIndex = useMemo(() => {
-    if (players.length === 0) return 0
-    if (activePlayers.length <= 1) return currentPlayerIndex
-    let curr = currentPlayerIndex
-    for (let i = 0; i < players.length; i++) {
-      curr = (curr + direction * 1 + players.length * 100) % players.length
-      if (!isFinishedPlayer(players[curr])) {
-        return curr
-      }
-    }
-    return (currentPlayerIndex + direction * 1 + players.length * 100) % players.length
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players, currentPlayerIndex, direction, activePlayers])
+  const nextPlayerIndex = useMemo(
+    () => findNextPlayerIndex(players, currentPlayerIndex, direction, rankings),
+    [players, currentPlayerIndex, direction, rankings]
+  )
 
   const nextPlayer = players[nextPlayerIndex]
 
@@ -173,6 +159,11 @@ export default function UnoBoard({
         clearTimeout(newCardHighlightTimerRef.current)
         newCardHighlightTimerRef.current = null
       }
+      // Clearing the NEW badges when the hand empties is a genuine
+      // synchronisation with a prop change, not derivable during render.
+      // Suppressed narrowly and with the rule's real oxlint name -- a
+      // `react-hooks/`-prefixed name silences the entire file (see commit).
+      // eslint-disable-next-line react/set-state-in-effect
       setNewlyDrawnCardIds(new Set())
       return
     }
