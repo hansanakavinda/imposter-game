@@ -8,6 +8,7 @@ import {
   TANK_MAX_HP,
 } from '../constants/tankConstants'
 import { isTankHiddenFrom } from '../utils/tankPhysics'
+import { getCanvasSize, getWorldTransform, pointerToWorld } from '../utils/arenaGeometry'
 
 export default function TankCanvas({
   tanks,
@@ -37,8 +38,7 @@ export default function TankCanvas({
 
     let animationFrameId
     const startTime = performance.now()
-    const canvasWidth = isPortrait ? 650 : ARENA_WIDTH
-    const canvasHeight = isPortrait ? 1000 : ARENA_HEIGHT
+    const { width: canvasWidth, height: canvasHeight } = getCanvasSize(isPortrait)
 
     const render = (currentTime) => {
       const elapsed = currentTime - startTime
@@ -49,11 +49,10 @@ export default function TankCanvas({
 
       // Apply 90° portrait transform for arena world objects
       ctx.save()
-      if (isPortrait) {
-        // Transform from world space (1000x650) to portrait canvas (650x1000)
-        // Xs = y, Ys = 1000 - x
-        ctx.translate(0, 1000)
-        ctx.rotate(-Math.PI / 2)
+      const worldTransform = getWorldTransform(isPortrait)
+      if (worldTransform) {
+        ctx.translate(worldTransform.translateX, worldTransform.translateY)
+        ctx.rotate(worldTransform.rotate)
       }
 
       // Subtle tactical grid
@@ -767,36 +766,14 @@ export default function TankCanvas({
     isPortrait,
   ])
 
-  // Mouse / Touch event coordinates translated into virtual (1000x650) space
+  // Mouse / Touch event coordinates translated into virtual (1000x650) space.
+  // The inverse transform lives in arenaGeometry next to its forward twin.
   const getArenaCoords = (e) => {
     const canvas = canvasRef.current
     if (!canvas) return { x: 0, y: 0 }
-    const rect = canvas.getBoundingClientRect()
     const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0
     const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0
-
-    const canvasW = isPortrait ? 650 : ARENA_WIDTH
-    const canvasH = isPortrait ? 1000 : ARENA_HEIGHT
-
-    const scaleX = canvasW / rect.width
-    const scaleY = canvasH / rect.height
-
-    const screenX = (clientX - rect.left) * scaleX
-    const screenY = (clientY - rect.top) * scaleY
-
-    if (isPortrait) {
-      // Inverse of: Xs = y, Ys = 1000 - x
-      // => y = Xs, x = 1000 - Ys
-      return {
-        x: Math.max(0, Math.min(ARENA_WIDTH, 1000 - screenY)),
-        y: Math.max(0, Math.min(ARENA_HEIGHT, screenX)),
-      }
-    }
-
-    return {
-      x: Math.max(0, Math.min(ARENA_WIDTH, screenX)),
-      y: Math.max(0, Math.min(ARENA_HEIGHT, screenY)),
-    }
+    return pointerToWorld(clientX, clientY, canvas.getBoundingClientRect(), isPortrait)
   }
 
   const handlePointerMove = (e) => {
@@ -827,8 +804,8 @@ export default function TankCanvas({
     >
       <canvas
         ref={canvasRef}
-        width={isPortrait ? 650 : ARENA_WIDTH}
-        height={isPortrait ? 1000 : ARENA_HEIGHT}
+        width={getCanvasSize(isPortrait).width}
+        height={getCanvasSize(isPortrait).height}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onContextMenu={(e) => {
