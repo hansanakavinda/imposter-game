@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react'
 import confetti from 'canvas-confetti'
 import { ArrowRight, RotateCcw } from 'lucide-react'
-import { playVictorySound, playClickSound } from '../utils/sound'
+import { playVictorySound, playClickSound } from '../../../utils/sound'
 
 export default function RevealScreen({
   players,

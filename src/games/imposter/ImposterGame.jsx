@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import SetupScreen from '../../components/SetupScreen'
-import PassCardScreen from '../../components/PassCardScreen'
-import DiscussionScreen from '../../components/DiscussionScreen'
-import RevealScreen from '../../components/RevealScreen'
-import RulesModal from '../../components/RulesModal'
-import { getRandomWordPair } from '../../data/words'
-import { assignPlayerThemes, shuffleArray } from '../../data/cardThemes'
+import SetupScreen from './components/SetupScreen'
+import PassCardScreen from './components/PassCardScreen'
+import DiscussionScreen from './components/DiscussionScreen'
+import RevealScreen from './components/RevealScreen'
+import RulesModal from './components/RulesModal'
+import { getRandomWordPair } from './data/words'
+import { assignPlayerThemes, shuffleArray } from './data/cardThemes'
 
 export default function ImposterGame({ onBackToMenu, isRulesOpen, onCloseRules }) {
   // Navigation & Screen State

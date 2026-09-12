@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Play, Pause, RotateCcw } from 'lucide-react'
-import { playClickSound, playTickSound } from '../utils/sound'
+import { playClickSound, playTickSound } from '../../../utils/sound'
 
 export default function DiscussionScreen({
   players,

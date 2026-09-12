@@ -4,7 +4,7 @@ import GameHub from './components/GameHub'
 import ImposterGame from './games/imposter/ImposterGame'
 import UnoGame from './games/uno/UnoGame'
 import TankGame from './games/tank/TankGame'
-import RulesModal from './components/RulesModal'
+import RulesModal from './games/imposter/components/RulesModal'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 

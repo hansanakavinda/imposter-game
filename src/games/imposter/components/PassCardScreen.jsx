@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Eye, EyeOff, ArrowRight } from 'lucide-react'
-import { playCardFlipSound, playRevealSound, playClickSound } from '../utils/sound'
+import { playCardFlipSound, playRevealSound, playClickSound } from '../../../utils/sound'
 
 export default function PassCardScreen({
   players,

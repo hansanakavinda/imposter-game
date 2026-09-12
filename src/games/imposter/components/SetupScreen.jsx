@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Plus, Minus, ArrowRight, ArrowLeft } from 'lucide-react'
 import { CATEGORIES } from '../data/words'
-import { playClickSound } from '../utils/sound'
+import { playClickSound } from '../../../utils/sound'
 
 export default function SetupScreen({ onStartGame, onBackToMenu }) {
   const [playerCount, setPlayerCount] = useState(4)
