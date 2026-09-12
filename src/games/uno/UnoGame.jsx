@@ -13,9 +13,27 @@ import {
   createUnoDeck,
   dealHands,
   canPlayCard,
-  shuffleDeck,
   getNextActivePlayerIndex,
 } from './utils/deck'
+import {
+  createHostGame,
+  startMatch,
+  resetToLobby,
+  isMatchInProgress,
+  sanitizePlayers,
+  handOf,
+  drawCardsFromPile,
+  playCard,
+  drawCard,
+  passTurn,
+  callUno,
+  catchUno,
+  submitPenaltyCard,
+  finalizeCatchPenalty,
+  forceResolvePenalty,
+  PENALTY_TIMEOUT_MS,
+  SOUNDS,
+} from './engine/hostEngine'
 import { getAiMove, chooseAiColor, chooseAiCardToGive } from './utils/unoAi'
 import {
   initHostPeer,
@@ -30,6 +48,9 @@ import {
   playActionCardSound,
   playUnoCallSound,
 } from '../../utils/sound'
+
+/** The host is always player 0 in a multiplayer room. */
+const HOST_PLAYER_ID = 0
 
 const setUrlRoomCode = (code) => {
   if (typeof window !== 'undefined' && window.history) {
@@ -215,6 +236,8 @@ export default function UnoGame({
   const clientNetworkRef = useRef(null)
   const onClientDataRef = useRef(null)
 
+  const runHostActionRef = useRef(null)
+
   const isDrawingMpRef = useRef(false)
   useEffect(() => {
     if (!mpHasDrawnCardThisTurn) {
@@ -227,41 +250,6 @@ export default function UnoGame({
 
   const showRules = isRulesOpen !== undefined ? isRulesOpen : internalRulesOpen
   const handleCloseRules = onCloseRules || (() => setInternalRulesOpen(false))
-
-  // ==========================================
-  // SHARED CARD ENGINE HELPERS
-  // ==========================================
-
-  const drawCardsFromPile = useCallback(
-    (count, currentDrawPile, currentDiscardPile) => {
-      let dPile = [...currentDrawPile]
-      let discPile = [...currentDiscardPile]
-      const drawnCards = []
-
-      for (let i = 0; i < count; i++) {
-        if (dPile.length === 0) {
-          if (discPile.length <= 1) break
-          const top = discPile[discPile.length - 1]
-          const recycled = discPile.slice(0, -1).map((c) => ({
-            ...c,
-            color:
-              c.type === CARD_TYPES.WILD || c.type === CARD_TYPES.WILD_DRAW_FOUR
-                ? CARD_COLORS.WILD
-                : c.color,
-          }))
-          dPile = shuffleDeck(recycled)
-          discPile = [top]
-        }
-
-        if (dPile.length > 0) {
-          drawnCards.push(dPile.pop())
-        }
-      }
-
-      return { drawnCards, newDrawPile: dPile, newDiscardPile: discPile }
-    },
-    []
-  )
 
   // Clean up WebRTC and timers on unmount
   useEffect(() => {
@@ -1143,7 +1131,6 @@ export default function UnoGame({
       aiDrawPile,
       aiDiscardPile,
       aiHasCalledUnoThisRound,
-      drawCardsFromPile,
       aiStackingEnabled,
       aiPendingDrawCount,
       executeAiCatchUno,
@@ -1464,7 +1451,6 @@ export default function UnoGame({
     aiDrawPile,
     aiDiscardPile,
     aiDirection,
-    drawCardsFromPile,
     executeAiPlayCard,
     aiPendingDrawCount,
     aiPendingStackType,
@@ -1480,18 +1466,7 @@ export default function UnoGame({
     const g = hostGameRef.current
     if (!g) return
 
-    const sanitizedPlayers = g.players.map((p) => {
-      const pRank = p.rank || (g.rankings || []).find((r) => r.playerId === p.id)?.rank || null
-      return {
-        id: p.id,
-        name: p.name,
-        avatar: p.avatar,
-        isHost: p.isHost,
-        cardCount: g.hands.get(p.id)?.length || 0,
-        rank: pRank,
-      }
-    })
-
+    const sanitizedPlayers = sanitizePlayers(g)
     const message = customMessage !== null ? customMessage : g.actionMessage || ''
 
     // 1. Update Host local UI
@@ -1508,7 +1483,7 @@ export default function UnoGame({
     setMpSkippedInfo(g.skippedInfo || null)
     setMpPendingDrawCount(g.pendingDrawCount || 0)
     setMpPendingStackType(g.pendingStackType || null)
-    const hostHandNow = [...(g.hands.get(0) || [])]
+    const hostHandNow = [...handOf(g, HOST_PLAYER_ID)]
     setMyHand(hostHandNow)
     if (hostHandNow.length > 1) {
       setMpHasCalledUnoThisRound(false)
@@ -1528,7 +1503,7 @@ export default function UnoGame({
           hostNetworkRef.current.sendTo(p.peerId, {
             type: 'SYNC_GAME_STATE',
             yourPlayerId: p.id,
-            hand: [...(g.hands.get(p.id) || [])],
+            hand: [...handOf(g, p.id)],
             topCard: g.topCard,
             activeColor: g.activeColor,
             currentPlayerIndex: g.currentPlayerIndex,
@@ -1550,782 +1525,159 @@ export default function UnoGame({
     }
   }, [])
 
-  // Authoritative host card play execution
-  const hostProcessPlayCard = useCallback(
-    (playerId, cardId, chosenColor = null, fallbackCard = null) => {
-      const g = hostGameRef.current
-      if (!g) return
+  // -----------------------------------------------------------------
+  // Host action dispatch
+  //
+  // All rules live in engine/hostEngine.js. The component's job is only to run an
+  // engine call against the authoritative game object, turn the events it reports
+  // into side effects (sound, modals, timers), and broadcast the new state.
+  // -----------------------------------------------------------------
 
-      // Validate turn: allow if current player matches playerId or player at current index
-      const activePlayer = g.players[g.currentPlayerIndex]
-      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
-      if (!isActiveTurn) {
-        console.warn(`[Host] Player ${playerId} played out of turn. Active player is index ${g.currentPlayerIndex} (id ${activePlayer?.id})`)
-        return
-      }
-
-      const player = g.players.find((p) => p.id === playerId)
-      if (!player) {
-        console.warn(`[Host] Player not found for id ${playerId}`)
-        return
-      }
-
-      const currentHand = g.hands.get(playerId) || []
-      let cardIndex = currentHand.findIndex((c) => c.id === cardId)
-      if (cardIndex === -1 && fallbackCard) {
-        cardIndex = currentHand.findIndex(
-          (c) => c.color === fallbackCard.color && c.label === fallbackCard.label && c.type === fallbackCard.type
-        )
-      }
-      if (cardIndex === -1) {
-        console.warn(`[Host] Card ${cardId} not found in player ${playerId}'s hand`)
-        return
-      }
-
-      const card = currentHand[cardIndex]
-      const isWild = card.color === CARD_COLORS.WILD
-      const effectiveColor = isWild ? (chosenColor || CARD_COLORS.RED) : card.color
-
-      // Check legal move
-      if (
-        !canPlayCard(
-          card,
-          g.topCard,
-          g.activeColor,
-          g.pendingDrawCount || 0,
-          g.pendingStackType || null
-        )
-      ) {
-        console.warn(`[Host] Card ${card.label} (${card.color}) cannot be played on topCard`, g.topCard, g.activeColor)
-        return
-      }
-
-      // Remove card from hand and push to discard pile
-      const nextHand = currentHand.filter((_, idx) => idx !== cardIndex)
-      g.hands.set(playerId, nextHand)
-      g.discardPile.push(card)
-      g.topCard = card
-      g.activeColor = effectiveColor
-      g.hasDrawnThisTurn = false
-
-      // Audio feedback
-      if (card.type === CARD_TYPES.DRAW_TWO || card.type === CARD_TYPES.WILD_DRAW_FOUR) {
-        playActionCardSound(true)
-      } else if (card.type === CARD_TYPES.SKIP || card.type === CARD_TYPES.REVERSE) {
-        playActionCardSound(false)
-      } else {
+  const playEngineSound = useCallback((name) => {
+    switch (name) {
+      case SOUNDS.CARD_PLAY:
         playCardPlaySound()
-      }
+        break
+      case SOUNDS.CARD_DRAW:
+        playCardDrawSound()
+        break
+      case SOUNDS.ACTION_PENALTY:
+        playActionCardSound(true)
+        break
+      case SOUNDS.ACTION_NEUTRAL:
+        playActionCardSound(false)
+        break
+      case SOUNDS.UNO_CALL:
+        playUnoCallSound()
+        break
+      default:
+        break
+    }
+  }, [])
 
-      // If player emptied their hand, record placement!
-      if (nextHand.length === 0) {
-        const currentRank = (g.rankings || []).length + 1
-        const rankRecord = {
-          playerId: player.id,
-          name: player.name,
-          avatar: player.avatar,
-          isHost: player.isHost,
-          rank: currentRank,
-          remainingCards: 0,
-        }
-        g.rankings = [...(g.rankings || []), rankRecord]
-        player.rank = currentRank
+  const applyEngineEvents = useCallback(
+    (events) => {
+      for (const event of events) {
+        switch (event.type) {
+          case 'SOUND':
+            playEngineSound(event.sound)
+            break
 
-        const remainingActive = g.players.filter((p) => (g.hands.get(p.id) || []).length > 0)
+          case 'BROADCAST':
+            hostNetworkRef.current?.broadcast(event.message)
+            break
 
-        // If only 1 player remains with cards, match is over!
-        if (remainingActive.length <= 1) {
-          if (remainingActive.length === 1) {
-            const lastPlayer = remainingActive[0]
-            const lastRank = currentRank + 1
-            lastPlayer.rank = lastRank
-            g.rankings.push({
-              playerId: lastPlayer.id,
-              name: lastPlayer.name,
-              avatar: lastPlayer.avatar,
-              isHost: lastPlayer.isHost,
-              rank: lastRank,
-              remainingCards: (g.hands.get(lastPlayer.id) || []).length,
-            })
-          }
-          g.winner = g.rankings[0]
-          g.actionMessage = `🏆 Tournament complete! 1st Place: ${g.rankings[0].name}!`
-          hostBroadcastGameState()
-          return
-        }
-
-        // More than 1 active player remains: match continues!
-        if (player.id === 0) {
-          hasShownMyCelebrationRef.current = true
-          setFinishedCelebration({
-            isOpen: true,
-            rank: currentRank,
-            playerName: 'You',
-            activeRemaining: remainingActive.length,
-          })
-        }
-
-        const rankBadge = getRankBadge(currentRank)
-        let step = 1
-        let message = `${rankBadge.medal} ${player.name} finished in ${rankBadge.label}! (${remainingActive.length} players still battling)`
-        let currentSkippedInfo = null
-
-        if (card.type === CARD_TYPES.REVERSE) {
-          if (remainingActive.length === 2) {
-            step = 1
-          } else {
-            g.direction = g.direction * -1
-          }
-        } else if (card.type === CARD_TYPES.SKIP) {
-          step = 2
-          const skippedIdx = getNextActivePlayerIndex(
-            g.currentPlayerIndex,
-            1,
-            g.players,
-            g.direction,
-            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-          )
-          const targetPlayer = g.players[skippedIdx]
-          currentSkippedInfo = {
-            playerId: targetPlayer.id,
-            playerName: targetPlayer.name,
-            playedByName: player.name,
-            cardType: 'skip',
-            cardsDrawn: 0,
-          }
-        } else if (card.type === CARD_TYPES.DRAW_TWO) {
-          if (g.stackingEnabled !== false) {
-            g.pendingDrawCount = (g.pendingDrawCount || 0) + 2
-            g.pendingStackType = CARD_TYPES.DRAW_TWO
-            step = 1
-          } else {
-            step = 2
-            const targetIdx = getNextActivePlayerIndex(
-              g.currentPlayerIndex,
-              1,
-              g.players,
-              g.direction,
-              (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-            )
-            const targetPlayer = g.players[targetIdx]
-            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-              2,
-              g.drawPile,
-              g.discardPile
-            )
-            g.drawPile = newDrawPile
-            g.discardPile = newDiscardPile
-            const targetHand = g.hands.get(targetPlayer.id) || []
-            g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
-            currentSkippedInfo = {
-              playerId: targetPlayer.id,
-              playerName: targetPlayer.name,
-              playedByName: player.name,
-              cardType: 'draw2',
-              cardsDrawn: 2,
+          case 'CELEBRATE':
+            // Only the host's own placement pops a modal here; clients get theirs
+            // from the rankings in SYNC_GAME_STATE.
+            if (event.playerId === HOST_PLAYER_ID) {
+              hasShownMyCelebrationRef.current = true
+              setFinishedCelebration({
+                isOpen: true,
+                rank: event.rank,
+                playerName: 'You',
+                activeRemaining: event.activeRemaining,
+              })
             }
-          }
-        } else if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
-          if (g.stackingEnabled !== false) {
-            g.pendingDrawCount = (g.pendingDrawCount || 0) + 4
-            g.pendingStackType = CARD_TYPES.WILD_DRAW_FOUR
-            step = 1
-          } else {
-            step = 2
-            const targetIdx = getNextActivePlayerIndex(
-              g.currentPlayerIndex,
-              1,
-              g.players,
-              g.direction,
-              (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-            )
-            const targetPlayer = g.players[targetIdx]
-            const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-              4,
-              g.drawPile,
-              g.discardPile
-            )
-            g.drawPile = newDrawPile
-            g.discardPile = newDiscardPile
-            const targetHand = g.hands.get(targetPlayer.id) || []
-            g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
-            currentSkippedInfo = {
-              playerId: targetPlayer.id,
-              playerName: targetPlayer.name,
-              playedByName: player.name,
-              cardType: 'wild4',
-              cardsDrawn: 4,
+            break
+
+          case 'PENALTY_STARTED': {
+            if (event.giverIds.includes(HOST_PLAYER_ID)) {
+              setPenaltyGiveCardModal({
+                isOpen: true,
+                mode: 'mp',
+                penaltyId: event.penaltyId,
+                targetPlayerId: event.targetPlayerId,
+                targetPlayerName: event.targetPlayerName,
+                challengerId: event.challengerId,
+                botGifts: [],
+              })
             }
+            // One AFK giver must not be able to stall the match.
+            if (penaltyTimeoutRef.current) clearTimeout(penaltyTimeoutRef.current)
+            penaltyTimeoutRef.current = setTimeout(() => {
+              penaltyTimeoutRef.current = null
+              runHostActionRef.current?.(forceResolvePenalty)
+            }, PENALTY_TIMEOUT_MS)
+            break
           }
-        }
 
-        if (card.type !== CARD_TYPES.DRAW_TWO && card.type !== CARD_TYPES.WILD_DRAW_FOUR) {
-          g.pendingDrawCount = 0
-          g.pendingStackType = null
-        }
+          case 'PENALTY_RESOLVED':
+            if (penaltyTimeoutRef.current) {
+              clearTimeout(penaltyTimeoutRef.current)
+              penaltyTimeoutRef.current = null
+            }
+            setPenaltyGiveCardModal((prev) => ({ ...prev, isOpen: false }))
+            break
 
-        const nextIdx = getNextActivePlayerIndex(
-          g.currentPlayerIndex,
-          step,
-          g.players,
-          g.direction,
-          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-        )
-        g.currentPlayerIndex = nextIdx
-        g.actionMessage = message
-        g.skippedInfo = currentSkippedInfo
-        hostBroadcastGameState()
-        return
-      }
-
-      // UNO reminder check
-      if (nextHand.length === 1) {
-        if (g.unoPreCalledPlayers?.has(playerId) || g.unoCalledPlayers.has(playerId)) {
-          g.unoCalledPlayers.add(playerId)
-          if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
-          playUnoCallSound()
-        }
-      } else {
-        g.unoCalledPlayers.delete(playerId)
-        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
-      }
-
-      // Action card effects
-      let step = 1
-      let message = `${player.name} played ${card.color !== CARD_COLORS.WILD ? card.color : ''} ${card.label}`
-      let currentSkippedInfo = null
-
-      if (card.type === CARD_TYPES.REVERSE) {
-        const remainingActive = g.players.filter((p) => (g.hands.get(p.id) || []).length > 0)
-        if (remainingActive.length === 2) {
-          step = 2
-          const skippedIdx = getNextActivePlayerIndex(
-            g.currentPlayerIndex,
-            1,
-            g.players,
-            g.direction,
-            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-          )
-          const targetPlayer = g.players[skippedIdx]
-          currentSkippedInfo = {
-            playerId: targetPlayer.id,
-            playerName: targetPlayer.name,
-            playedByName: player.name,
-            cardType: 'reverse',
-            cardsDrawn: 0,
-          }
-          message = `${player.name} played Reverse! ${targetPlayer.name} was skipped.`
-        } else {
-          g.direction = g.direction * -1
-          message = `${player.name} reversed direction!`
+          default:
+            break
         }
       }
-
-      if (card.type === CARD_TYPES.SKIP) {
-        step = 2
-        const skippedIdx = getNextActivePlayerIndex(
-          g.currentPlayerIndex,
-          1,
-          g.players,
-          g.direction,
-          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-        )
-        const targetPlayer = g.players[skippedIdx]
-        currentSkippedInfo = {
-          playerId: targetPlayer.id,
-          playerName: targetPlayer.name,
-          playedByName: player.name,
-          cardType: 'skip',
-          cardsDrawn: 0,
-        }
-        message = `${player.name} skipped ${targetPlayer?.name}!`
-      }
-
-      if (card.type === CARD_TYPES.DRAW_TWO) {
-        if (g.stackingEnabled !== false) {
-          g.pendingDrawCount = (g.pendingDrawCount || 0) + 2
-          g.pendingStackType = CARD_TYPES.DRAW_TWO
-          step = 1
-          message = `${player.name} played +2! Stack is +${g.pendingDrawCount} cards! Next player must counter or draw!`
-          currentSkippedInfo = null
-        } else {
-          step = 2
-          const targetIdx = getNextActivePlayerIndex(
-            g.currentPlayerIndex,
-            1,
-            g.players,
-            g.direction,
-            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-          )
-          const targetPlayer = g.players[targetIdx]
-          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-            2,
-            g.drawPile,
-            g.discardPile
-          )
-          g.drawPile = newDrawPile
-          g.discardPile = newDiscardPile
-          const targetHand = g.hands.get(targetPlayer.id) || []
-          g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
-          currentSkippedInfo = {
-            playerId: targetPlayer.id,
-            playerName: targetPlayer.name,
-            playedByName: player.name,
-            cardType: 'draw2',
-            cardsDrawn: 2,
-          }
-          message = `${player.name} played +2! ${targetPlayer.name} drew 2 cards and was skipped!`
-        }
-      }
-
-      if (card.type === CARD_TYPES.WILD_DRAW_FOUR) {
-        if (g.stackingEnabled !== false) {
-          g.pendingDrawCount = (g.pendingDrawCount || 0) + 4
-          g.pendingStackType = CARD_TYPES.WILD_DRAW_FOUR
-          step = 1
-          message = `${player.name} played Wild +4! Color is now ${effectiveColor}. Stack is +${g.pendingDrawCount} cards!`
-          currentSkippedInfo = null
-        } else {
-          step = 2
-          const targetIdx = getNextActivePlayerIndex(
-            g.currentPlayerIndex,
-            1,
-            g.players,
-            g.direction,
-            (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-          )
-          const targetPlayer = g.players[targetIdx]
-          const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-            4,
-            g.drawPile,
-            g.discardPile
-          )
-          g.drawPile = newDrawPile
-          g.discardPile = newDiscardPile
-          const targetHand = g.hands.get(targetPlayer.id) || []
-          g.hands.set(targetPlayer.id, [...drawnCards, ...targetHand])
-          currentSkippedInfo = {
-            playerId: targetPlayer.id,
-            playerName: targetPlayer.name,
-            playedByName: player.name,
-            cardType: 'wild4',
-            cardsDrawn: 4,
-          }
-          message = `${player.name} played Wild +4! Color is ${effectiveColor}. ${targetPlayer.name} drew 4 cards and was skipped!`
-        }
-      }
-
-      if (card.type === CARD_TYPES.WILD) {
-        message = `${player.name} played Wild! Color is ${effectiveColor}.`
-      }
-
-      // If a non-stacking card was played, reset pending stack penalty
-      if (
-        card.type !== CARD_TYPES.DRAW_TWO &&
-        card.type !== CARD_TYPES.WILD_DRAW_FOUR
-      ) {
-        g.pendingDrawCount = 0
-        g.pendingStackType = null
-      }
-
-      const nextIdx = getNextActivePlayerIndex(
-        g.currentPlayerIndex,
-        step,
-        g.players,
-        g.direction,
-        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-      )
-      g.currentPlayerIndex = nextIdx
-      g.actionMessage = message
-      g.skippedInfo = currentSkippedInfo
-
-      hostBroadcastGameState()
     },
-    [drawCardsFromPile, hostBroadcastGameState]
+    [playEngineSound]
   )
 
-  // Authoritative host card draw execution
+  /**
+   * Run one engine action against the authoritative game and publish the result.
+   * A rejected action changes nothing and is not broadcast.
+   */
+  const runHostAction = useCallback(
+    (action) => {
+      const g = hostGameRef.current
+      if (!g) return false
+
+      const result = action(g)
+      if (!result.ok) {
+        console.warn('[Host] rejected action:', result.reason)
+        return false
+      }
+
+      applyEngineEvents(result.events)
+      hostBroadcastGameState()
+      return true
+    },
+    [applyEngineEvents, hostBroadcastGameState]
+  )
+
+  // Lets the penalty timeout reach the latest runHostAction without re-arming itself.
+  useEffect(() => {
+    runHostActionRef.current = runHostAction
+  }, [runHostAction])
+
+  const hostProcessPlayCard = useCallback(
+    (playerId, cardId, chosenColor = null, fallbackCard = null) =>
+      runHostAction((g) => playCard(g, playerId, cardId, chosenColor, fallbackCard)),
+    [runHostAction]
+  )
+
   const hostProcessDrawCard = useCallback(
-    (playerId) => {
-      const g = hostGameRef.current
-      if (!g) return
-      const activePlayer = g.players[g.currentPlayerIndex]
-      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
-      if (!isActiveTurn) return
-
-      const player = g.players.find((p) => p.id === playerId)
-      if (!player) return
-
-      // Guard: already drawn this turn (and no pending stack penalty)
-      if (g.hasDrawnThisTurn && (g.pendingDrawCount || 0) === 0) return
-
-      playCardDrawSound()
-
-      // Taking Stack Penalty
-      if ((g.pendingDrawCount || 0) > 0) {
-        const penaltyCount = g.pendingDrawCount
-        const penaltyType = g.pendingStackType
-        const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-          penaltyCount,
-          g.drawPile,
-          g.discardPile
-        )
-        g.drawPile = newDrawPile
-        g.discardPile = newDiscardPile
-        const currentHand = g.hands.get(playerId) || []
-        g.hands.set(playerId, [...drawnCards, ...currentHand])
-        g.pendingDrawCount = 0
-        g.pendingStackType = null
-        g.hasDrawnThisTurn = false
-        g.unoCalledPlayers.delete(player.id)
-        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(player.id)
-
-        const nextIdx = getNextActivePlayerIndex(
-          g.currentPlayerIndex,
-          1,
-          g.players,
-          g.direction,
-          (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-        )
-        const nextPlayer = g.players[nextIdx]
-        g.currentPlayerIndex = nextIdx
-        g.skippedInfo = {
-          playerId: player.id,
-          playerName: player.name,
-          playedByName: 'Stack Penalty',
-          cardType: penaltyType,
-          cardsDrawn: penaltyCount,
-        }
-        g.actionMessage = `${player.name} drew ${penaltyCount} cards from the stack penalty! Turn passed to ${nextPlayer?.name || 'next player'}.`
-
-        hostBroadcastGameState()
-        return
-      }
-
-      // Normal 1-card draw
-      const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
-        1,
-        g.drawPile,
-        g.discardPile
-      )
-      if (drawnCards.length === 0) {
-        g.hasDrawnThisTurn = true
-        g.actionMessage = 'No cards left in the draw pile! Pass your turn or play a card.'
-        hostBroadcastGameState()
-        return
-      }
-
-      g.drawPile = newDrawPile
-      g.discardPile = newDiscardPile
-      const currentHand = g.hands.get(playerId) || []
-      const updatedHand = [drawnCards[0], ...currentHand]
-      g.hands.set(playerId, updatedHand)
-      if (updatedHand.length > 1) {
-        g.unoCalledPlayers.delete(playerId)
-        if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(playerId)
-      }
-      g.hasDrawnThisTurn = true
-      g.skippedInfo = null
-      g.actionMessage = `${player.name} drew a card.`
-
-      hostBroadcastGameState()
-    },
-    [drawCardsFromPile, hostBroadcastGameState]
+    (playerId) => runHostAction((g) => drawCard(g, playerId)),
+    [runHostAction]
   )
 
-  // Authoritative host turn pass execution
   const hostProcessPassTurn = useCallback(
-    (playerId) => {
-      const g = hostGameRef.current
-      if (!g) return
-      const activePlayer = g.players[g.currentPlayerIndex]
-      const isActiveTurn = g.currentPlayerIndex === playerId || activePlayer?.id === playerId
-      if (!isActiveTurn) return
-
-      // Cannot pass turn without drawing first (unless resolving a stack penalty which auto-passes)
-      if (!g.hasDrawnThisTurn && (g.pendingDrawCount || 0) === 0) return
-
-      const player = g.players.find((p) => p.id === playerId)
-      const nextIdx = getNextActivePlayerIndex(
-        g.currentPlayerIndex,
-        1,
-        g.players,
-        g.direction,
-        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-      )
-      g.currentPlayerIndex = nextIdx
-      g.hasDrawnThisTurn = false
-      g.skippedInfo = null
-      g.actionMessage = `${player?.name || 'Player'} passed turn.`
-
-      hostBroadcastGameState()
-    },
-    [hostBroadcastGameState]
+    (playerId) => runHostAction((g) => passTurn(g, playerId)),
+    [runHostAction]
   )
 
-  // Authoritative host UNO shout execution
   const hostProcessCallUno = useCallback(
-    (playerId, playerName) => {
-      const g = hostGameRef.current
-      if (!g) return
-
-      playUnoCallSound()
-      const playerHand = g.hands.get(playerId) || []
-      if (playerHand.length === 1) {
-        g.unoCalledPlayers.add(playerId)
-      } else {
-        if (!g.unoPreCalledPlayers) g.unoPreCalledPlayers = new Set()
-        g.unoPreCalledPlayers.add(playerId)
-      }
-      g.actionMessage = `🔔 ${playerName} shouted UNO!`
-
-      if (hostNetworkRef.current) {
-        hostNetworkRef.current.broadcast({
-          type: 'UNO_SHOUTED',
-          playerId,
-          playerName,
-        })
-      }
-
-      hostBroadcastGameState()
-    },
-    [hostBroadcastGameState]
+    (playerId, playerName) => runHostAction((g) => callUno(g, playerId, playerName)),
+    [runHostAction]
   )
 
-  // Finalize host catch penalty (only called when all givers submitted their card)
-  const hostFinalizeCatchPenalty = useCallback(() => {
-    if (penaltyTimeoutRef.current) {
-      clearTimeout(penaltyTimeoutRef.current)
-      penaltyTimeoutRef.current = null
-    }
-
-    const g = hostGameRef.current
-    if (!g || !g.pendingCatchPenalty) return
-
-    const {
-      targetPlayerId,
-      targetPlayerName,
-      challengerName,
-      giverIds,
-      givenCards,
-    } = g.pendingCatchPenalty
-
-    const targetHand = g.hands.get(targetPlayerId) || []
-    const penaltyCards = []
-    const finishedGivers = []
-
-    giverIds.forEach((giverId) => {
-      const card = givenCards.get(giverId)
-      const gHand = g.hands.get(giverId) || []
-
-      if (card) {
-        penaltyCards.push(card)
-        const nextHand = gHand.filter((c) => c.id !== card.id)
-        g.hands.set(giverId, nextHand)
-
-        if (nextHand.length === 0) {
-          const giverPlayer = g.players.find((p) => p.id === giverId)
-          if (giverPlayer && giverPlayer.rank == null) {
-            const nextRank = (g.rankings || []).length + 1
-            giverPlayer.rank = nextRank
-            const rankRecord = {
-              playerId: giverPlayer.id,
-              name: giverPlayer.name,
-              avatar: giverPlayer.avatar,
-              isHost: giverPlayer.isHost,
-              rank: nextRank,
-              remainingCards: 0,
-            }
-            g.rankings = [...(g.rankings || []), rankRecord]
-            finishedGivers.push(giverPlayer)
-          }
-        }
-      }
-    })
-
-    // Give all cards to target
-    g.hands.set(targetPlayerId, [...targetHand, ...penaltyCards])
-    g.unoCalledPlayers.delete(targetPlayerId)
-    if (g.unoPreCalledPlayers) g.unoPreCalledPlayers.delete(targetPlayerId)
-
-    // Check tournament completion
-    const remainingActive = g.players.filter(
-      (p) => (g.hands.get(p.id) || []).length > 0 && p.rank == null
-    )
-    if (remainingActive.length <= 1) {
-      if (remainingActive.length === 1) {
-        const lastPlayer = remainingActive[0]
-        const lastRank = (g.rankings || []).length + 1
-        lastPlayer.rank = lastRank
-        g.rankings.push({
-          playerId: lastPlayer.id,
-          name: lastPlayer.name,
-          avatar: lastPlayer.avatar,
-          isHost: lastPlayer.isHost,
-          rank: lastRank,
-          remainingCards: (g.hands.get(lastPlayer.id) || []).length,
-        })
-      }
-      g.winner = g.rankings[0]
-      g.actionMessage = `🏆 Tournament complete! 1st Place: ${g.rankings[0].name}!`
-    }
-
-    // Advance turn if current player finished
-    const currentP = g.players.find((p) => p.id === g.currentPlayerIndex)
-    if (
-      currentP &&
-      ((g.hands.get(currentP.id) || []).length === 0 || currentP.rank != null)
-    ) {
-      g.currentPlayerIndex = getNextActivePlayerIndex(
-        g.currentPlayerIndex,
-        1,
-        g.players,
-        g.direction,
-        (p) => (g.hands.get(p.id) || []).length === 0 || p.rank != null
-      )
-    }
-
-    let message = `🚨 ${challengerName} caught ${targetPlayerName}! Received 1 card from each active player (+${penaltyCards.length} cards)!`
-    if (finishedGivers.length > 0) {
-      const names = finishedGivers.map((p) => p.name).join(', ')
-      message += ` 🏆 ${names} gave away their last card and finished the game!`
-    }
-    g.actionMessage = message
-    g.pendingCatchPenalty = null
-
-    playActionCardSound(true)
-    if (hostNetworkRef.current) {
-      hostNetworkRef.current.broadcast({
-        type: 'UNO_CAUGHT',
-        targetPlayerId,
-        message,
-      })
-    }
-
-    hostBroadcastGameState(message)
-  }, [hostBroadcastGameState])
-
-  // Host process penalty card submission from a giver
-  const hostProcessSubmitPenaltyCard = useCallback(
-    (giverId, card, penaltyId) => {
-      const g = hostGameRef.current
-      if (
-        !g ||
-        !g.pendingCatchPenalty ||
-        g.pendingCatchPenalty.penaltyId !== penaltyId
-      ) {
-        return
-      }
-
-      const giverHand = g.hands.get(giverId) || []
-      let validCard = giverHand.find((c) => c.id === card?.id)
-      if (!validCard && giverHand.length > 0) {
-        validCard = giverHand[0]
-      }
-      if (!validCard) return
-
-      g.pendingCatchPenalty.givenCards.set(giverId, validCard)
-
-      const allSubmitted = g.pendingCatchPenalty.giverIds.every((id) =>
-        g.pendingCatchPenalty.givenCards.has(id)
-      )
-
-      if (allSubmitted) {
-        hostFinalizeCatchPenalty()
-      }
-    },
-    [hostFinalizeCatchPenalty]
-  )
-
-  // Authoritative host UNO catch execution
   const hostProcessCatchUno = useCallback(
-    (challengerId, targetPlayerId) => {
-      const g = hostGameRef.current
-      if (!g) return
-
-      // Do not allow new catch if a penalty is already being resolved
-      if (g.pendingCatchPenalty) return
-
-      const targetHand = g.hands.get(targetPlayerId) || []
-      const targetPlayer = g.players.find((p) => p.id === targetPlayerId)
-      const challenger = g.players.find((p) => p.id === challengerId)
-
-      if (
-        targetHand.length !== 1 ||
-        targetPlayer?.rank != null ||
-        g.unoCalledPlayers.has(targetPlayerId)
-      ) {
-        return
-      }
-
-      const activeGivers = g.players.filter(
-        (p) =>
-          p.id !== targetPlayerId &&
-          (g.hands.get(p.id) || []).length > 0 &&
-          p.rank == null
-      )
-      if (activeGivers.length === 0) return
-
-      const penaltyId = Date.now()
-      g.pendingCatchPenalty = {
-        penaltyId,
-        challengerId,
-        challengerName: challenger?.name || 'Player',
-        targetPlayerId,
-        targetPlayerName: targetPlayer?.name || 'Player',
-        giverIds: activeGivers.map((p) => p.id),
-        givenCards: new Map(),
-      }
-
-      // Broadcast penalty selection request to clients
-      if (hostNetworkRef.current) {
-        hostNetworkRef.current.broadcast({
-          type: 'PENALTY_CARD_REQUEST',
-          penaltyId,
-          targetPlayerId,
-          targetPlayerName: targetPlayer?.name || 'Player',
-          challengerId,
-          challengerName: challenger?.name || 'Player',
-          giverIds: activeGivers.map((p) => p.id),
-        })
-      }
-
-      // If host is an active giver, open modal for host
-      if (activeGivers.some((p) => p.id === 0)) {
-        setPenaltyGiveCardModal({
-          isOpen: true,
-          mode: 'mp',
-          penaltyId,
-          targetPlayerId,
-          targetPlayerName: targetPlayer?.name || 'Player',
-          challengerId,
-          botGifts: [],
-        })
-      }
-
-      const waitMessage = `🚨 ${challenger?.name || 'Player'} caught ${targetPlayer?.name || 'Player'}! Active players are choosing a card to give...`
-      g.actionMessage = waitMessage
-
-      // Safety timeout: auto-resolve after 20s if a client giver is AFK
-      if (penaltyTimeoutRef.current) clearTimeout(penaltyTimeoutRef.current)
-      penaltyTimeoutRef.current = setTimeout(() => {
-        const curG = hostGameRef.current
-        if (!curG || !curG.pendingCatchPenalty) return
-        curG.pendingCatchPenalty.giverIds.forEach((giverId) => {
-          if (!curG.pendingCatchPenalty.givenCards.has(giverId)) {
-            const h = curG.hands.get(giverId) || []
-            if (h.length > 0) {
-              curG.pendingCatchPenalty.givenCards.set(giverId, h[0])
-            }
-          }
-        })
-        hostFinalizeCatchPenalty()
-      }, 20000)
-
-      hostBroadcastGameState(waitMessage)
-    },
-    [hostBroadcastGameState, hostFinalizeCatchPenalty]
+    (challengerId, targetPlayerId) =>
+      runHostAction((g) => catchUno(g, challengerId, targetPlayerId)),
+    [runHostAction]
   )
+
+  const hostProcessSubmitPenaltyCard = useCallback(
+    (giverId, card, penaltyId) =>
+      runHostAction((g) => submitPenaltyCard(g, giverId, card, penaltyId)),
+    [runHostAction]
+  )
+
 
   // Host authoritative handler when a player leaves or disconnects
   const hostProcessClientLeave = useCallback(
@@ -2342,31 +1694,36 @@ export default function UnoGame({
       )
       if (!player || player.isHost) return
 
-      const isGameActive = (g.drawPile.length > 0 || g.topCard !== null) && !g.winner
+      const isGameActive = isMatchInProgress(g) && !g.winner
 
       if (isGameActive) {
         // If match is active, mark disconnected so player can reconnect without losing hand
         player.peerId = null
         player.connected = false
 
-        if (g.pendingCatchPenalty) {
-          if (g.pendingCatchPenalty.targetPlayerId === player.id) {
+        const penalty = g.pendingCatchPenalty
+        if (penalty) {
+          if (penalty.targetPlayerId === player.id) {
+            // The caught player left; there is nobody to hand the cards to.
             g.pendingCatchPenalty = null
-          } else if (g.pendingCatchPenalty.giverIds.includes(player.id)) {
-            g.pendingCatchPenalty.giverIds = g.pendingCatchPenalty.giverIds.filter((id) => id !== player.id)
-            g.pendingCatchPenalty.givenCards.delete(player.id)
-            if (
-              g.pendingCatchPenalty.giverIds.length === 0 ||
-              g.pendingCatchPenalty.giverIds.every((id) => g.pendingCatchPenalty.givenCards.has(id))
-            ) {
-              hostFinalizeCatchPenalty()
+            if (penaltyTimeoutRef.current) {
+              clearTimeout(penaltyTimeoutRef.current)
+              penaltyTimeoutRef.current = null
+            }
+            setPenaltyGiveCardModal((prev) => ({ ...prev, isOpen: false }))
+          } else if (penalty.giverIds.includes(player.id)) {
+            // Drop them from the collection; resolve if they were the last holdout.
+            penalty.giverIds = penalty.giverIds.filter((id) => id !== player.id)
+            penalty.givenCards.delete(player.id)
+            if (penalty.giverIds.every((id) => penalty.givenCards.has(id))) {
+              runHostActionRef.current?.(finalizeCatchPenalty)
             }
           }
         }
 
         // 1. Check if only 1 connected active player remains in the game
         const connectedActive = g.players.filter(
-          (p) => p.connected !== false && (g.hands.get(p.id) || []).length > 0 && p.rank == null
+          (p) => p.connected !== false && handOf(g, p.id).length > 0 && p.rank == null
         )
         if (connectedActive.length <= 1) {
           if (disconnectTurnTimerRef.current) clearTimeout(disconnectTurnTimerRef.current)
@@ -2374,7 +1731,7 @@ export default function UnoGame({
             const curG = hostGameRef.current
             if (!curG || curG.winner) return
             const curConnected = curG.players.filter(
-              (p) => p.connected !== false && (curG.hands.get(p.id) || []).length > 0 && p.rank == null
+              (p) => p.connected !== false && handOf(curG, p.id).length > 0 && p.rank == null
             )
             if (curConnected.length === 1) {
               const soleWinner = curConnected[0]
@@ -2384,7 +1741,7 @@ export default function UnoGame({
                 avatar: soleWinner.avatar,
                 isHost: soleWinner.isHost,
                 rank: 1,
-                remainingCards: (curG.hands.get(soleWinner.id) || []).length,
+                remainingCards: handOf(curG, soleWinner.id).length,
               }
               curG.actionMessage = `🏆 ${soleWinner.name} wins! All other opponents disconnected.`
               hostBroadcastGameState()
@@ -2403,7 +1760,7 @@ export default function UnoGame({
                 1,
                 curG.players,
                 curG.direction,
-                (p) => (curG.hands.get(p.id) || []).length === 0 || p.rank != null
+                (p) => handOf(curG, p.id).length === 0 || p.rank != null
               )
               curG.currentPlayerIndex = nextIdx
               curG.hasDrawnThisTurn = false
@@ -2437,7 +1794,7 @@ export default function UnoGame({
       }
       setMpRoomState((prev) => ({ ...prev, players: reIndexed }))
     },
-    [hostBroadcastGameState, hostFinalizeCatchPenalty]
+    [hostBroadcastGameState]
   )
 
   // Connect client data ref to latest authoritative processors
@@ -2528,32 +1885,24 @@ export default function UnoGame({
     } catch {
       // ignore
     }
-    const hostPlayer = { id: 0, name, avatar, isHost: true, isYou: true, connected: true, sessionId: getClientSessionId() }
+    const hostPlayer = {
+      id: HOST_PLAYER_ID,
+      name,
+      avatar,
+      isHost: true,
+      isYou: true,
+      connected: true,
+      sessionId: getClientSessionId(),
+    }
     myProfileRef.current = { name, avatar, roomCode: code }
     setMpConnectionStatus('connected')
 
-    hostGameRef.current = {
+    hostGameRef.current = createHostGame({
       roomCode: code,
-      players: [hostPlayer],
+      hostPlayer,
       maxPlayers,
-      drawPile: [],
-      discardPile: [],
-      hands: new Map(),
-      topCard: null,
-      activeColor: null,
-      currentPlayerIndex: 0,
-      direction: 1,
-      unoCalledPlayers: new Set(),
-      hasDrawnThisTurn: false,
-      winner: null,
-      actionMessage: '',
-      skippedInfo: null,
       stackingEnabled: enableStacking,
-      pendingDrawCount: 0,
-      pendingStackType: null,
-      gameStarted: false,
-      lockedLobbyPlayerNames: null,
-    }
+    })
 
     setMpRoomState({
       isInRoom: false,
@@ -2608,9 +1957,7 @@ export default function UnoGame({
           return
         }
 
-        const isGameStarted = Boolean(
-          g.gameStarted || (g.drawPile && g.drawPile.length > 0) || g.topCard !== null
-        )
+        const isGameStarted = isMatchInProgress(g)
 
         // 2. If the game has already started: only allow registered players from the lobby to reconnect
         if (isGameStarted) {
@@ -2702,23 +2049,13 @@ export default function UnoGame({
             console.error('[Host] Failed to send WELCOME to reconnecting player:', e)
           }
 
-          const sanitizedPlayers = currentPlayers.map((p) => {
-            const pRank = p.rank || (g.rankings || []).find((r) => r.playerId === p.id)?.rank || null
-            return {
-              id: p.id,
-              name: p.name,
-              avatar: p.avatar,
-              isHost: p.isHost,
-              cardCount: g.hands.get(p.id)?.length || 0,
-              rank: pRank,
-            }
-          })
+          const sanitizedPlayers = sanitizePlayers(g)
 
           try {
             conn.send({
               type: 'SYNC_GAME_STATE',
               yourPlayerId: existingPlayer.id,
-              hand: [...(g.hands.get(existingPlayer.id) || [])],
+              hand: [...handOf(g, existingPlayer.id)],
               topCard: g.topCard,
               activeColor: g.activeColor,
               currentPlayerIndex: g.currentPlayerIndex,
@@ -3201,38 +2538,8 @@ export default function UnoGame({
     }
 
     const g = hostGameRef.current
-    const deckCount = g.players.length >= 6 ? 2 : 1
-    const freshDeck = createUnoDeck(deckCount)
-    const { hands, drawPile, discardPile, initialColor } = dealHands(
-      freshDeck,
-      g.players.length
-    )
-
-    const handsMap = new Map()
-    g.players.forEach((p, idx) => {
-      handsMap.set(p.id, hands[idx])
-      p.rank = null
-    })
-
-    g.drawPile = drawPile
-    g.discardPile = discardPile
-    g.hands = handsMap
-    g.topCard = discardPile[discardPile.length - 1]
-    g.activeColor = initialColor
-    g.currentPlayerIndex = 0 // Host makes the first move!
-    g.direction = 1
-    g.hasDrawnThisTurn = false
-    g.unoCalledPlayers = new Set()
-    g.unoPreCalledPlayers = new Set()
-    g.winner = null
-    g.rankings = []
-    g.actionMessage = 'Game started! Host has the first move.'
-    g.skippedInfo = null
-    g.pendingDrawCount = 0
-    g.pendingStackType = null
-    g.pendingCatchPenalty = null
-    g.gameStarted = true
-    g.lockedLobbyPlayerNames = new Set(g.players.map((p) => p.name.trim().toLowerCase()))
+    if (!g) return
+    startMatch(g)
 
     setMpConnectionStatus('connected')
     setMpRoomState((prev) => ({
@@ -3243,8 +2550,8 @@ export default function UnoGame({
     }))
     setScreen('mp_playing')
     setMpCurrentPlayerIndex(0)
-    setMyPlayerId(0)
-    myPlayerIdRef.current = 0
+    setMyPlayerId(HOST_PLAYER_ID)
+    myPlayerIdRef.current = HOST_PLAYER_ID
     setMpWinner(null)
     setMpRankings([])
     setMpSkippedInfo(null)
@@ -3277,7 +2584,7 @@ export default function UnoGame({
 
   const dispatchMpPlayCard = (card, color) => {
     if (mpRoomState.isHost) {
-      hostProcessPlayCard(0, card.id, color, card)
+      hostProcessPlayCard(HOST_PLAYER_ID, card.id, color, card)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_PLAY_CARD',
@@ -3300,7 +2607,7 @@ export default function UnoGame({
     }, 2000)
 
     if (mpRoomState.isHost) {
-      hostProcessDrawCard(0)
+      hostProcessDrawCard(HOST_PLAYER_ID)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_DRAW_CARD',
@@ -3311,7 +2618,7 @@ export default function UnoGame({
 
   const handleMpPassTurn = () => {
     if (mpRoomState.isHost) {
-      hostProcessPassTurn(0)
+      hostProcessPassTurn(HOST_PLAYER_ID)
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_PASS_TURN',
@@ -3325,7 +2632,7 @@ export default function UnoGame({
     const myPlayer = mpRoomState.players.find((p) => p.id === myPlayerIdRef.current)
 
     if (mpRoomState.isHost) {
-      hostProcessCallUno(0, myPlayer?.name || 'Host')
+      hostProcessCallUno(HOST_PLAYER_ID, myPlayer?.name || 'Host')
     } else if (clientNetworkRef.current) {
       clientNetworkRef.current.sendAction({
         type: 'ACTION_CALL_UNO',
@@ -3372,7 +2679,7 @@ export default function UnoGame({
     (selectedCard) => {
       const penaltyId = penaltyGiveCardModal.penaltyId
       if (mpRoomState.isHost) {
-        hostProcessSubmitPenaltyCard(0, selectedCard, penaltyId)
+        hostProcessSubmitPenaltyCard(HOST_PLAYER_ID, selectedCard, penaltyId)
       } else if (clientNetworkRef.current) {
         clientNetworkRef.current.sendAction({
           type: 'ACTION_SUBMIT_PENALTY_CARD',
@@ -3460,24 +2767,7 @@ export default function UnoGame({
 
     const g = hostGameRef.current
     if (!g) return
-    g.drawPile = []
-    g.discardPile = []
-    g.hands = new Map()
-    g.topCard = null
-    g.activeColor = null
-    g.winner = null
-    g.rankings = []
-    g.players.forEach((p) => {
-      p.rank = null
-    })
-    g.skippedInfo = null
-    g.pendingDrawCount = 0
-    g.pendingStackType = null
-    g.pendingCatchPenalty = null
-    g.unoCalledPlayers = new Set()
-    g.unoPreCalledPlayers = new Set()
-    g.gameStarted = false
-    g.lockedLobbyPlayerNames = null
+    resetToLobby(g)
     if (hostNetworkRef.current) {
       hostNetworkRef.current.broadcast({
         type: 'ROOM_RESET_TO_LOBBY',
