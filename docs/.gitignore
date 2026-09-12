@@ -1,0 +1,4 @@
+# Local-only working notes for AI/dev sessions.
+# The folder is tracked (so collaborators know it exists); its contents are not.
+*
+!.gitignore

@@ -25,7 +25,9 @@ export default function TankGameOverModal({
     } catch {
       // ignore
     }
-  }, [winner, winningTeam])
+    // winningTeam is derived from winner via the TEAMS constant, so it is stable and
+    // listing winner as well would be redundant.
+  }, [winningTeam])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn select-none">

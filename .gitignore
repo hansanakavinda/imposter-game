@@ -25,3 +25,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build / deploy
+.vercel
+coverage
+*.tsbuildinfo
+
+# Local AI/dev working notes (docs/.gitignore keeps the folder, drops the contents)

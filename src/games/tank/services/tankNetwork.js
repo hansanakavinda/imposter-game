@@ -1,20 +1,19 @@
 import { Peer } from 'peerjs'
-import { preloadIceConfig, getIceConfig } from '../../uno/services/unoNetwork'
+import {
+  preloadIceConfig,
+  getIceConfig,
+  generateRoomCode,
+  createPeerIdFormatter,
+} from '../../../services/peerConfig'
 
+// Prefix namespaces Tank rooms on the shared public PeerJS broker
 const PEER_PREFIX = 'party-arcade-tank-v1-'
 
-export function formatTankPeerId(roomCode) {
-  return `${PEER_PREFIX}${roomCode.trim().toLowerCase()}`
-}
+/** Format a human-readable room code into a global Peer ID */
+export const formatTankPeerId = createPeerIdFormatter(PEER_PREFIX)
 
-export function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let result = ''
-  for (let i = 0; i < 4; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
-}
+// Re-exported so TankGame keeps a single import site for its networking needs
+export { generateRoomCode }
 
 /**
  * Tank Multiplayer Network Controller
@@ -148,14 +147,6 @@ export class TankNetwork {
     })
   }
 
-  updateCallbacks({ onStatusChange, onClientJoin, onPlayerLeave, onMessage, onError } = {}) {
-    if (onStatusChange) this.onStatusChange = onStatusChange
-    if (onClientJoin) this.onClientJoin = onClientJoin
-    if (onPlayerLeave) this.onPlayerLeave = onPlayerLeave
-    if (onMessage) this.onMessage = onMessage
-    if (onError) this.onError = onError
-  }
-
   handleIncomingConnection(conn) {
     this.connections.set(conn.peer, conn)
 
@@ -183,9 +174,12 @@ export class TankNetwork {
     })
   }
 
-  broadcast(message) {
+  // excludePeerId lets the host relay a client's message to everyone else
+  // without echoing it back to whoever sent it.
+  broadcast(message, excludePeerId = null) {
     if (this.isHost) {
       for (const [peerId, conn] of this.connections) {
+        if (peerId === excludePeerId) continue
         if (conn && (conn.open || conn._open)) {
           try {
             conn.send(message)
@@ -209,17 +203,6 @@ export class TankNetwork {
         this.hostConnection.send(message)
       } catch (e) {
         console.warn('[TankNetwork] sendToHost error:', e)
-      }
-    }
-  }
-
-  sendToPeer(peerId, message) {
-    const conn = this.connections.get(peerId)
-    if (conn && (conn.open || conn._open)) {
-      try {
-        conn.send(message)
-      } catch (e) {
-        console.warn('[TankNetwork] sendToPeer error:', e)
       }
     }
   }

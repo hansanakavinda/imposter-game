@@ -4,7 +4,6 @@ import GameHub from './components/GameHub'
 import ImposterGame from './games/imposter/ImposterGame'
 import UnoGame from './games/uno/UnoGame'
 import TankGame from './games/tank/TankGame'
-import RulesModal from './components/RulesModal'
 import { isSoundEnabled, setSoundEnabled } from './utils/sound'
 import './App.css'
 
@@ -35,6 +34,8 @@ export default function App() {
     return null
   })
   const [isRulesOpen, setIsRulesOpen] = useState(false)
+  // Reported upward by each game so Navbar can warn before discarding a live match.
+  const [inGame, setInGame] = useState(false)
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled())
 
   const handleToggleSound = () => {
@@ -45,6 +46,7 @@ export default function App() {
 
   const handleBackToMenu = () => {
     setSelectedGame(null)
+    setInGame(false)
     setInitialRoomCode('')
     setIsRulesOpen(false)
     try {
@@ -71,6 +73,7 @@ export default function App() {
         onToggleSound={handleToggleSound}
         onOpenRules={() => setIsRulesOpen(true)}
         activeGame={selectedGame}
+        inGame={inGame}
         onBackToMenu={handleBackToMenu}
       />
 
@@ -86,6 +89,7 @@ export default function App() {
         {selectedGame === 'imposter' && (
           <ImposterGame
             onBackToMenu={handleBackToMenu}
+            onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
           />
@@ -94,6 +98,7 @@ export default function App() {
         {selectedGame === 'uno' && (
           <UnoGame
             onBackToMenu={handleBackToMenu}
+            onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
             initialRoomCode={initialRoomCode}
@@ -103,17 +108,13 @@ export default function App() {
         {selectedGame === 'tank' && (
           <TankGame
             onBackToMenu={handleBackToMenu}
+            onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}
             initialRoomCode={initialRoomCode}
           />
         )}
       </main>
-
-      {/* Global Modals for Hub preview if needed */}
-      {selectedGame === null && isRulesOpen && (
-        <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
-      )}
     </div>
   )
 }
