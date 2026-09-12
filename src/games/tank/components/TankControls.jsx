@@ -12,7 +12,17 @@ import {
   Heart,
 } from 'lucide-react'
 import { playClickSound } from '../../../utils/sound'
-import { WEAPON_TYPES, TANK_TYPES, DEFAULT_TANK_TYPE } from '../constants/tankConstants'
+import {
+  WEAPON_TYPES,
+  TANK_TYPES,
+  DEFAULT_TANK_TYPE,
+  MOVE_DEADZONE_PX,
+  AIM_DEADZONE_PX,
+  FLICK_MAX_MS,
+  FLICK_MIN_DIST_PX,
+} from '../constants/tankConstants'
+import useJoystick from '../hooks/useJoystick'
+import useAutoFire from '../hooks/useAutoFire'
 
 export default function TankControls({
   onInputChange,
@@ -65,7 +75,6 @@ export default function TankControls({
    * would throttle a fast class such as Specter to the STANDARD shell's rate.
    */
   const effectiveCooldownMs = fireCooldownMs ?? currentWeapon.cooldownMs
-  const weaponCooldownRef = useRef(effectiveCooldownMs)
 
   useEffect(() => {
     onFireRef.current = onFire
@@ -74,57 +83,13 @@ export default function TankControls({
   }, [onFire, onAimChange, onInputChange])
 
   // -------------------------------------------------------------
-  // Top Zone: Floating Movement Joystick State & Handlers
+  // The two floating joysticks. Both run the same algorithm (useJoystick);
+  // they differ only in deadzone and in what they publish.
   // -------------------------------------------------------------
-  const movePointerIdRef = useRef(null)
-  const moveOriginRef = useRef({ x: 0, y: 0 })
-  const [moveVisual, setMoveVisual] = useState({
-    active: false,
-    x: 0,
-    y: 0,
-    knobX: 0,
-    knobY: 0,
-  })
+  const lastAimAngleRef = useRef(null)
 
-  const handleMovePointerDown = (e) => {
-    if (!isAlive || movePointerIdRef.current !== null) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const target = e.currentTarget
-    target.setPointerCapture(e.pointerId)
-    movePointerIdRef.current = e.pointerId
-
-    const rect = target.getBoundingClientRect()
-    const touchX = e.clientX - rect.left
-    const touchY = e.clientY - rect.top
-
-    moveOriginRef.current = { x: e.clientX, y: e.clientY }
-
-    setMoveVisual({
-      active: true,
-      x: touchX,
-      y: touchY,
-      knobX: 0,
-      knobY: 0,
-      angle: 0,
-    })
-  }
-
-  const handleMovePointerMove = (e) => {
-    if (e.pointerId !== movePointerIdRef.current) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const dx = e.clientX - moveOriginRef.current.x
-    const dy = e.clientY - moveOriginRef.current.y
-    const dist = Math.hypot(dx, dy)
-    const maxRadius = 45
-    const deadzone = 8
-
-    if (dist < deadzone) {
-      setMoveVisual((prev) => ({ ...prev, knobX: 0, knobY: 0 }))
-      onInputChangeRef.current?.({
+  const publishStop = useCallback(() => {
+    onInputChangeRef.current?.({
         isMoving: false,
         moveMagnitude: 0,
         forward: false,
@@ -132,208 +97,54 @@ export default function TankControls({
         steerLeft: false,
         steerRight: false,
       })
-      return
-    }
+  }, [])
 
-    const angle = Math.atan2(dy, dx)
-    const clampedDist = Math.min(maxRadius, dist)
-    const knobX = Math.cos(angle) * clampedDist
-    const knobY = Math.sin(angle) * clampedDist
-
-    setMoveVisual((prev) => ({ ...prev, knobX, knobY }))
-
-    // Calculate world movement angle
-    // In portrait mode, UP on screen (-PI/2) maps to 0 (heading towards +x in world)
-    const worldAngle = isPortrait ? angle + Math.PI / 2 : angle
-    const magnitude = Math.min(1, dist / maxRadius)
-
-    onInputChangeRef.current?.({
-      isMoving: true,
-      moveAngle: worldAngle,
-      moveMagnitude: magnitude,
-      forward: true,
-    })
-  }
-
-  const handleMovePointerUp = (e) => {
-    if (e.pointerId !== movePointerIdRef.current) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    } catch {
-      // ignore
-    }
-
-    movePointerIdRef.current = null
-    setMoveVisual((prev) => ({
-      ...prev,
-      active: false,
-      knobX: 0,
-      knobY: 0,
-    }))
-
-    onInputChangeRef.current?.({
-      isMoving: false,
-      moveMagnitude: 0,
-      forward: false,
-      reverse: false,
-      steerLeft: false,
-      steerRight: false,
-    })
-  }
-
-  // -------------------------------------------------------------
-  // Bottom Zone: Floating Aim & Shoot Joystick State & Handlers
-  // -------------------------------------------------------------
-  const aimPointerIdRef = useRef(null)
-  const aimOriginRef = useRef({ x: 0, y: 0, time: 0 })
-  const aimFireTimerRef = useRef(null)
-  const lastAimAngleRef = useRef(null)
-
-  const [aimVisual, setAimVisual] = useState({
-    active: false,
-    x: 0,
-    y: 0,
-    knobX: 0,
-    knobY: 0,
-    angle: 0,
+  const { start: startAimFire, stop: stopAimFire } = useAutoFire({
+    cooldownMs: effectiveCooldownMs,
+    onFire: () => onFireRef.current?.(),
   })
 
-  // Clear aim firing interval on unmount
-  useEffect(() => {
-    return () => {
-      if (aimFireTimerRef.current) {
-        clearInterval(aimFireTimerRef.current)
-        aimFireTimerRef.current = null
+  // Top zone: drive.
+  const move = useJoystick({
+    enabled: isAlive,
+    deadzone: MOVE_DEADZONE_PX,
+    isPortrait,
+    onDeadzone: publishStop,
+    onMove: ({ worldAngle, magnitude }) => {
+      onInputChangeRef.current?.({
+        isMoving: true,
+        moveAngle: worldAngle,
+        moveMagnitude: magnitude,
+        forward: true,
+      })
+    },
+    onEnd: publishStop,
+  })
+
+  // Bottom zone: aim, and fire continuously while held.
+  const aim = useJoystick({
+    enabled: isAlive,
+    deadzone: AIM_DEADZONE_PX,
+    isPortrait,
+    onStart: () => startAimFire(),
+    onMove: ({ worldAngle }) => {
+      lastAimAngleRef.current = worldAngle
+      onAimChangeRef.current?.(worldAngle)
+      onInputChangeRef.current?.({ turretAngle: worldAngle })
+    },
+    onEnd: ({ elapsedMs, totalDist }) => {
+      stopAimFire()
+      // A quick flick fires one aimed shot rather than holding the trigger.
+      if (elapsedMs < FLICK_MAX_MS && totalDist > FLICK_MIN_DIST_PX && lastAimAngleRef.current !== null) {
+        onAimChangeRef.current?.(lastAimAngleRef.current)
+        onInputChangeRef.current?.({ turretAngle: lastAimAngleRef.current })
+        onFireRef.current?.()
       }
-    }
-  }, [])
+    },
+  })
 
-  const startAimFireLoop = useCallback((immediate = true) => {
-    if (aimFireTimerRef.current) return
-    if (immediate) onFireRef.current?.()
-
-    aimFireTimerRef.current = setInterval(() => {
-      onFireRef.current?.()
-    }, Math.max(120, weaponCooldownRef.current))
-  }, [])
-
-  const stopAimFireLoop = useCallback(() => {
-    if (aimFireTimerRef.current) {
-      clearInterval(aimFireTimerRef.current)
-      aimFireTimerRef.current = null
-    }
-  }, [])
-
-  // Picking up a crate weapon mid-hold changes the rate; re-arm the interval so the
-  // new cadence takes effect without the player having to lift their thumb.
-  useEffect(() => {
-    weaponCooldownRef.current = effectiveCooldownMs
-    if (aimFireTimerRef.current) {
-      clearInterval(aimFireTimerRef.current)
-      aimFireTimerRef.current = null
-      startAimFireLoop(false)
-    }
-  }, [effectiveCooldownMs, startAimFireLoop])
-
-  const handleAimPointerDown = (e) => {
-    if (!isAlive || aimPointerIdRef.current !== null) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const target = e.currentTarget
-    target.setPointerCapture(e.pointerId)
-    aimPointerIdRef.current = e.pointerId
-
-    const rect = target.getBoundingClientRect()
-    const touchX = e.clientX - rect.left
-    const touchY = e.clientY - rect.top
-
-    aimOriginRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      time: e.timeStamp || 0,
-    }
-
-    setAimVisual({
-      active: true,
-      x: touchX,
-      y: touchY,
-      knobX: 0,
-      knobY: 0,
-      angle: 0,
-    })
-
-    // Start firing immediately
-    startAimFireLoop()
-  }
-
-  const handleAimPointerMove = (e) => {
-    if (e.pointerId !== aimPointerIdRef.current) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const dx = e.clientX - aimOriginRef.current.x
-    const dy = e.clientY - aimOriginRef.current.y
-    const dist = Math.hypot(dx, dy)
-    const maxRadius = 45
-    const deadzone = 10
-
-    if (dist < deadzone) {
-      setAimVisual((prev) => ({ ...prev, knobX: 0, knobY: 0 }))
-      return
-    }
-
-    const angle = Math.atan2(dy, dx)
-    const clampedDist = Math.min(maxRadius, dist)
-    const knobX = Math.cos(angle) * clampedDist
-    const knobY = Math.sin(angle) * clampedDist
-
-    setAimVisual((prev) => ({ ...prev, knobX, knobY, angle }))
-
-    const worldAngle = isPortrait ? angle + Math.PI / 2 : angle
-    lastAimAngleRef.current = worldAngle
-
-    onAimChangeRef.current?.(worldAngle)
-    onInputChangeRef.current?.({ turretAngle: worldAngle })
-  }
-
-  const handleAimPointerUp = (e) => {
-    if (e.pointerId !== aimPointerIdRef.current) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    } catch {
-      // ignore
-    }
-
-    stopAimFireLoop()
-
-    const elapsed = (e.timeStamp || 0) - aimOriginRef.current.time
-    const totalDist = Math.hypot(
-      e.clientX - aimOriginRef.current.x,
-      e.clientY - aimOriginRef.current.y
-    )
-
-    // Quick tap or flick fire
-    if (elapsed < 320 && totalDist > 16 && lastAimAngleRef.current !== null) {
-      onAimChangeRef.current?.(lastAimAngleRef.current)
-      onInputChangeRef.current?.({ turretAngle: lastAimAngleRef.current })
-      onFireRef.current?.()
-    }
-
-    aimPointerIdRef.current = null
-    setAimVisual((prev) => ({
-      ...prev,
-      active: false,
-      knobX: 0,
-      knobY: 0,
-    }))
-  }
+  const moveVisual = move.visual
+  const aimVisual = aim.visual
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between select-none overflow-hidden touch-none">
@@ -485,10 +296,7 @@ export default function TankControls({
       {/* ------------------------------------------------------------- */}
       {isTouchDevice && (
       <div
-        onPointerDown={handleMovePointerDown}
-        onPointerMove={handleMovePointerMove}
-        onPointerUp={handleMovePointerUp}
-        onPointerCancel={handleMovePointerUp}
+        {...move.handlers}
         className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
       >
         {/* Subtle Idle Guide Label */}
@@ -538,10 +346,7 @@ export default function TankControls({
       {/* ------------------------------------------------------------- */}
       {isTouchDevice && (
       <div
-        onPointerDown={handleAimPointerDown}
-        onPointerMove={handleAimPointerMove}
-        onPointerUp={handleAimPointerUp}
-        onPointerCancel={handleAimPointerUp}
+        {...aim.handlers}
         className="pointer-events-auto relative flex-1 w-full touch-none overflow-hidden"
       >
         {/* Subtle Idle Guide Label */}

@@ -17,6 +17,19 @@ export const BULLET_RADIUS = 3.5
 export const BULLET_SPEED = 5.2
 export const BULLET_LIFETIME_MS = 6500
 
+// Floor on the hold-to-fire interval, so a very short cooldown cannot spin
+// the timer faster than the UI can keep up with.
+export const MIN_AUTOFIRE_INTERVAL_MS = 120
+
+// Floating joystick feel. The two sticks deliberately differ: the aim stick is
+// a little less twitchy than the move stick.
+export const MOVE_DEADZONE_PX = 8
+export const AIM_DEADZONE_PX = 10
+
+// A quick flick of the aim stick fires one aimed shot instead of holding.
+export const FLICK_MAX_MS = 320
+export const FLICK_MIN_DIST_PX = 16
+
 export const TARGET_SCORE_DEFAULT = 3
 
 export const MODES = {
