@@ -105,7 +105,6 @@ export default function App() {
 
         {selectedGame === 'tank' && (
           <TankGame
-            onBackToMenu={handleBackToMenu}
             onInGameChange={setInGame}
             isRulesOpen={isRulesOpen}
             onCloseRules={() => setIsRulesOpen(false)}

@@ -12,7 +12,7 @@ export function Avatar({ children, tone, size = 'md', className = '' }) {
     <span
       className={cx(
         'inline-flex items-center justify-center rounded-full shrink-0 shadow-lift-1',
-        tone ? TONE_FILL[tone] : 'bg-felt-high border border-edge-lit',
+        tone ? (TONE_FILL[tone] ?? TONE_FILL.lamp) : 'bg-felt-high border border-edge-lit',
         AVATAR_SIZE[size],
         className
       )}

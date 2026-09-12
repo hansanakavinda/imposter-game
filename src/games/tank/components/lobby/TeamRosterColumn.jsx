@@ -1,22 +1,25 @@
 import React from 'react'
 import { TEAMS, TANK_TYPES, DEFAULT_TANK_TYPE } from '../../constants/tankConstants'
 import { playClickSound } from '../../../../utils/sound'
+import Surface from '../../../../components/ui/Surface'
+import { Badge, Dot } from '../../../../components/ui/PlayerRow'
+import { FOCUS, TONE_FILL, TONE_TEXT, cx } from '../../../../components/ui/tokens'
 
 // One roster column. The blue and red columns were 98-line copy-paste twins;
-// everything that differed now comes from TEAMS[team].lobby*.
+// everything that differs now comes from the team's single `tone`.
 export default function TeamRosterColumn({ team, slots, players, mySlotId, myPeerId, onSelectSlot }) {
   const cfg = TEAMS[team]
 
   return (
-    <div className={`bg-zinc-900/80 border ${cfg.lobbyPanel} rounded-2xl p-3.5 flex flex-col gap-2.5`}>
-      <div className={`flex items-center justify-between pb-1 border-b ${cfg.lobbyDivider}`}>
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${cfg.lobbyDot}`} />
-          <span className={`font-extrabold text-xs ${cfg.text} uppercase tracking-wider`}>
+    <Surface radius="object" className="p-3.5 flex flex-col gap-2.5">
+      <div className="flex items-center justify-between pb-2 border-b border-edge">
+        <span className="flex items-center gap-2">
+          <Dot tone={cfg.tone} className="w-2.5 h-2.5" />
+          <span className={cx('text-micro font-bold uppercase', TONE_TEXT[cfg.tone])}>
             {cfg.name}
           </span>
-        </div>
-        <span className="text-[10px] text-zinc-400 font-semibold">{cfg.lobbyBaseLabel}</span>
+        </span>
+        <span className="text-nano font-semibold uppercase text-ink-faint">{cfg.baseLabel}</span>
       </div>
 
       <div className="space-y-2">
@@ -29,82 +32,78 @@ export default function TeamRosterColumn({ team, slots, players, mySlotId, myPee
             occupant &&
             ((myPeerId && occupant.peerId === myPeerId) || occupant.slotId === mySlotId)
 
+          const claimSlot = () => {
+            playClickSound()
+            onSelectSlot(slot.id)
+          }
+
+          // An empty slot is the only thing here you can act on, so only an
+          // empty slot is a button.
+          const Tag = occupant ? 'div' : 'button'
+
           return (
-            <div
+            <Tag
               key={slot.id}
-              className={`p-2.5 rounded-xl border transition flex items-center justify-between ${
+              type={occupant ? undefined : 'button'}
+              onClick={occupant ? undefined : claimSlot}
+              className={cx(
+                'w-full p-2.5 rounded-well border transition flex items-center justify-between gap-2 text-left',
                 occupant
                   ? isMe
-                    ? cfg.lobbySelfSlot
-                    : 'bg-zinc-950/70 border-zinc-800'
-                  : `bg-zinc-950/30 border-dashed border-zinc-800/80 ${cfg.lobbyOpenSlot} cursor-pointer`
-              }`}
-              onClick={() => {
-                if (!occupant) {
-                  playClickSound()
-                  onSelectSlot(slot.id)
-                }
-              }}
+                    ? 'bg-felt-high border-edge-lit shadow-lift-1'
+                    : 'bg-well border-edge shadow-sink'
+                  : cx(
+                      'bg-well border-dashed border-edge shadow-sink cursor-pointer',
+                      'hover:border-edge-lit active:scale-[0.99]',
+                      FOCUS
+                    )
+              )}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm ${
-                    occupant ? cfg.lobbyAvatar : 'bg-zinc-800 text-zinc-500'
-                  }`}
+              <span className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cx(
+                    'w-7 h-7 rounded-well flex items-center justify-center text-sm shrink-0',
+                    occupant
+                      ? cx(TONE_FILL[cfg.tone], 'shadow-lift-1')
+                      : 'bg-felt-high text-ink-faint'
+                  )}
                 >
                   {occupant && tankCfg ? tankCfg.icon : '🚜'}
-                </div>
-                <div className="truncate">
-                  <div className="font-bold text-xs text-white truncate flex items-center gap-1.5">
-                    <span>{occupant ? occupant.name : 'Open Slot'}</span>
-                    {isMe && (
-                      <span className={`text-[9px] ${cfg.lobbyYouBadge} px-1.5 py-0.2 rounded font-semibold`}>
-                        YOU
-                      </span>
-                    )}
-                    {occupant?.isHost && (
-                      <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-semibold">
-                        HOST
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] text-zinc-500">{slot.label}</span>
+                </span>
+
+                <span className="min-w-0 block">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-mini font-bold text-ink">
+                      {occupant ? occupant.name : 'Open slot'}
+                    </span>
+                    {isMe && <Badge tone={cfg.tone}>You</Badge>}
+                    {occupant?.isHost && <Badge tone="turn">Host</Badge>}
+                  </span>
+
+                  <span className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-nano text-ink-faint">{slot.label}</span>
                     {occupant && tankCfg && (
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-black border uppercase ${tankCfg.badgeColor}`}>
-                        {tankCfg.icon} {tankCfg.name}
+                      <span className="text-nano font-bold uppercase text-ink-muted">
+                        {tankCfg.name}
                       </span>
                     )}
-                  </div>
-                </div>
-              </div>
+                  </span>
+                </span>
+              </span>
 
               {occupant ? (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    occupant.isReady
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                      : 'bg-zinc-800 text-zinc-400'
-                  }`}
-                >
-                  {occupant.isReady ? 'READY' : 'WAITING'}
-                </span>
+                <Badge tone={occupant.isReady ? 'ok' : 'neutral'}>
+                  {occupant.isReady ? 'Ready' : 'Waiting'}
+                </Badge>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClickSound()
-                    onSelectSlot(slot.id)
-                  }}
-                  className={`text-[10px] font-bold ${cfg.lobbyJoinBtn} uppercase px-2 py-1 rounded-lg transition cursor-pointer`}
-                >
-                  {cfg.lobbyJoinLabel}
-                </button>
+                <span className={cx('text-nano font-bold uppercase', TONE_TEXT[cfg.tone])}>
+                  Take it
+                </span>
               )}
-            </div>
+            </Tag>
           )
         })}
       </div>
-    </div>
+    </Surface>
   )
 }

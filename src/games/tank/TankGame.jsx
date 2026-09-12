@@ -37,7 +37,6 @@ import {
 } from '../../utils/sound'
 
 export default function TankGame({
-  onBackToMenu,
   isRulesOpen,
   onCloseRules,
   initialRoomCode = '',
@@ -1040,7 +1039,6 @@ export default function TankGame({
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           onLeaveRoom={handleLeaveRoom}
-          onBackToMenu={onBackToMenu}
           error={error}
         />
       )}
@@ -1050,7 +1048,7 @@ export default function TankGame({
         <div
           className={
             isPortrait
-              ? 'fixed inset-0 z-40 bg-zinc-950 flex flex-col items-center justify-center select-none overflow-hidden touch-none'
+              ? 'fixed inset-0 z-40 bg-table flex flex-col items-center justify-center select-none overflow-hidden touch-none'
               : 'relative w-full max-w-5xl mx-auto flex items-center justify-center select-none animate-fadeIn px-2'
           }
         >

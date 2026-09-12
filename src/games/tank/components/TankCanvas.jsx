@@ -86,7 +86,7 @@ export default function TankCanvas({
             onCanvasContextMenu(getArenaCoords(e))
           }
         }}
-        className={`block object-contain cursor-crosshair rounded-2xl border border-zinc-800/80 shadow-2xl bg-zinc-950 ${
+        className={`block object-contain cursor-crosshair rounded-slab border border-edge shadow-lift-3 bg-well ${
           isPortrait
             ? 'h-full w-auto max-w-full max-h-[100dvh] aspect-[650/1000]'
             : 'w-full h-auto aspect-[1000/650]'

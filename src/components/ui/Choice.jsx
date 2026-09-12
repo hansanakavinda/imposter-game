@@ -24,7 +24,7 @@ export default function Choice({
         'text-mini font-semibold active:scale-[0.98]',
         'disabled:opacity-30 disabled:cursor-not-allowed',
         selected
-          ? cx(TONE_FILL[tone], 'border-transparent shadow-lift-1')
+          ? cx(TONE_FILL[tone] ?? TONE_FILL.lamp, 'border-transparent shadow-lift-1')
           : 'bg-felt border-edge text-ink-muted hover:text-ink hover:border-edge-lit',
         RADIUS[radius],
         FOCUS,

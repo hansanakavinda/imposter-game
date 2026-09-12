@@ -37,6 +37,9 @@ export const TONE_FILL = {
   tank: 'bg-tank text-table',
   ok: 'bg-ok text-table',
   danger: 'bg-danger text-table',
+  turn: 'bg-turn text-table',
+  'team-blue': 'bg-team-blue text-table',
+  'team-red': 'bg-team-red text-table',
 }
 
 /** Tinted washes, for pills and selected states. */

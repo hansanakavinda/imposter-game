@@ -26,7 +26,6 @@ export default function TankLobby({
   onCreateRoom,
   onJoinRoom,
   onLeaveRoom,
-  onBackToMenu,
   error,
 }) {
   const isInRoom =
@@ -45,7 +44,6 @@ export default function TankLobby({
         onSelectTank={onSelectTank}
         onCreateRoom={onCreateRoom}
         onJoinRoom={onJoinRoom}
-        onBackToMenu={onBackToMenu}
         error={error}
       />
     )

@@ -62,48 +62,32 @@ export const MODES = {
 export const TEAMS = {
   blue: {
     id: 'blue',
-    name: 'Team Blue',
+    name: 'Blue',
     color: '#06b6d4', // Cyan 500
     darkColor: '#0891b2',
     glow: 'rgba(6, 182, 212, 0.7)',
-    badgeBg: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
-    primaryBg: 'bg-cyan-500',
-    text: 'text-cyan-400',
-    // Lobby roster column. Full literal class strings so Tailwind's scanner
-    // sees them, matching the three fields above.
-    lobbyBaseLabel: 'West Base',
-    lobbyJoinLabel: 'Join Blue',
-    lobbyPanel: 'border-cyan-500/30',
-    lobbyDivider: 'border-cyan-500/20',
-    lobbyDot: 'bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]',
-    lobbySelfSlot: 'bg-cyan-950/40 border-cyan-500/60',
-    lobbyOpenSlot: 'hover:border-cyan-500/40',
-    lobbyAvatar: 'bg-cyan-500 text-zinc-950 shadow-md shadow-cyan-500/20',
-    lobbyYouBadge: 'bg-cyan-500/20 text-cyan-300',
-    lobbyJoinBtn: 'text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20',
+    // `tone` names an entry in components/ui/tokens.js. The ten literal class
+    // strings that used to live here -- lobbyPanel, lobbyAvatar, lobbyYouBadge
+    // and the rest -- were component styling in a constants file, and they are
+    // what let blue and red drift apart (red's dot was a shade darker than
+    // blue's, red's avatar sat on white where blue's sat on near-black).
+    tone: 'team-blue',
+    badgeBg: 'bg-team-blue/15 text-team-blue border-team-blue/40',
+    primaryBg: 'bg-team-blue',
+    text: 'text-team-blue',
+    baseLabel: 'West base',
   },
   red: {
     id: 'red',
-    name: 'Team Red',
+    name: 'Red',
     color: '#f43f5e', // Rose 500
     darkColor: '#e11d48',
     glow: 'rgba(244, 63, 94, 0.7)',
-    badgeBg: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
-    primaryBg: 'bg-rose-500',
-    text: 'text-rose-400',
-    lobbyBaseLabel: 'East Base',
-    lobbyJoinLabel: 'Join Red',
-    lobbyPanel: 'border-rose-500/30',
-    lobbyDivider: 'border-rose-500/20',
-    // Note: red's dot is shade 500 where blue's is 400, and red's avatar sits
-    // on white where blue's sits on zinc-950. Both predate this merge and are
-    // preserved deliberately -- restyling is the UI pass's call, not this one's.
-    lobbyDot: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]',
-    lobbySelfSlot: 'bg-rose-950/40 border-rose-500/60',
-    lobbyOpenSlot: 'hover:border-rose-500/40',
-    lobbyAvatar: 'bg-rose-500 text-white shadow-md shadow-rose-500/20',
-    lobbyYouBadge: 'bg-rose-500/20 text-rose-300',
-    lobbyJoinBtn: 'text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20',
+    tone: 'team-red',
+    badgeBg: 'bg-team-red/15 text-team-red border-team-red/40',
+    primaryBg: 'bg-team-red',
+    text: 'text-team-red',
+    baseLabel: 'East base',
   },
 }
 

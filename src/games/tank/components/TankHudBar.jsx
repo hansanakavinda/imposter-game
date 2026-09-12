@@ -16,9 +16,9 @@ import { getHpTier, HP_TIERS } from '../utils/tankHud'
 // Tier -> Tailwind. The canvas keeps its own tier->hex mapping; only the
 // thresholds are shared.
 const HP_TIER_CLASS = {
-  [HP_TIERS.OK]: 'bg-emerald-400',
-  [HP_TIERS.LOW]: 'bg-amber-400',
-  [HP_TIERS.CRITICAL]: 'bg-rose-500 shadow-xs shadow-rose-500/50',
+  [HP_TIERS.OK]: 'bg-ok',
+  [HP_TIERS.LOW]: 'bg-turn',
+  [HP_TIERS.CRITICAL]: 'bg-danger',
 }
 
 /**
@@ -50,11 +50,11 @@ export default function TankHudBar({
   const currentTankCfg = TANK_TYPES[tankType] || TANK_TYPES[DEFAULT_TANK_TYPE]
 
   return (
-      <div className="pointer-events-auto z-30 flex items-center justify-between gap-2 px-3 py-2 m-2 rounded-2xl bg-zinc-950/70 backdrop-blur-md border border-zinc-800/60 text-xs shadow-xl">
+      <div className="pointer-events-auto z-30 flex items-center justify-between gap-2 px-3 py-2 m-2 rounded-object bg-table/80 backdrop-blur-md border border-edge text-mini shadow-lift-2">
         <div className="flex items-center gap-2">
           {/* Active Health Indicator */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-            <Heart className={`w-3.5 h-3.5 ${getHpTier(hp) === HP_TIERS.CRITICAL ? 'text-rose-500 fill-rose-500 animate-pulse' : 'text-rose-400 fill-rose-400'}`} />
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-well bg-felt border border-edge">
+            <Heart className={`w-3.5 h-3.5 ${getHpTier(hp) === HP_TIERS.CRITICAL ? 'text-danger fill-danger animate-pulse' : 'text-danger/70 fill-danger/70'}`} />
             <div className="flex items-center gap-1">
               {Array.from({ length: maxHp }).map((_, idx) => (
                 <div
@@ -62,12 +62,12 @@ export default function TankHudBar({
                   className={`w-3 h-2 rounded-xs transition-all duration-300 ${
                     idx < hp
                       ? HP_TIER_CLASS[getHpTier(hp)]
-                      : 'bg-zinc-800 border border-zinc-700/50'
+                      : 'bg-well border border-edge'
                   }`}
                 />
               ))}
             </div>
-            <span className="text-[10px] font-black text-zinc-300">
+            <span className="font-mono text-nano text-ink-muted">
               {hp}/{maxHp}
             </span>
           </div>
@@ -75,7 +75,7 @@ export default function TankHudBar({
           {/* Active Tank Class Badge */}
           {currentTankCfg && (
             <div
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] font-black ${currentTankCfg.badgeColor}`}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-well border text-micro font-bold ${currentTankCfg.badgeColor}`}
               title={currentTankCfg.tagline}
             >
               <span>{currentTankCfg.icon}</span>
@@ -85,9 +85,9 @@ export default function TankHudBar({
 
           {/* Active Weapon Indicator */}
           <div className="flex items-center gap-1.5 font-bold">
-            <span className="text-zinc-400 text-[11px] hidden sm:inline">Weapon:</span>
+            <span className="text-ink-faint text-micro hidden sm:inline">Weapon</span>
             <span
-              className="px-2 py-0.5 rounded-lg font-black uppercase text-[11px] border"
+              className="px-2 py-0.5 rounded-well font-bold uppercase text-micro border"
               style={{
                 backgroundColor: `${currentWeapon.color}20`,
                 borderColor: `${currentWeapon.color}50`,
@@ -100,7 +100,7 @@ export default function TankHudBar({
 
           {/* Active Shield Indicator */}
           {hasShield && (
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold text-[11px] border border-emerald-500/40 animate-pulse">
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-well bg-ok/15 text-ok font-bold text-micro border border-ok/40 animate-pulse">
               <Shield className="w-3.5 h-3.5" />
               <span className="hidden xs:inline">Shield</span>
             </div>
@@ -114,12 +114,12 @@ export default function TankHudBar({
                 playClickSound()
                 onPing?.()
               }}
-              className="px-2 py-1 rounded-xl bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 flex items-center gap-1 shadow transition active:scale-95 cursor-pointer"
+              className="px-2 py-1 rounded-well bg-tank/15 hover:bg-tank/25 border border-tank/40 text-tank flex items-center gap-1 transition active:scale-95 cursor-pointer"
               title="Team Radar Ping"
               aria-label="Radar Ping"
             >
               <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span className="text-[10px] font-black">PING</span>
+              <span className="text-nano font-bold uppercase">Ping</span>
             </button>
           )}
         </div>
@@ -132,8 +132,8 @@ export default function TankHudBar({
               onClick={onToggleOrientation}
               className={`p-1.5 rounded-xl border transition ${
                 isPortrait
-                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                  : 'bg-zinc-800/70 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
+                  ? 'bg-tank/15 text-tank border-tank/40'
+                  : 'bg-felt text-ink-muted border-edge hover:bg-felt-high'
               }`}
               title={isPortrait ? 'Switch to Landscape' : 'Switch to Vertical Portrait'}
               aria-label="Toggle Arena Orientation"
@@ -146,7 +146,7 @@ export default function TankHudBar({
             <button
               type="button"
               onClick={onOpenRules}
-              className="p-1.5 rounded-xl bg-zinc-800/70 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 hover:text-white transition"
+              className="p-1.5 rounded-well bg-felt text-ink-muted border border-edge hover:bg-felt-high hover:text-ink transition"
               title="Tactical Rules"
               aria-label="How to play"
             >
@@ -158,11 +158,11 @@ export default function TankHudBar({
             <button
               type="button"
               onClick={onToggleSound}
-              className="p-1.5 rounded-xl bg-zinc-800/70 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 hover:text-white transition"
+              className="p-1.5 rounded-well bg-felt text-ink-muted border border-edge hover:bg-felt-high hover:text-ink transition"
               title={soundOn ? 'Mute' : 'Unmute'}
               aria-label="Sound Toggle"
             >
-              {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-zinc-500" />}
+              {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-ink-faint" />}
             </button>
           )}
 
@@ -175,7 +175,7 @@ export default function TankHudBar({
                   onLeaveGame()
                 }
               }}
-              className="p-1.5 rounded-xl bg-rose-950/40 text-rose-400 border border-rose-800/50 hover:bg-rose-900/60 transition"
+              className="p-1.5 rounded-well bg-danger/10 text-danger border border-danger/40 hover:bg-danger/20 transition"
               title="Surrender / Leave Battle"
               aria-label="Leave Battle"
             >
