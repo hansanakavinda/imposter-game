@@ -697,8 +697,14 @@ export default function UnoGame({
   )
 
   const executeAiPlayCard = useCallback(
-    (playerIndex, card, chosenColor = null) => {
-      const player = aiPlayers[playerIndex]
+    /**
+     * `playersOverride` is required whenever the caller has already modified hands in
+     * this tick - notably the bot draw-then-play path, whose captured roster is one
+     * draw out of date.
+     */
+    (playerIndex, card, chosenColor = null, playersOverride = null) => {
+      const players = playersOverride || aiPlayers
+      const player = players[playerIndex]
       const nextHand = player.hand.filter((c) => c.id !== card.id)
       const isWild = card.color === CARD_COLORS.WILD
       const effectiveColor = isWild ? chosenColor : card.color
@@ -731,7 +737,7 @@ export default function UnoGame({
         const newRankings = [...aiRankings, rankRecord]
         setAiRankings(newRankings)
 
-        const updatedPlayers = aiPlayers.map((p, idx) =>
+        const updatedPlayers = players.map((p, idx) =>
           idx === playerIndex ? { ...p, hand: nextHand, rank: finishedRank } : p
         )
         setAiPlayers(updatedPlayers)
@@ -968,17 +974,17 @@ export default function UnoGame({
       let currentSkippedInfo = null
 
       if (card.type === CARD_TYPES.REVERSE) {
-        const activeCountNow = aiPlayers.filter((p) => p.hand.length > 0).length
+        const activeCountNow = players.filter((p) => p.hand.length > 0).length
         if (activeCountNow === 2) {
           step = 2
           const skippedIdx = getNextActivePlayerIndex(
             playerIndex,
             1,
-            aiPlayers,
+            players,
             newDirection,
             (p) => p.hand.length === 0 || p.rank != null
           )
-          const targetPlayer = aiPlayers[skippedIdx]
+          const targetPlayer = players[skippedIdx]
           currentSkippedInfo = {
             playerId: targetPlayer.id,
             playerName: targetPlayer.name,
@@ -999,11 +1005,11 @@ export default function UnoGame({
         const skippedIdx = getNextActivePlayerIndex(
           playerIndex,
           1,
-          aiPlayers,
+          players,
           newDirection,
           (p) => p.hand.length === 0 || p.rank != null
         )
-        const targetPlayer = aiPlayers[skippedIdx]
+        const targetPlayer = players[skippedIdx]
         currentSkippedInfo = {
           playerId: targetPlayer.id,
           playerName: targetPlayer.name,
@@ -1016,7 +1022,7 @@ export default function UnoGame({
 
       let currentDraw = [...aiDrawPile]
       let currentDiscard = [...aiDiscardPile, card]
-      let updatedPlayers = aiPlayers.map((p, idx) =>
+      let updatedPlayers = players.map((p, idx) =>
         idx === playerIndex ? { ...p, hand: nextHand } : p
       )
 
@@ -1034,11 +1040,11 @@ export default function UnoGame({
           const targetIdx = getNextActivePlayerIndex(
             playerIndex,
             1,
-            aiPlayers,
+            players,
             newDirection,
             (p) => p.hand.length === 0 || p.rank != null
           )
-          const targetPlayer = aiPlayers[targetIdx]
+          const targetPlayer = players[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             2,
             currentDraw,
@@ -1071,11 +1077,11 @@ export default function UnoGame({
           const targetIdx = getNextActivePlayerIndex(
             playerIndex,
             1,
-            aiPlayers,
+            players,
             newDirection,
             (p) => p.hand.length === 0 || p.rank != null
           )
-          const targetPlayer = aiPlayers[targetIdx]
+          const targetPlayer = players[targetIdx]
           const { drawnCards, newDrawPile, newDiscardPile } = drawCardsFromPile(
             4,
             currentDraw,
@@ -1395,8 +1401,13 @@ export default function UnoGame({
             setAiDrawPile(newDrawPile)
             setAiDiscardPile(newDiscardPile)
 
-            setTimeout(() => {
-              executeAiPlayCard(aiCurrentPlayerIndex, drawnCard, chosenColor)
+            // Hand the post-draw roster over explicitly: executeAiPlayCard's captured
+            // aiPlayers predates this draw, so without it the drawn card is not found
+            // in the hand, is not removed, and the stale hand is committed back over
+            // this one - losing the card while still pushing it to the discard pile.
+            if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current)
+            botTimeoutRef.current = setTimeout(() => {
+              executeAiPlayCard(aiCurrentPlayerIndex, drawnCard, chosenColor, updatedPlayers)
             }, 600)
             return
           } else {

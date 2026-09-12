@@ -750,7 +750,9 @@ describe('deck conservation across a full random match', () => {
       if (!active) break
 
       let acted = false
-      for (const c of [...handOf(game, active.id)]) {
+      // snapshot: playCard mutates the hand we are iterating
+      const hand = handOf(game, active.id).slice()
+      for (const c of hand) {
         if (playCard(game, active.id, c.id, CARD_COLORS.RED).ok) {
           acted = true
           break
