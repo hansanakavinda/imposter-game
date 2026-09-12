@@ -36,7 +36,7 @@ export default function UnoBoard({
   onPassTurn,
   hasDrawnCardThisTurn,
   isHumanTurn,
-  _isWaitingForBot,
+  isWaitingForBot = false,
   actionMessage,
   unoCalledPlayers,
   onCallUno,
@@ -871,6 +871,11 @@ export default function UnoBoard({
           ) : skippedInfo ? (
             <span>
               🚫 {skippedInfo.playerName} was skipped. Waiting for {activePlayer?.name}&apos;s move...
+            </span>
+          ) : isWaitingForBot ? (
+            <span className="flex items-center justify-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span>{activePlayer?.name} is thinking...</span>
             </span>
           ) : (
             <span>
